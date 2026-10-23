@@ -1,8 +1,8 @@
 --[[
     ═════════════════════════════════════════════════════════════════════════
-    🔍 LIAN SPY v2 — INSTANT AUTO SCANNER & REMOTE DETECTIVE 🔍
+    🔍 LIAN SPY v3 — LIVE ACTION SNIFFER & FRAMEWORK DECODER 🔍
     Author : Lian (@brilliantgibrann16)
-    Fitur  : Scan otomatis semua Remote & UI Daily/Quest/Cash tanpa perlu klik!
+    Tujuan : Menangkap persis argumen Roll, Potion, Tower, Event, & Shop!
     ═════════════════════════════════════════════════════════════════════════
 --]]
 
@@ -14,76 +14,68 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local logs = {}
+local liveLogs = {}
 
 local function addLog(str)
     table.insert(logs, str)
 end
 
-addLog("═══════════════════════════════════════════════════════")
-addLog("⚡ LIAN SPY: AUTO-SCANNING REPLICATEDSTORAGE & REMOTES")
-addLog("═══════════════════════════════════════════════════════")
-
--- 1. SCAN SEMUA REMOTE EVENT & FUNCTION DI GAME
-local remoteCount = 0
-for _, obj in ipairs(RS:GetDescendants()) do
-    if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-        remoteCount = remoteCount + 1
-        addLog(string.format("[%s] %s", obj.ClassName, obj:GetFullName()))
-    end
+local function addLiveLog(str)
+    table.insert(liveLogs, 1, str) -- Taruh paling atas
+    if #liveLogs > 50 then table.remove(liveLogs) end
 end
-addLog(string.format("--> Total Remotes Ditemukan: %d\n", remoteCount))
 
--- 2. SCAN UI PLAYERGUI TERKAIT DAILY / QUEST / CASH / REWARD
+-- 1. DUMP DAFTAR CONFIG FRAMEWORK (DICE, POTIONS, TOWERS, WEATHER, HALLOWEEN)
 addLog("═══════════════════════════════════════════════════════")
-addLog("🎯 SCANNING PLAYERGUI (DAILY / QUEST / REWARD / CASH)")
+addLog("📦 LIAN SPY: DECODING GAME CONFIGS (FRAMEWORK)")
 addLog("═══════════════════════════════════════════════════════")
 
-local pGui = LocalPlayer:FindFirstChild("PlayerGui")
-if pGui then
-    local keywords = {"daily", "quest", "reward", "cash", "collect", "claim", "plot", "balance"}
-    local uiCount = 0
-    for _, ui in ipairs(pGui:GetDescendants()) do
-        local nameLower = ui.Name:lower()
-        local match = false
-        for _, kw in ipairs(keywords) do
-            if nameLower:find(kw) then
-                match = true
-                break
+pcall(function()
+    local fw = RS:FindFirstChild("Framework")
+    if fw and fw:FindFirstChild("Features") then
+        for _, feature in ipairs(fw.Features:GetChildren()) do
+            addLog("📁 Feature: " .. feature.Name)
+            for _, mod in ipairs(feature:GetDescendants()) do
+                if mod:IsA("ModuleScript") and mod.Name:find("Config") then
+                    local ok, cfg = pcall(require, mod)
+                    if ok and type(cfg) == "table" then
+                        addLog(string.format("   ⚙️ Config: %s", mod:GetFullName()))
+                        local keys = {}
+                        for k, _ in pairs(cfg) do
+                            table.insert(keys, tostring(k))
+                        end
+                        addLog("      Keys: " .. table.concat(keys, ", "))
+                    end
+                end
             end
         end
-        if match and (ui:IsA("GuiButton") or ui:IsA("Frame") or ui:IsA("TextLabel")) then
-            uiCount = uiCount + 1
-            local info = string.format("[%s] %s", ui.ClassName, ui:GetFullName())
-            if ui:IsA("TextLabel") or ui:IsA("TextButton") then
-                info = info .. string.format(" (Text: %q)", ui.Text)
-            end
-            addLog(info)
-        end
     end
-    addLog(string.format("--> Total UI Target Ditemukan: %d\n", uiCount))
-end
+end)
 
--- 3. SCAN MODULESCRIPTS DI NETWORK / PACKAGES
-addLog("═══════════════════════════════════════════════════════")
-addLog("📦 SCANNING REPLICATEDSTORAGE NETWORK MODULES")
-addLog("═══════════════════════════════════════════════════════")
-local net = RS:FindFirstChild("Network") or RS:FindFirstChild("Remotes") or RS:FindFirstChild("Events")
-if net then
-    for _, child in ipairs(net:GetChildren()) do
-        addLog(string.format("[Service] %s (Type: %s)", child:GetFullName(), child.ClassName))
-        for _, sub in ipairs(child:GetChildren()) do
-            addLog(string.format("   ↳ [%s] %s", sub.ClassName, sub.Name))
-        end
-    end
-end
-
+-- 2. DUMP DATA CONTROLLER STATE (CURRENT WEATHER, ROLL STATE, BOOSTS)
 addLog("\n═══════════════════════════════════════════════════════")
-addLog("🎯 LIVE HOOK AKTIF (Kalau ada tombol yang bisa diklik):")
+addLog("📊 CURRENT PLAYER STATE (DATA CONTROLLER)")
 addLog("═══════════════════════════════════════════════════════")
 
--- 4. GUI DISPLAY
+pcall(function()
+    local DC = require(RS.Framework.Features.Data.DataController)
+    for k, v in pairs(DC) do
+        if type(v) == "function" then
+            local ok, res = pcall(v)
+            if ok and (type(res) == "string" or type(res) == "number" or type(res) == "boolean") then
+                addLog(string.format("   • %s = %s", tostring(k), tostring(res)))
+            elseif ok and type(res) == "table" then
+                local count = 0
+                for _ in pairs(res) do count = count + 1 end
+                addLog(string.format("   • %s = table (items: %d)", tostring(k), count))
+            end
+        end
+    end
+end)
+
+-- 3. IN-GAME FLOATING HUD UNTUK REAL-TIME ACTION SNIFFING
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LianSpyConsole"
+ScreenGui.Name = "LianSpyV3"
 ScreenGui.ResetOnSpawn = false
 pcall(function()
     ScreenGui.Parent = (type(gethui) == "function" and gethui()) or game.CoreGui
@@ -91,9 +83,9 @@ end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
 local Frame = Instance.new("Frame")
-Frame.Size = UDim2.new(0, 540, 0, 380)
-Frame.Position = UDim2.new(0.5, -270, 0.5, -190)
-Frame.BackgroundColor3 = Color3.fromRGB(18, 22, 32)
+Frame.Size = UDim2.new(0, 580, 0, 420)
+Frame.Position = UDim2.new(0.5, -290, 0.5, -210)
+Frame.BackgroundColor3 = Color3.fromRGB(15, 18, 26)
 Frame.BorderSizePixel = 0
 Frame.Active = true
 Frame.Draggable = true
@@ -106,16 +98,28 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -20, 0, 35)
 Title.Position = UDim2.new(0, 10, 0, 5)
 Title.BackgroundTransparency = 1
-Title.Text = "🔍 Lian Spy v2 — Data Otomatis Terkumpul!"
-Title.TextColor3 = Color3.fromRGB(0, 220, 255)
+Title.Text = "⚡ LIAN SPY v3 — LIVE ACTION SNIFFER (Klik Apapun di Game!)"
+Title.TextColor3 = Color3.fromRGB(0, 230, 255)
 Title.Font = Enum.Font.GothamBold
-Title.TextSize = 14
+Title.TextSize = 13
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = Frame
 
+local StatusBadge = Instance.new("TextLabel")
+StatusBadge.Size = UDim2.new(1, -20, 0, 22)
+StatusBadge.Position = UDim2.new(0, 10, 0, 38)
+StatusBadge.BackgroundColor3 = Color3.fromRGB(24, 30, 45)
+StatusBadge.TextColor3 = Color3.fromRGB(180, 255, 180)
+StatusBadge.Font = Enum.Font.Code
+StatusBadge.TextSize = 11
+StatusBadge.Text = "Status: Menunggu klik Bubu... (Coba klik Roll / Potion / Tower / Shop)"
+StatusBadge.Parent = Frame
+local BadgeCorner = Instance.new("UICorner", StatusBadge)
+BadgeCorner.CornerRadius = UDim.new(0, 4)
+
 local Scroll = Instance.new("ScrollingFrame")
-Scroll.Size = UDim2.new(1, -20, 1, -85)
-Scroll.Position = UDim2.new(0, 10, 0, 40)
+Scroll.Size = UDim2.new(1, -20, 1, -115)
+Scroll.Position = UDim2.new(0, 10, 0, 65)
 Scroll.BackgroundColor3 = Color3.fromRGB(10, 12, 18)
 Scroll.BorderSizePixel = 0
 Scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
@@ -126,7 +130,7 @@ local TextBox = Instance.new("TextBox")
 TextBox.Size = UDim2.new(1, -10, 1, 0)
 TextBox.Position = UDim2.new(0, 5, 0, 5)
 TextBox.BackgroundTransparency = 1
-TextBox.TextColor3 = Color3.fromRGB(220, 220, 220)
+TextBox.TextColor3 = Color3.fromRGB(230, 230, 230)
 TextBox.Font = Enum.Font.Code
 TextBox.TextSize = 11
 TextBox.ClearTextOnFocus = false
@@ -135,55 +139,80 @@ TextBox.TextWrapped = true
 TextBox.MultiLine = true
 TextBox.TextXAlignment = Enum.TextXAlignment.Left
 TextBox.TextYAlignment = Enum.TextYAlignment.Top
-TextBox.Text = table.concat(logs, "\n")
+TextBox.Text = "=== [ LIVE REMOTE CAPTURES AKAN MUNCUL DI SINI SECARA INSTAN ] ===\n"
 TextBox.Parent = Scroll
 
 local CopyBtn = Instance.new("TextButton")
-CopyBtn.Size = UDim2.new(0.48, 0, 0, 32)
-CopyBtn.Position = UDim2.new(0, 10, 1, -38)
-CopyBtn.BackgroundColor3 = Color3.fromRGB(0, 160, 230)
+CopyBtn.Size = UDim2.new(0.48, 0, 0, 34)
+CopyBtn.Position = UDim2.new(0, 10, 1, -42)
+CopyBtn.BackgroundColor3 = Color3.fromRGB(0, 160, 240)
 CopyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 CopyBtn.Font = Enum.Font.GothamBold
 CopyBtn.TextSize = 12
-CopyBtn.Text = "📋 Copy Semua Log ke Clipboard"
+CopyBtn.Text = "📋 Copy Semua Log (Static + Live)"
 CopyBtn.Parent = Frame
 local BtnCorner1 = Instance.new("UICorner", CopyBtn)
 BtnCorner1.CornerRadius = UDim.new(0, 6)
 
-local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size = UDim2.new(0.48, 0, 0, 32)
-CloseBtn.Position = UDim2.new(0.52, 0, 1, -38)
-CloseBtn.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
-CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.TextSize = 12
-CloseBtn.Text = "❌ Tutup"
-CloseBtn.Parent = Frame
-local BtnCorner2 = Instance.new("UICorner", CloseBtn)
+local TestRollBtn = Instance.new("TextButton")
+TestRollBtn.Size = UDim2.new(0.48, 0, 0, 34)
+TestRollBtn.Position = UDim2.new(0.52, 0, 1, -42)
+TestRollBtn.BackgroundColor3 = Color3.fromRGB(255, 140, 0)
+TestRollBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+TestRollBtn.Font = Enum.Font.GothamBold
+TestRollBtn.TextSize = 12
+TestRollBtn.Text = "🧪 Test Panggil Roll Remote"
+TestRollBtn.Parent = Frame
+local BtnCorner2 = Instance.new("UICorner", TestRollBtn)
 BtnCorner2.CornerRadius = UDim.new(0, 6)
 
-local function updateUI()
-    TextBox.Text = table.concat(logs, "\n")
+local function getFullLog()
+    local res = {}
+    table.insert(res, "═══════════════════════════════════════════════════════")
+    table.insert(res, "🎯 LIVE REMOTE CLICKS CAPTURED BY LIAN SPY:")
+    table.insert(res, "═══════════════════════════════════════════════════════")
+    for _, l in ipairs(liveLogs) do table.insert(res, l) end
+    table.insert(res, "\n")
+    for _, l in ipairs(logs) do table.insert(res, l) end
+    return table.concat(res, "\n")
+end
+
+local function updateUI(latest)
+    if latest then
+        StatusBadge.Text = "Tertangkap: " .. latest:sub(1, 60) .. "..."
+    end
+    TextBox.Text = table.concat(liveLogs, "\n")
     pcall(function()
-        if setclipboard then setclipboard(TextBox.Text) end
-        if writefile then writefile("LianSpy_AnimeDice.txt", TextBox.Text) end
+        if setclipboard then setclipboard(getFullLog()) end
+        if writefile then writefile("LianSpy_LiveDump.txt", getFullLog()) end
     end)
 end
 
 CopyBtn.MouseButton1Click:Connect(function()
     if setclipboard then
-        setclipboard(TextBox.Text)
-        CopyBtn.Text = "✅ Tersalin ke Clipboard!"
+        setclipboard(getFullLog())
+        CopyBtn.Text = "✅ Tersalin Lengkap!"
         task.wait(1.5)
-        CopyBtn.Text = "📋 Copy Semua Log ke Clipboard"
+        CopyBtn.Text = "📋 Copy Semua Log (Static + Live)"
     end
 end)
 
-CloseBtn.MouseButton1Click:Connect(function()
-    ScreenGui:Destroy()
+-- Tombol Percobaan Roll Mandiri
+TestRollBtn.MouseButton1Click:Connect(function()
+    TestRollBtn.Text = "Testing..."
+    local ok1, err1 = pcall(function()
+        RS.Network.RollService.RE.SetAutoRoll:FireServer(true)
+    end)
+    local ok2, err2 = pcall(function()
+        return RS.Network.RollService.RF.RollDice:InvokeServer()
+    end)
+    local msg = string.format("Test: SetAutoRoll=%s (%s) | RollDice=%s (%s)", tostring(ok1), tostring(err1), tostring(ok2), tostring(err2))
+    addLiveLog("🧪 [MANUAL TEST] " .. msg)
+    updateUI(msg)
+    TestRollBtn.Text = "🧪 Test Panggil Roll Remote"
 end)
 
--- 5. LIVE HOOK NAMECALL
+-- 4. ULTRA-DETAILED NAME-CALL & INVOKE HOOK
 local oldNamecall
 oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
     local method = getnamecallmethod()
@@ -191,22 +220,29 @@ oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
     
     if (method == "FireServer" or method == "InvokeServer") and (self:IsA("RemoteEvent") or self:IsA("RemoteFunction")) then
         local name = self.Name
+        -- Abaikan noise
         if name ~= "SetPlayerBlockList" and name ~= "UpdateMouseData" and not self:IsDescendantOf(LocalPlayer.Character) then
             local strArgs = {}
             for i, a in ipairs(args) do
                 local t = typeof(a)
-                if t == "string" then table.insert(strArgs, string.format("%q", a))
-                elseif t == "number" or t == "boolean" then table.insert(strArgs, tostring(a))
-                else table.insert(strArgs, tostring(a)) end
+                if t == "string" then
+                    table.insert(strArgs, string.format("%q", a))
+                elseif t == "number" or t == "boolean" then
+                    table.insert(strArgs, tostring(a))
+                elseif t == "table" then
+                    local okJ, j = pcall(function() return HttpService:JSONEncode(a) end)
+                    table.insert(strArgs, okJ and j or "{table}")
+                else
+                    table.insert(strArgs, tostring(a))
+                end
             end
-            local logLine = string.format("⚡ [%s] %s:%s(%s)", os.date("%X"), self:GetFullName(), method, table.concat(strArgs, ", "))
-            addLog(logLine)
-            updateUI()
+            local line = string.format("[%s] %s:%s(%s)", os.date("%X"), self:GetFullName(), method, table.concat(strArgs, ", "))
+            addLiveLog(line)
+            updateUI(self.Name)
         end
     end
     
     return oldNamecall(self, ...)
 end)
 
-updateUI()
-print("[LianSpy v2] Instant auto scan complete!")
+print("[LianSpy v3] Live Action Sniffer is ready! Click actions in-game now.")

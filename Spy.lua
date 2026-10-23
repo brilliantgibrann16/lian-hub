@@ -1,8 +1,8 @@
 --[[
     ═════════════════════════════════════════════════════════════════════════
-    🔍 LIAN SPY — REAL-TIME REMOTE DETECTIVE & GAME INVESTIGATOR 🔍
+    🔍 LIAN SPY v2 — INSTANT AUTO SCANNER & REMOTE DETECTIVE 🔍
     Author : Lian (@brilliantgibrann16)
-    Fungsi : Mencatat SEMUA remote saat Bubu klik Collect, Daily, Quest
+    Fitur  : Scan otomatis semua Remote & UI Daily/Quest/Cash tanpa perlu klik!
     ═════════════════════════════════════════════════════════════════════════
 --]]
 
@@ -14,27 +14,74 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local logs = {}
-local discoveredRemotes = {}
 
--- 1. SCAN SEMUA REMOTE DI REPLICATEDSTORAGE
-table.insert(logs, "═══════════════════════════════════════════════════════")
-table.insert(logs, "📍 DISCOVERED REMOTES IN REPLICATEDSTORAGE:")
-table.insert(logs, "═══════════════════════════════════════════════════════")
+local function addLog(str)
+    table.insert(logs, str)
+end
 
+addLog("═══════════════════════════════════════════════════════")
+addLog("⚡ LIAN SPY: AUTO-SCANNING REPLICATEDSTORAGE & REMOTES")
+addLog("═══════════════════════════════════════════════════════")
+
+-- 1. SCAN SEMUA REMOTE EVENT & FUNCTION DI GAME
+local remoteCount = 0
 for _, obj in ipairs(RS:GetDescendants()) do
     if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-        local line = string.format("[%s] %s", obj.ClassName, obj:GetFullName())
-        table.insert(discoveredRemotes, line)
-        table.insert(logs, line)
+        remoteCount = remoteCount + 1
+        addLog(string.format("[%s] %s", obj.ClassName, obj:GetFullName()))
+    end
+end
+addLog(string.format("--> Total Remotes Ditemukan: %d\n", remoteCount))
+
+-- 2. SCAN UI PLAYERGUI TERKAIT DAILY / QUEST / CASH / REWARD
+addLog("═══════════════════════════════════════════════════════")
+addLog("🎯 SCANNING PLAYERGUI (DAILY / QUEST / REWARD / CASH)")
+addLog("═══════════════════════════════════════════════════════")
+
+local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+if pGui then
+    local keywords = {"daily", "quest", "reward", "cash", "collect", "claim", "plot", "balance"}
+    local uiCount = 0
+    for _, ui in ipairs(pGui:GetDescendants()) do
+        local nameLower = ui.Name:lower()
+        local match = false
+        for _, kw in ipairs(keywords) do
+            if nameLower:find(kw) then
+                match = true
+                break
+            end
+        end
+        if match and (ui:IsA("GuiButton") or ui:IsA("Frame") or ui:IsA("TextLabel")) then
+            uiCount = uiCount + 1
+            local info = string.format("[%s] %s", ui.ClassName, ui:GetFullName())
+            if ui:IsA("TextLabel") or ui:IsA("TextButton") then
+                info = info .. string.format(" (Text: %q)", ui.Text)
+            end
+            addLog(info)
+        end
+    end
+    addLog(string.format("--> Total UI Target Ditemukan: %d\n", uiCount))
+end
+
+-- 3. SCAN MODULESCRIPTS DI NETWORK / PACKAGES
+addLog("═══════════════════════════════════════════════════════")
+addLog("📦 SCANNING REPLICATEDSTORAGE NETWORK MODULES")
+addLog("═══════════════════════════════════════════════════════")
+local net = RS:FindFirstChild("Network") or RS:FindFirstChild("Remotes") or RS:FindFirstChild("Events")
+if net then
+    for _, child in ipairs(net:GetChildren()) do
+        addLog(string.format("[Service] %s (Type: %s)", child:GetFullName(), child.ClassName))
+        for _, sub in ipairs(child:GetChildren()) do
+            addLog(string.format("   ↳ [%s] %s", sub.ClassName, sub.Name))
+        end
     end
 end
 
-table.insert(logs, "")
-table.insert(logs, "═══════════════════════════════════════════════════════")
-table.insert(logs, "🎯 LIVE REMOTE SPY (KLIK TOMBOL GAME SEKARANG!):")
-table.insert(logs, "═══════════════════════════════════════════════════════")
+addLog("\n═══════════════════════════════════════════════════════")
+addLog("🎯 LIVE HOOK AKTIF (Kalau ada tombol yang bisa diklik):")
+addLog("═══════════════════════════════════════════════════════")
 
--- 2. CREATE IN-GAME GUI CONSOLE
+-- 4. GUI DISPLAY
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "LianSpyConsole"
 ScreenGui.ResetOnSpawn = false
@@ -44,9 +91,9 @@ end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
 local Frame = Instance.new("Frame")
-Frame.Size = UDim2.new(0, 520, 0, 360)
-Frame.Position = UDim2.new(0.5, -260, 0.5, -180)
-Frame.BackgroundColor3 = Color3.fromRGB(20, 24, 34)
+Frame.Size = UDim2.new(0, 540, 0, 380)
+Frame.Position = UDim2.new(0.5, -270, 0.5, -190)
+Frame.BackgroundColor3 = Color3.fromRGB(18, 22, 32)
 Frame.BorderSizePixel = 0
 Frame.Active = true
 Frame.Draggable = true
@@ -59,7 +106,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -20, 0, 35)
 Title.Position = UDim2.new(0, 10, 0, 5)
 Title.BackgroundTransparency = 1
-Title.Text = "🔍 Lian Spy Console — Klik Collect/Daily/Quest di Game!"
+Title.Text = "🔍 Lian Spy v2 — Data Otomatis Terkumpul!"
 Title.TextColor3 = Color3.fromRGB(0, 220, 255)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 14
@@ -69,9 +116,8 @@ Title.Parent = Frame
 local Scroll = Instance.new("ScrollingFrame")
 Scroll.Size = UDim2.new(1, -20, 1, -85)
 Scroll.Position = UDim2.new(0, 10, 0, 40)
-Scroll.BackgroundColor3 = Color3.fromRGB(12, 14, 20)
+Scroll.BackgroundColor3 = Color3.fromRGB(10, 12, 18)
 Scroll.BorderSizePixel = 0
-Scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 Scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 Scroll.ScrollBarThickness = 6
 Scroll.Parent = Frame
@@ -80,7 +126,7 @@ local TextBox = Instance.new("TextBox")
 TextBox.Size = UDim2.new(1, -10, 1, 0)
 TextBox.Position = UDim2.new(0, 5, 0, 5)
 TextBox.BackgroundTransparency = 1
-TextBox.TextColor3 = Color3.fromRGB(230, 230, 230)
+TextBox.TextColor3 = Color3.fromRGB(220, 220, 220)
 TextBox.Font = Enum.Font.Code
 TextBox.TextSize = 11
 TextBox.ClearTextOnFocus = false
@@ -111,7 +157,7 @@ CloseBtn.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
 CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 CloseBtn.Font = Enum.Font.GothamBold
 CloseBtn.TextSize = 12
-CloseBtn.Text = "❌ Tutup Console"
+CloseBtn.Text = "❌ Tutup"
 CloseBtn.Parent = Frame
 local BtnCorner2 = Instance.new("UICorner", CloseBtn)
 BtnCorner2.CornerRadius = UDim.new(0, 6)
@@ -137,38 +183,24 @@ CloseBtn.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
 end)
 
--- 3. HOOK METAMETHOD (__namecall) UNTUK MENANGKAP KLIK USER
-local function serializeArg(val)
-    local t = typeof(val)
-    if t == "string" then
-        return string.format("%q", val)
-    elseif t == "number" or t == "boolean" then
-        return tostring(val)
-    elseif t == "Instance" then
-        return val:GetFullName()
-    elseif t == "table" then
-        local ok, json = pcall(function() return HttpService:JSONEncode(val) end)
-        return ok and json or "{table}"
-    else
-        return tostring(val)
-    end
-end
-
+-- 5. LIVE HOOK NAMECALL
 local oldNamecall
 oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
     local method = getnamecallmethod()
     local args = {...}
     
     if (method == "FireServer" or method == "InvokeServer") and (self:IsA("RemoteEvent") or self:IsA("RemoteFunction")) then
-        -- Abaikan remote kamera / default movement roblox yang nyampah
         local name = self.Name
         if name ~= "SetPlayerBlockList" and name ~= "UpdateMouseData" and not self:IsDescendantOf(LocalPlayer.Character) then
             local strArgs = {}
             for i, a in ipairs(args) do
-                table.insert(strArgs, serializeArg(a))
+                local t = typeof(a)
+                if t == "string" then table.insert(strArgs, string.format("%q", a))
+                elseif t == "number" or t == "boolean" then table.insert(strArgs, tostring(a))
+                else table.insert(strArgs, tostring(a)) end
             end
             local logLine = string.format("⚡ [%s] %s:%s(%s)", os.date("%X"), self:GetFullName(), method, table.concat(strArgs, ", "))
-            table.insert(logs, logLine)
+            addLog(logLine)
             updateUI()
         end
     end
@@ -177,4 +209,4 @@ oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
 end)
 
 updateUI()
-print("[LianSpy] Active and listening to all remotes!")
+print("[LianSpy v2] Instant auto scan complete!")

@@ -1,12 +1,16 @@
 --[[
     ═════════════════════════════════════════════════════════════════════════
-    ⚡ LIAN HUB — 100% KEYLESS ANIME DICE ULTIMATE EXPLOIT SUITE v4.1 ⚡
+    ⚡ LIAN HUB — 100% KEYLESS ANIME DICE ULTIMATE EXPLOIT SUITE v4.2 ⚡
     Author : Lian (@brilliantgibrann16)
     Repo   : https://github.com/brilliantgibrann16/lian-hub
-    Fitur  : • SMART Rebirth: Hanya klik Rebirth jika Uang Cukup (Anti-Spam)
+    Fitur  : • Full TOGGLE Architecture: Semua fitur otomatisasi berbasis ON/OFF
+             • Persistent Config: Semua status toggle tersimpan & otomatis aktif saat re-join
+             • SMART Rebirth: Hanya klik Rebirth jika Uang Cukup (Anti-Spam)
              • SMART Stat Upgrade: Hanya upgrade saat Ada Poin dari Rebirth
              • SMART Fortune Upgrade: Hanya beli saat Uang Cukup
-             • Persistent Config (Auto-Load & Save Toggle)
+             • Auto Buy Best Dice (Toggle On/Off)
+             • Auto Fuse Units (Toggle On/Off)
+             • Extreme Potato Mode (Toggle On/Off, persistent lintas server)
              • Auto Hop Server Luck (queue_on_teleport + Anti-Rejoin Duplicate)
              • Auto Equip Best Unit on Roll + Auto Level Up Units/Plots
              • Halloween Event Suite: TP Doors Trick-or-Treat, Pumpkin Roll 5x
@@ -69,6 +73,9 @@ _G.LianConfig = {
     AutoRoll = false,
     FastRoll = false,
     AutoRollHalloween = false,
+    AutoSkipTutorial = false,
+    LeaveOnTarget = false,
+    TargetRolls = 1000,
     AutoPotions = false,
     AutoSpin = false,
     AutoTrickOrTreat = false,
@@ -79,9 +86,9 @@ _G.LianConfig = {
     TowerType = "The Abyss",
     AutoCollectCash = false,
     AutoLevelUpSlots = false,
-    AutoEquipBestOnRoll = false,
     AutoDailyReward = false,
     AutoQuests = false,
+    AutoRedeemCodes = false,
     AutoRebirth = false,
     UpgradeLuck = true,
     UpgradeDamage = true,
@@ -89,11 +96,13 @@ _G.LianConfig = {
     UpgradeIncome = true,
     UpgradeSpeed = true,
     UpgradeFortune = true,
+    AutoEquipBestOnRoll = false,
+    AutoBuyBestDice = false,
+    AutoFuseUnits = false,
     AutoQuirk = false,
     QuirkTarget = "Prodigy",
     ServerLuckHop = false,
-    TargetRolls = 1000,
-    LeaveOnTarget = false,
+    ExtremePotatoMode = false,
     InfJump = false,
     Noclip = false
 }
@@ -136,7 +145,6 @@ local function parseFormattedNumber(str)
 end
 
 local function getPlayerCash()
-    -- 1. Dari DataController
     if DC then
         local ok1, c1 = pcall(function() return DC.Cash and DC.Cash() end)
         if ok1 and type(c1) == "number" then return c1 end
@@ -145,13 +153,11 @@ local function getPlayerCash()
         local ok3, c3 = pcall(function() return DC.Balance and DC.Balance() end)
         if ok3 and type(c3) == "number" then return c3 end
     end
-    -- 2. Dari leaderstats
     local ls = LocalPlayer:FindFirstChild("leaderstats")
     if ls then
         local c = ls:FindFirstChild("Cash") or ls:FindFirstChild("Coins") or ls:FindFirstChild("Money")
         if c and c.Value then return c.Value end
     end
-    -- 3. Dari GUI HUD Cash TextLabel
     local hud = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Root") and LocalPlayer.PlayerGui.Root:FindFirstChild("HUD")
     if hud and hud:FindFirstChild("Cash") then
         local lbl = hud.Cash:FindFirstChildWhichIsA("TextLabel", true)
@@ -170,7 +176,6 @@ local function canAffordRebirth()
         pcall(function() curRebirths = DC.Rebirths() end)
     end
 
-    -- 1. Baca RebirthConfig resmi
     local okRC, RebirthConfig = pcall(function()
         return require(RS.Framework.Features.Rebirth.RebirthConfig)
     end)
@@ -181,7 +186,6 @@ local function canAffordRebirth()
         end
     end
 
-    -- 2. Baca dari UI Rebirth Menu
     local rMenu = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Root") and LocalPlayer.PlayerGui.Root:FindFirstChild("Menus") and LocalPlayer.PlayerGui.Root.Menus:FindFirstChild("Rebirth")
     if rMenu then
         local costLabel = rMenu:FindFirstChild("Cash", true)
@@ -200,7 +204,6 @@ local function canAffordRebirth()
 end
 
 local function getAvailableStatPoints()
-    -- 1. Baca RebirthStatsConfig
     local okRSC, RSC = pcall(function()
         return require(RS.Framework.Features.Rebirth.RebirthStatsConfig)
     end)
@@ -217,7 +220,6 @@ local function getAvailableStatPoints()
         end
     end
 
-    -- 2. Baca UI Rebirth points label
     local rMenu = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Root") and LocalPlayer.PlayerGui.Root:FindFirstChild("Menus") and LocalPlayer.PlayerGui.Root.Menus:FindFirstChild("Rebirth")
     if rMenu then
         for _, lbl in ipairs(rMenu:GetDescendants()) do
@@ -250,6 +252,27 @@ local function canAffordFortune()
         end
     end
     return curCash >= 50000
+end
+
+local function applyPotatoMode(enable)
+    if enable then
+        pcall(function() if setfpscap then setfpscap(30) end end)
+        for _, v in ipairs(game:GetDescendants()) do
+            if v:IsA("Light") or v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Beam") then
+                pcall(function() v.Enabled = false end)
+            elseif v:IsA("BasePart") then
+                v.Material = Enum.Material.SmoothPlastic
+                v.CastShadow = false
+            elseif v:IsA("Decal") or v:IsA("Texture") then
+                v.Transparency = 1
+            end
+        end
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd = 9e9
+    else
+        pcall(function() if setfpscap then setfpscap(60) end end)
+        Lighting.GlobalShadows = true
+    end
 end
 
 local function getCharRoot()
@@ -342,7 +365,6 @@ FarmTab:CreateToggle({
                     task.spawn(function()
                         safe(function() NET.RollService.RF.RollDice:InvokeServer() end)
                     end)
-                    -- Auto equip best on roll if enabled
                     if _G.LianConfig.AutoEquipBestOnRoll then
                         safe(function()
                             NET.PlotService.RE.EquipBest:FireServer()
@@ -391,11 +413,13 @@ FarmTab:CreateToggle({
 
 FarmTab:CreateToggle({
     Name = "Auto Skip / Complete Tutorial (Akun Baru)",
-    CurrentValue = false,
+    CurrentValue = _G.LianConfig.AutoSkipTutorial,
     Callback = function(Value)
+        _G.LianConfig.AutoSkipTutorial = Value
+        saveConfig()
         if Value then
             task.spawn(function()
-                while Value do
+                while _G.LianConfig.AutoSkipTutorial do
                     safe(function()
                         local step = DC and DC.OnboardingStep and DC.OnboardingStep() or -1
                         if step < 14 and step >= 0 then
@@ -773,8 +797,33 @@ EconomyTab:CreateToggle({
     end,
 })
 
+EconomyTab:CreateToggle({
+    Name = "Auto Redeem Promo Codes Baru (On Join / Loop)",
+    CurrentValue = _G.LianConfig.AutoRedeemCodes,
+    Callback = function(Value)
+        _G.LianConfig.AutoRedeemCodes = Value
+        saveConfig()
+        if Value then
+            task.spawn(function()
+                local CODES = {
+                    "UPDATE7", "UPDATE6", "UPDATE5", "UPDATE4", "UPDATE3", "UPDATE2", "UPDATE1",
+                    "400KLIKES", "250KLIKES", "100KLIKES", "40KCCU", "30KCCU", "20KCCU", "10KCCU",
+                    "5KCCU", "1KCCU", "RELEASE"
+                }
+                while _G.LianConfig.AutoRedeemCodes do
+                    for _, code in ipairs(CODES) do
+                        safe(function() NET.CodesService.RE.RedeemCode:FireServer(code) end)
+                        task.wait(0.15)
+                    end
+                    task.wait(60)
+                end
+            end)
+        end
+    end,
+})
+
 EconomyTab:CreateButton({
-    Name = "🎁 Redeem Semua 17 Promo Codes Resmi",
+    Name = "🎁 Redeem Semua 17 Promo Codes Sekarang",
     Callback = function()
         local CODES = {
             "UPDATE7", "UPDATE6", "UPDATE5", "UPDATE4", "UPDATE3", "UPDATE2", "UPDATE1",
@@ -890,7 +939,7 @@ task.spawn(function()
     end
 end)
 
-UpgradesTab:CreateSection("⚔️ Unit Management")
+UpgradesTab:CreateSection("⚔️ Unit Management & Fusing")
 
 UpgradesTab:CreateToggle({
     Name = "Auto Equip Best Unit Tiap Roll (Plot + Tower)",
@@ -908,18 +957,50 @@ UpgradesTab:CreateToggle({
     end,
 })
 
-UpgradesTab:CreateButton({
-    Name = "Auto Buy & Equip Highest Available Dice",
-    Callback = function()
-        safe(function()
-            local diceList = {"Golden", "Diamond", "Sinister", "Galaxy", "Asteroid", "Blackhole", "Cherub", "Solaris", "Volcanic"}
-            for _, d in ipairs(diceList) do
-                NET.DiceShopService.RE.BuyDice:FireServer(d)
-                NET.DiceShopService.RE.EquipDice:FireServer(d)
-                task.wait(0.15)
-            end
-        end)
-        Rayfield:Notify({ Title = "Lian Hub", Content = "Highest available dice equipped!", Duration = 3 })
+UpgradesTab:CreateToggle({
+    Name = "Auto Fuse Units (Gabungkan Unit Kembar Otomatis)",
+    CurrentValue = _G.LianConfig.AutoFuseUnits,
+    Callback = function(Value)
+        _G.LianConfig.AutoFuseUnits = Value
+        saveConfig()
+        if Value then
+            task.spawn(function()
+                while _G.LianConfig.AutoFuseUnits do
+                    safe(function()
+                        if NET:FindFirstChild("FusingService") then
+                            NET.FusingService.RE.Fuse:FireServer()
+                        end
+                    end)
+                    task.wait(6)
+                end
+            end)
+        end
+    end,
+})
+
+UpgradesTab:CreateSection("🎲 Auto Buy Best Dice")
+
+UpgradesTab:CreateToggle({
+    Name = "Auto Buy & Equip Best Dice (Toggle On/Off)",
+    CurrentValue = _G.LianConfig.AutoBuyBestDice,
+    Callback = function(Value)
+        _G.LianConfig.AutoBuyBestDice = Value
+        saveConfig()
+        if Value then
+            task.spawn(function()
+                local diceList = {"Golden", "Diamond", "Sinister", "Galaxy", "Asteroid", "Blackhole", "Cherub", "Solaris", "Volcanic"}
+                while _G.LianConfig.AutoBuyBestDice do
+                    safe(function()
+                        for _, d in ipairs(diceList) do
+                            NET.DiceShopService.RE.BuyDice:FireServer(d)
+                            NET.DiceShopService.RE.EquipDice:FireServer(d)
+                            task.wait(0.1)
+                        end
+                    end)
+                    task.wait(10)
+                end
+            end)
+        end
     end,
 })
 
@@ -1054,29 +1135,22 @@ ServerTab:CreateButton({
 })
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 8: POTATO OPTIMIZER & PERFORMANCE
+-- TAB 8: POTATO OPTIMIZER & PERFORMANCE (TOGGLE ON/OFF)
 -- ═════════════════════════════════════════════════════════════════════
 PerfTab:CreateSection("❄️ CPU / GPU Saver (Khusus Nuyul Multi-Client)")
 
-PerfTab:CreateButton({
+PerfTab:CreateToggle({
     Name = "Extreme Potato Mode (FPS Cap 30 + No Graphics)",
-    Callback = function()
-        pcall(function()
-            if setfpscap then setfpscap(30) end
-        end)
-        for _, v in ipairs(game:GetDescendants()) do
-            if v:IsA("Light") or v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Beam") then
-                pcall(function() v.Enabled = false end)
-            elseif v:IsA("BasePart") then
-                v.Material = Enum.Material.SmoothPlastic
-                v.CastShadow = false
-            elseif v:IsA("Decal") or v:IsA("Texture") then
-                v.Transparency = 1
-            end
+    CurrentValue = _G.LianConfig.ExtremePotatoMode,
+    Callback = function(Value)
+        _G.LianConfig.ExtremePotatoMode = Value
+        saveConfig()
+        applyPotatoMode(Value)
+        if Value then
+            Rayfield:Notify({ Title = "Potato Mode ON!", Content = "FPS 30 & grafis minimal aktif! Laptop dingin.", Duration = 3 })
+        else
+            Rayfield:Notify({ Title = "Potato Mode OFF", Content = "Grafis kembali normal.", Duration = 3 })
         end
-        Lighting.GlobalShadows = false
-        Lighting.FogEnd = 9e9
-        Rayfield:Notify({ Title = "Potato Mode Aktif!", Content = "Beban laptop dingin, lancar nuyul banyak akun!", Duration = 4 })
     end,
 })
 
@@ -1141,6 +1215,12 @@ end)
 -- Initial Auto-Run based on loaded config
 task.spawn(function()
     task.wait(2)
+    -- Auto apply potato mode if enabled in saved config
+    if _G.LianConfig.ExtremePotatoMode then
+        applyPotatoMode(true)
+    end
+
+    -- Auto check server luck if enabled in saved config
     if _G.LianConfig.ServerLuckHop then
         local weather = (DC and DC.Weather and DC.Weather()) or ""
         local isEvent = weather:find("Luck") or weather:find("Clover") or weather:find("Haunted") or weather:find("Golden")
@@ -1153,7 +1233,7 @@ task.spawn(function()
 end)
 
 Rayfield:Notify({
-    Title = "Lian Hub v4.1 Smart Loaded!",
-    Content = "Semua fitur pintar & anti-spam siap digunakan!",
+    Title = "Lian Hub v4.2 Loaded!",
+    Content = "Semua fitur pintar & sistem Toggle aktif!",
     Duration = 5
 })

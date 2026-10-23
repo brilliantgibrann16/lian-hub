@@ -1075,25 +1075,63 @@ local function markServerVisited(jobId)
     end)
 end
 
+local isHopping = false
+
 local function smartHop()
+    if isHopping then return false end
+    isHopping = true
     setupAutoExecuteOnTeleport()
     markServerVisited(game.JobId)
     local visited = getVisitedServers()
-    local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Desc&limit=100"
-    local ok, res = pcall(function() return HttpService:JSONDecode(game:HttpGet(url)) end)
-    if ok and res and res.data then
-        for _, s in ipairs(res.data) do
-            if s.id ~= game.JobId and not visited[s.id] and s.playing < s.maxPlayers and s.playing > 1 then
-                Rayfield:Notify({ Title = "Teleporting...", Content = "Pindah ke server baru: " .. s.id:sub(1,8), Duration = 3 })
-                task.wait(1)
-                TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer)
-                return true
+
+    local candidates = {}
+    local cursor = ""
+    -- Cari di 3 halaman public server dengan pemain sedikit (Ascending) agar tidak gagal/penuh
+    for page = 1, 3 do
+        local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100" .. (cursor ~= "" and ("&cursor=" .. cursor) or "")
+        local ok, res = pcall(function() return HttpService:JSONDecode(game:HttpGet(url)) end)
+        if ok and res and res.data then
+            for _, s in ipairs(res.data) do
+                if s.id ~= game.JobId and not visited[s.id] and s.playing < (s.maxPlayers - 1) and s.playing >= 1 then
+                    table.insert(candidates, s.id)
+                end
             end
+            if res.nextPageCursor and res.nextPageCursor ~= "" then
+                cursor = res.nextPageCursor
+            else
+                break
+            end
+        else
+            break
         end
     end
-    TeleportService:Teleport(game.PlaceId, LocalPlayer)
+
+    if #candidates > 0 then
+        -- Acak dari kandidat server baru yang belum pernah dikunjungi
+        local chosenId = candidates[math.random(1, #candidates)]
+        markServerVisited(chosenId)
+        local okTp = pcall(function()
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, chosenId, LocalPlayer)
+        end)
+        if okTp then return true end
+    end
+
+    -- Jika seluruh server di list sudah pernah dikunjungi, reset riwayat lama
+    pcall(function()
+        if delfile then delfile(VISITED_FILE) end
+    end)
+    task.wait(2)
+    isHopping = false
     return false
 end
+
+-- Auto retry jika teleport terputus/gagal
+TeleportService.TeleportInitFailed:Connect(function(player, teleportResult, errorMessage)
+    if player == LocalPlayer and _G.LianConfig.ServerLuckHop then
+        task.wait(1)
+        smartHop()
+    end
+end)
 
 ServerTab:CreateToggle({
     Name = "Auto Hop Cari Server Event (Luck / Clover / Haunted)",
@@ -1107,12 +1145,13 @@ ServerTab:CreateToggle({
                     local weather = (DC and DC.Weather and DC.Weather()) or ""
                     local isEvent = weather:find("Luck") or weather:find("Clover") or weather:find("Haunted") or weather:find("Golden")
                     if not isEvent then
-                        Rayfield:Notify({ Title = "Server Bukan Event!", Content = "Cuaca: " .. tostring(weather) .. ". Pindah server dalam 2s...", Duration = 3 })
-                        task.wait(2)
+                        -- Mode senyap: jangan spam notifikasi saat hopping
+                        task.wait(1)
                         smartHop()
                         break
                     else
-                        Rayfield:Notify({ Title = "🎉 Event Ditemukan!", Content = "Cuaca Event: " .. tostring(weather) .. "! Farming di server ini.", Duration = 6 })
+                        -- HANYA notifikasi jika event ditemukan!
+                        Rayfield:Notify({ Title = "🎉 Event Ditemukan!", Content = "Cuaca: " .. tostring(weather) .. "! Mulai auto-farm di sini.", Duration = 6 })
                     end
                     task.wait(30)
                 end
@@ -1220,20 +1259,26 @@ task.spawn(function()
         applyPotatoMode(true)
     end
 
-    -- Auto check server luck if enabled in saved config
+    -- Auto check server luck if enabled in saved config (Mode Senyap)
     if _G.LianConfig.ServerLuckHop then
         local weather = (DC and DC.Weather and DC.Weather()) or ""
         local isEvent = weather:find("Luck") or weather:find("Clover") or weather:find("Haunted") or weather:find("Golden")
         if not isEvent then
-            Rayfield:Notify({ Title = "Server Bukan Event!", Content = "Mencari server Luck berikutnya...", Duration = 3 })
-            task.wait(2)
+            task.wait(1)
             smartHop()
+        else
+            Rayfield:Notify({
+                Title = "🎉 Event Ditemukan!",
+                Content = "Cuaca Event: " .. tostring(weather) .. "! Mulai auto-farm di sini.",
+                Duration = 6
+            })
         end
+    else
+        -- HANYA munculkan notifikasi Lian Hub Loaded jika BUKAN sedang dalam loop Server Hop!
+        Rayfield:Notify({
+            Title = "Lian Hub Loaded!",
+            Content = "Semua konfigurasi tersimpan aktif tanpa notifikasi spam!",
+            Duration = 4
+        })
     end
 end)
-
-Rayfield:Notify({
-    Title = "Lian Hub v4.2 Loaded!",
-    Content = "Semua fitur pintar & sistem Toggle aktif!",
-    Duration = 5
-})

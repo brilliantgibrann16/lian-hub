@@ -83,6 +83,8 @@ _G.LianConfig = {
     AutoCandyShop = false,
     CandyShopItem = "Pumpkin Egg",
     AutoTower = false,
+    SmartTowerAI = false,
+    TowerPreference = "Halloween First",
     TowerType = "The Abyss",
     AutoCollectCash = false,
     AutoLevelUpSlots = false,
@@ -99,6 +101,10 @@ _G.LianConfig = {
     AutoEquipBestOnRoll = false,
     AutoBuyBestDice = false,
     AutoFuseUnits = false,
+    AutoSellWorstUnits = false,
+    AutoSellCommon = true,
+    AutoSellRare = true,
+    AutoSellEpic = false,
     AutoQuirk = false,
     QuirkTarget = "Prodigy",
     ServerLuckHop = false,
@@ -624,9 +630,94 @@ HalloweenTab:CreateButton({
 })
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 4: TOWERS (NORMAL & EVENT ROTATION + FLOOR CLEAR)
+-- TAB 4: TOWERS (SMART ADAPTIVE AI & EVENT ROTATION)
 -- ═════════════════════════════════════════════════════════════════════
-TowerTab:CreateSection("🏰 Tower Attack Engine")
+TowerTab:CreateSection("🧠 Smart Tower Matcher AI (Kekuatan Unit vs Tower)")
+
+local HALLOWEEN_TOWERS = {
+    { name = "The Abyss", minDmg = 500000 },
+    { name = "Bell Tower", minDmg = 200000 },
+    { name = "Attic", minDmg = 80000 },
+    { name = "Crypt", minDmg = 30000 },
+    { name = "Foyer", minDmg = 10000 },
+    { name = "Front Yard", minDmg = 0 }
+}
+
+local NORMAL_TOWERS = {
+    { name = "Shadow Tower", minDmg = 1000000 },
+    { name = "Slayer Tower", minDmg = 400000 },
+    { name = "Hidden Leaf Tower", minDmg = 150000 },
+    { name = "Pirate Tower", minDmg = 50000 },
+    { name = "Cursed Tower", minDmg = 15000 },
+    { name = "Dragon Tower", minDmg = 0 }
+}
+
+local function getEstimatedPlayerDamage()
+    local dmg = 100
+    if DC and DC.Damage then
+        pcall(function() dmg = DC.Damage() end)
+    end
+    if DC and DC.RebirthStats then
+        pcall(function()
+            local rStats = DC.RebirthStats()
+            if rStats and rStats.Damage then
+                dmg = dmg * (1 + (rStats.Damage * 0.25))
+            end
+        end)
+    end
+    return dmg
+end
+
+local function getSmartTowerChoice()
+    local playerDmg = getEstimatedPlayerDamage()
+    local isHalloween = (Workspace:FindFirstChild("Halloween") ~= nil)
+
+    if isHalloween and _G.LianConfig.TowerPreference ~= "Normal Only" then
+        for _, t in ipairs(HALLOWEEN_TOWERS) do
+            if playerDmg >= t.minDmg then return t.name end
+        end
+        return "Front Yard"
+    else
+        for _, t in ipairs(NORMAL_TOWERS) do
+            if playerDmg >= t.minDmg then return t.name end
+        end
+        return "Dragon Tower"
+    end
+end
+
+TowerTab:CreateToggle({
+    Name = "Smart Tower AI (Hitung Kekuatan Unit & Serang Tower Terkuat)",
+    CurrentValue = _G.LianConfig.SmartTowerAI,
+    Callback = function(Value)
+        _G.LianConfig.SmartTowerAI = Value
+        saveConfig()
+        if Value then
+            task.spawn(function()
+                while _G.LianConfig.SmartTowerAI do
+                    safe(function()
+                        NET.Towers.RE.EquipBestTowerTeam:FireServer()
+                        NET.Towers.RE.SetAutoTower:FireServer(true)
+                        local bestTower = getSmartTowerChoice()
+                        NET.Towers.RF.PlayTower:InvokeServer(bestTower)
+                        task.wait(1)
+                        for floor = 1, 50 do
+                            if not _G.LianConfig.SmartTowerAI then break end
+                            local ok = pcall(function() return NET.Towers.RF.CompleteTowerFloor:InvokeServer() end)
+                            if not ok then break end
+                            task.wait(0.3)
+                        end
+                    end)
+                    task.wait(4)
+                end
+                safe(function() NET.Towers.RE.SetAutoTower:FireServer(false) end)
+            end)
+        else
+            safe(function() NET.Towers.RE.SetAutoTower:FireServer(false) end)
+        end
+    end,
+})
+
+TowerTab:CreateSection("🏰 Manual Tower Target")
 
 local TOWER_OPTIONS = {
     "The Abyss", "Bell Tower", "Attic", "Crypt", "Foyer", "Front Yard",
@@ -644,7 +735,7 @@ TowerTab:CreateDropdown({
 })
 
 TowerTab:CreateToggle({
-    Name = "Auto Attack & Clear Tower (Equip Best Team + Floor Spam)",
+    Name = "Auto Attack Manual Tower (Equip Best Team + Floor Spam)",
     CurrentValue = _G.LianConfig.AutoTower,
     Callback = function(Value)
         _G.LianConfig.AutoTower = Value
@@ -976,6 +1067,62 @@ UpgradesTab:CreateToggle({
             end)
         end
     end,
+})
+
+UpgradesTab:CreateSection("🗑️ Auto Sell Worst Units (Pembersih Tas & Plot)")
+
+UpgradesTab:CreateToggle({
+    Name = "Auto Sell Worst Units (Equip Best, Lalu Jual Sampah)",
+    CurrentValue = _G.LianConfig.AutoSellWorstUnits,
+    Callback = function(Value)
+        _G.LianConfig.AutoSellWorstUnits = Value
+        saveConfig()
+        if Value then
+            task.spawn(function()
+                while _G.LianConfig.AutoSellWorstUnits do
+                    safe(function()
+                        -- 1. Pastikan unit terbaik terpasang di plot dan tower
+                        NET.PlotService.RE.EquipBest:FireServer()
+                        NET.UnitService.RF.Equip:InvokeServer("Best")
+                        task.wait(0.5)
+
+                        -- 2. Update filter Auto Sell bawaan game
+                        local toSell = {}
+                        if _G.LianConfig.AutoSellCommon then table.insert(toSell, "Common") end
+                        if _G.LianConfig.AutoSellRare then table.insert(toSell, "Rare") end
+                        if _G.LianConfig.AutoSellEpic then table.insert(toSell, "Epic") end
+                        if #toSell > 0 and NET:FindFirstChild("SellService") and NET.SellService:FindFirstChild("RE") and NET.SellService.RE:FindFirstChild("UpdateAutoSell") then
+                            NET.SellService.RE.UpdateAutoSell:FireServer(toSell)
+                        end
+
+                        -- 3. Jual unequipped units di inventory
+                        if NET:FindFirstChild("SellService") and NET.SellService:FindFirstChild("RF") and NET.SellService.RF:FindFirstChild("SellInventory") then
+                            NET.SellService.RF.SellInventory:InvokeServer()
+                        end
+                    end)
+                    task.wait(8)
+                end
+            end)
+        end
+    end,
+})
+
+UpgradesTab:CreateToggle({
+    Name = "Filter Jual: Common",
+    CurrentValue = _G.LianConfig.AutoSellCommon,
+    Callback = function(v) _G.LianConfig.AutoSellCommon = v; saveConfig() end
+})
+
+UpgradesTab:CreateToggle({
+    Name = "Filter Jual: Rare",
+    CurrentValue = _G.LianConfig.AutoSellRare,
+    Callback = function(v) _G.LianConfig.AutoSellRare = v; saveConfig() end
+})
+
+UpgradesTab:CreateToggle({
+    Name = "Filter Jual: Epic",
+    CurrentValue = _G.LianConfig.AutoSellEpic,
+    Callback = function(v) _G.LianConfig.AutoSellEpic = v; saveConfig() end
 })
 
 UpgradesTab:CreateSection("🎲 Auto Buy Best Dice")

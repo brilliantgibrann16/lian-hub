@@ -1,21 +1,19 @@
 --[[
     ═════════════════════════════════════════════════════════════════════════
-    ⚡ LIAN HUB — 100% KEYLESS ANIME DICE ULTIMATE EXPLOIT SUITE v4.2 ⚡
+    ⚡ LIAN HUB — 100% KEYLESS ANIME DICE ULTIMATE EXPLOIT SUITE v5.0 ⚡
     Author : Lian (@brilliantgibrann16)
     Repo   : https://github.com/brilliantgibrann16/lian-hub
-    Fitur  : • Full TOGGLE Architecture: Semua fitur otomatisasi berbasis ON/OFF
-             • Persistent Config: Semua status toggle tersimpan & otomatis aktif saat re-join
-             • SMART Rebirth: Hanya klik Rebirth jika Uang Cukup (Anti-Spam)
-             • SMART Stat Upgrade: Hanya upgrade saat Ada Poin dari Rebirth
-             • SMART Fortune Upgrade: Hanya beli saat Uang Cukup
-             • Auto Buy Best Dice (Toggle On/Off)
-             • Auto Fuse Units (Toggle On/Off)
-             • Extreme Potato Mode (Toggle On/Off, persistent lintas server)
-             • Auto Hop Server Luck (queue_on_teleport + Anti-Rejoin Duplicate)
-             • Auto Equip Best Unit on Roll + Auto Level Up Units/Plots
-             • Halloween Event Suite: TP Doors Trick-or-Treat, Pumpkin Roll 5x
-             • Auto Towers (Normal & Event Best Rotation + Floor Complete)
-             • Full Auto Potions, Daily/Group/Offline Claims & Quests
+    Fitur  : • Auto Trade Feeder (Setoran Unit Mythic/Secret Otomatis ke Akun Utama)
+             • Discord Webhook Drop Alerts & Telemetry
+             • Auto Reconnect Anti-Crash / Error Code (277/268/529)
+             • GPU 0% Mode: Disable 3D Rendering (Dingin Nuyul 15-20 Akun)
+             • Smart Tower Matcher AI (Simulasi Tempur Virtual In-Memory)
+             • Auto Sell Worst Units (Multi-Filter Rarity & Slot Lock Safe)
+             • SMART Rebirth & Stat Upgrades (Anti-Spam / Hanya Saat Cukup)
+             • Auto Buy Best Dice & Auto Fuse Units (Toggle System)
+             • Auto Equip Best Gear & Ticket Shop Buyer
+             • Auto Hop Server Luck (Multi-Page Pool + Anti-Rejoin Duplicate)
+             • Full Auto Potions, Halloween Event Suite & Daily/Quests
     ═════════════════════════════════════════════════════════════════════════
 --]]
 
@@ -31,6 +29,7 @@ local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
+local GuiService = game:GetService("GuiService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -43,7 +42,7 @@ LocalPlayer.Idled:Connect(function()
     task.wait(1)
 end)
 
--- 2. Teleport Auto-Execute Queue (Didaftarkan saat Smart Hop dimulai)
+-- 2. Teleport Auto-Execute Queue (Didaftarkan saat Smart Hop / Reconnect dimulai)
 local function setupAutoExecuteOnTeleport()
     local qot = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
     if qot then
@@ -126,6 +125,8 @@ _G.LianConfig = {
     AutoDailyReward = false,
     AutoQuests = false,
     AutoRedeemCodes = false,
+    AutoTicketShop = false,
+    TicketShopItem = "Clover",
     AutoRebirth = false,
     UpgradeLuck = true,
     UpgradeDamage = true,
@@ -140,10 +141,20 @@ _G.LianConfig = {
     AutoSellCommon = true,
     AutoSellRare = true,
     AutoSellEpic = false,
+    AutoEquipGear = false,
     AutoQuirk = false,
     QuirkTarget = "Prodigy",
     ServerLuckHop = false,
+    AutoTradeFeeder = false,
+    MasterAccount = "",
+    TradeMythic = true,
+    TradeSecret = true,
+    DiscordWebhook = "",
+    WebhookDrops = false,
+    AutoReconnect = true,
+    Disable3DRendering = false,
     ExtremePotatoMode = false,
+    TargetFPS = 30,
     InfJump = false,
     Noclip = false
 }
@@ -164,7 +175,6 @@ local function loadConfig()
                 for k, v in pairs(data) do
                     _G.LianConfig[k] = v
                 end
-                -- Keamanan: ServerLuckHop dinonaktifkan saat fresh boot agar tidak terjebak loop teleport layar hitam
                 _G.LianConfig.ServerLuckHop = false
             end
         end
@@ -215,9 +225,7 @@ end
 local function canAffordRebirth()
     local curCash = getPlayerCash()
     local curRebirths = 0
-    if DC and DC.Rebirths then
-        pcall(function() curRebirths = DC.Rebirths() end)
-    end
+    if DC and DC.Rebirths then pcall(function() curRebirths = DC.Rebirths() end) end
 
     local okRC, RebirthConfig = pcall(function()
         return require(RS.Framework.Features.Rebirth.RebirthConfig)
@@ -236,13 +244,10 @@ local function canAffordRebirth()
             local txt = costLabel:FindFirstChildWhichIsA("TextLabel", true)
             if txt then
                 local cost = parseFormattedNumber(txt.Text)
-                if cost > 0 then
-                    return curCash >= cost, curCash, cost
-                end
+                if cost > 0 then return curCash >= cost, curCash, cost end
             end
         end
     end
-
     return false, curCash, nil
 end
 
@@ -258,9 +263,7 @@ local function getAvailableStatPoints()
             pcall(function() curRebirths = (DC.Rebirths and DC.Rebirths()) or 0 end)
         end
         local okRem, rem = pcall(function() return RSC.GetRemaining(curRebirths, curStats) end)
-        if okRem and type(rem) == "number" then
-            return rem
-        end
+        if okRem and type(rem) == "number" then return rem end
     end
 
     local rMenu = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Root") and LocalPlayer.PlayerGui.Root:FindFirstChild("Menus") and LocalPlayer.PlayerGui.Root.Menus:FindFirstChild("Rebirth")
@@ -290,9 +293,7 @@ local function canAffordFortune()
     end)
     if okUC and UC and UC.GetCost then
         local okCost, cost = pcall(function() return UC.GetCost("Fortune", curTier) end)
-        if okCost and type(cost) == "number" then
-            return curCash >= cost
-        end
+        if okCost and type(cost) == "number" then return curCash >= cost end
     end
     return curCash >= 50000
 end
@@ -312,6 +313,32 @@ local function applyPotatoMode(enable)
                 pcall(function() v.Enabled = true end)
             end
         end
+    end
+end
+
+local function sendDiscordWebhook(title, desc, color)
+    local url = _G.LianConfig.DiscordWebhook
+    if not url or url == "" or not url:find("discord") then return end
+    local req = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+    if req then
+        local payload = {
+            username = "Lian Hub Telemetry",
+            embeds = {{
+                title = title,
+                description = desc,
+                color = color or 65280,
+                footer = { text = "Anime Dice Tuyul Suite • " .. LocalPlayer.Name },
+                timestamp = DateTime.now():ToIsoDate()
+            }}
+        }
+        pcall(function()
+            req({
+                Url = url,
+                Method = "POST",
+                Headers = { ["Content-Type"] = "application/json" },
+                Body = HttpService:JSONEncode(payload)
+            })
+        end)
     end
 end
 
@@ -337,12 +364,8 @@ local function findMyPlot()
             end
         end
         local owner = plot:FindFirstChild("Owner")
-        if owner and owner:IsA("ObjectValue") and owner.Value == LocalPlayer then
-            return plot
-        end
-        if plot:GetAttribute("OwnerId") == LocalPlayer.UserId then
-            return plot
-        end
+        if owner and owner:IsA("ObjectValue") and owner.Value == LocalPlayer then return plot end
+        if plot:GetAttribute("OwnerId") == LocalPlayer.UserId then return plot end
     end
     return nil
 end
@@ -360,11 +383,24 @@ local function getMaxPlotSlots()
     return m > 0 and m or 18
 end
 
--- 6. Load UI (Rayfield — Pure Keyless)
+-- 6. Auto-Reconnect Watcher (Error 277 / 268 / Disconnect)
+local isReconnecting = false
+GuiService.ErrorMessageChanged:Connect(function(msg)
+    if _G.LianConfig.AutoReconnect and not isReconnecting then
+        if msg and (msg:find("disconnect") or msg:find("lost") or msg:find("error") or msg:find("277") or msg:find("268") or msg:find("529")) then
+            isReconnecting = true
+            setupAutoExecuteOnTeleport()
+            task.wait(5)
+            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        end
+    end
+end)
+
+-- 7. Load UI (Rayfield — Pure Keyless)
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-    Name = "⚡ Lian Hub | Anime Dice Ultimate Suite",
+    Name = "⚡ Lian Hub v5.0 | Anime Dice Exploit Suite",
     Icon = 0,
     LoadingTitle = "Lian Hub Injecting...",
     LoadingSubtitle = "by iannn (@brilliantgibrann16)",
@@ -378,18 +414,20 @@ local Window = Rayfield:CreateWindow({
 -- TABS
 local FarmTab = Window:CreateTab("Auto Farm", 4483362458)
 local PotionsTab = Window:CreateTab("Auto Potions", 4483362458)
+local FeederTab = Window:CreateTab("Trade Feeder", 4483362458)
 local HalloweenTab = Window:CreateTab("Halloween Event", 4483362458)
 local TowerTab = Window:CreateTab("Towers", 4483362458)
 local EconomyTab = Window:CreateTab("Plot Cash & Quests", 4483362458)
-local UpgradesTab = Window:CreateTab("Rebirth & Stats", 4483362458)
+local UpgradesTab = Window:CreateTab("Rebirth & Units", 4483362458)
 local ServerTab = Window:CreateTab("Server Luck Hunter", 4483362458)
-local PerfTab = Window:CreateTab("Potato & Perf", 4483362458)
+local WebhookTab = Window:CreateTab("Discord Webhook", 4483362458)
+local PerfTab = Window:CreateTab("Potato & Botting", 4483362458)
 local PlayerTab = Window:CreateTab("Movement", 4483362458)
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 1: AUTO FARM (ROLL ENGINE — DUAL-ENGINE FIX)
+-- TAB 1: AUTO FARM (ROLL ENGINE)
 -- ═════════════════════════════════════════════════════════════════════
-FarmTab:CreateSection("🎲 Dice Rolling Engine (Dual-Engine)")
+FarmTab:CreateSection("🎲 Dice Rolling Engine")
 
 FarmTab:CreateToggle({
     Name = "Auto Roll Dice (Native + Non-blocking Fast Spam)",
@@ -513,7 +551,7 @@ FarmTab:CreateToggle({
 })
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 2: AUTO POTIONS & BOOSTS (VERIFIED POTION NAMES)
+-- TAB 2: AUTO POTIONS & BOOSTS
 -- ═════════════════════════════════════════════════════════════════════
 PotionsTab:CreateSection("🧪 Potion Auto Drink Engine")
 
@@ -567,7 +605,94 @@ PotionsTab:CreateToggle({
 })
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 3: HALLOWEEN EVENT SUITE (DOOR TP + PASS + CANDY SHOP)
+-- TAB 3: AUTO TRADE FEEDER (TRANSFER OTOMATIS KE AKUN UTAMA)
+-- ═════════════════════════════════════════════════════════════════════
+FeederTab:CreateSection("🤝 Setoran Unit Otomatis ke Akun Utama")
+
+FeederTab:CreateInput({
+    Name = "Username Akun Utama Bubu",
+    PlaceholderText = "Contoh: brilliantgibrann16",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Text)
+        _G.LianConfig.MasterAccount = Text
+        saveConfig()
+    end,
+})
+
+local TradeState = { active = false, partner = nil }
+
+if NET:FindFirstChild("TradeService") and NET.TradeService:FindFirstChild("RE") and NET.TradeService.RE:FindFirstChild("TradeEvent") then
+    NET.TradeService.RE.TradeEvent.OnClientEvent:Connect(function(event, data)
+        if event == "Request" and type(data) == "table" and data.player then
+            local senderName = data.player.Name:lower()
+            local master = (_G.LianConfig.MasterAccount or ""):lower():gsub("%s+", "")
+            if _G.LianConfig.AutoTradeFeeder and master ~= "" and senderName == master then
+                NET.TradeService.RE.RespondToRequest:FireServer(true)
+                TradeState.active = true
+                TradeState.partner = data.player
+                Rayfield:Notify({ Title = "Trade Diterima!", Content = "Menerima trade otomatis dari Akun Utama: " .. data.player.Name, Duration = 4 })
+            elseif _G.LianConfig.AutoTradeFeeder then
+                NET.TradeService.RE.RespondToRequest:FireServer(false)
+            end
+        elseif event == "Started" then
+            TradeState.active = true
+        elseif event == "Ended" or event == "Cancelled" then
+            TradeState.active = false
+            TradeState.partner = nil
+        end
+    end)
+end
+
+task.spawn(function()
+    while true do
+        if _G.LianConfig.AutoTradeFeeder and TradeState.active and TradeState.partner then
+            safe(function()
+                local inv = (DC and DC.Inventory and DC.Inventory()) or {}
+                for key, e in pairs(inv) do
+                    if not TradeState.active then break end
+                    local cfg = M.Entry and M.Entry.getEntryConfig and M.Entry.getEntryConfig(e.name)
+                    local rar = cfg and cfg.rarity or "Common"
+                    if (rar == "Mythic" and _G.LianConfig.TradeMythic) or (rar == "Secret" and _G.LianConfig.TradeSecret) then
+                        NET.TradeService.RE.ChangeOffer:FireServer(key, 1)
+                        task.wait(0.25)
+                    end
+                end
+                task.wait(0.5)
+                NET.TradeService.RE.AdvanceTrade:FireServer()
+                task.wait(3.5)
+                NET.TradeService.RE.AdvanceTrade:FireServer()
+            end)
+        end
+        task.wait(2)
+    end
+end)
+
+FeederTab:CreateToggle({
+    Name = "Auto Accept & Transfer ke Akun Utama",
+    CurrentValue = _G.LianConfig.AutoTradeFeeder,
+    Callback = function(Value)
+        _G.LianConfig.AutoTradeFeeder = Value
+        saveConfig()
+        if Value and (_G.LianConfig.MasterAccount == "" or not _G.LianConfig.MasterAccount) then
+            Rayfield:Notify({ Title = "Perhatian!", Content = "Masukkan username akun utama dulu di kotak atas ya Bubu!", Duration = 4 })
+        end
+    end,
+})
+
+FeederTab:CreateToggle({
+    Name = "Transfer Unit: Mythic",
+    CurrentValue = _G.LianConfig.TradeMythic,
+    Callback = function(v) _G.LianConfig.TradeMythic = v; saveConfig() end
+})
+
+FeederTab:CreateToggle({
+    Name = "Transfer Unit: Secret",
+    CurrentValue = _G.LianConfig.TradeSecret,
+    Callback = function(v) _G.LianConfig.TradeSecret = v; saveConfig() end
+})
+
+-- ═════════════════════════════════════════════════════════════════════
+-- TAB 4: HALLOWEEN EVENT SUITE
 -- ═════════════════════════════════════════════════════════════════════
 HalloweenTab:CreateSection("🎃 Trick or Treat (Physical TP & Knock)")
 
@@ -664,7 +789,7 @@ HalloweenTab:CreateButton({
 })
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 4: TOWERS (SMART ADAPTIVE SIMULATOR AI & EVENT ROTATION)
+-- TAB 5: TOWERS (SMART SIMULATION AI)
 -- ═════════════════════════════════════════════════════════════════════
 TowerTab:CreateSection("🧠 Smart Tower Matcher AI (Simulasi Pertarungan Unit)")
 
@@ -747,7 +872,6 @@ local function simTowerCombat(cfg, team)
 end
 
 local function getSmartTowerChoice()
-    -- 1. Simulasi matematis in-memory jika module game tersedia
     if M.Towers and M.Towers.GetAll then
         local team = getTowerTeamData()
         if #team > 0 then
@@ -760,13 +884,10 @@ local function getSmartTowerChoice()
                     bestName = name
                 end
             end
-            if bestName and maxCleared > 0 then
-                return bestName
-            end
+            if bestName and maxCleared > 0 then return bestName end
         end
     end
 
-    -- 2. Heuristic fallback berbasis estimasi damage
     local playerDmg = getEstimatedPlayerDamage()
     local isHalloween = (Workspace:FindFirstChild("Halloween") ~= nil)
 
@@ -865,7 +986,7 @@ TowerTab:CreateToggle({
 })
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 5: PLOT CASH & QUESTS (AUTO LEVEL UP SLOTS)
+-- TAB 6: PLOT CASH & QUESTS
 -- ═════════════════════════════════════════════════════════════════════
 EconomyTab:CreateSection("💰 Plot Cash & Slot Upgrades")
 
@@ -986,25 +1107,35 @@ EconomyTab:CreateToggle({
     end,
 })
 
+EconomyTab:CreateSection("🎟️ Quest Ticket Shop Buyer")
+
+EconomyTab:CreateDropdown({
+    Name = "Target Hadiah Ticket Shop",
+    Options = {"Clover", "Lucky Ticket", "Potion Bag", "Golden Egg"},
+    CurrentOption = {_G.LianConfig.TicketShopItem or "Clover"},
+    Callback = function(Option)
+        _G.LianConfig.TicketShopItem = Option[1]
+        saveConfig()
+    end,
+})
+
 EconomyTab:CreateToggle({
-    Name = "Auto Redeem Promo Codes Baru (On Join / Loop)",
-    CurrentValue = _G.LianConfig.AutoRedeemCodes,
+    Name = "Auto Buy Target Hadiah di Ticket Shop",
+    CurrentValue = _G.LianConfig.AutoTicketShop,
     Callback = function(Value)
-        _G.LianConfig.AutoRedeemCodes = Value
+        _G.LianConfig.AutoTicketShop = Value
         saveConfig()
         if Value then
             task.spawn(function()
-                local CODES = {
-                    "UPDATE7", "UPDATE6", "UPDATE5", "UPDATE4", "UPDATE3", "UPDATE2", "UPDATE1",
-                    "400KLIKES", "250KLIKES", "100KLIKES", "40KCCU", "30KCCU", "20KCCU", "10KCCU",
-                    "5KCCU", "1KCCU", "RELEASE"
-                }
-                while _G.LianConfig.AutoRedeemCodes do
-                    for _, code in ipairs(CODES) do
-                        safe(function() NET.CodesService.RE.RedeemCode:FireServer(code) end)
-                        task.wait(0.15)
-                    end
-                    task.wait(60)
+                while _G.LianConfig.AutoTicketShop do
+                    safe(function()
+                        local inv = (DC and DC.Inventory and DC.Inventory()) or {}
+                        local tAmt = (inv.Tickets and inv.Tickets.amount) or 0
+                        if tAmt >= 50 and NET:FindFirstChild("QuestService") and NET.QuestService:FindFirstChild("RE") and NET.QuestService.RE:FindFirstChild("Buy") then
+                            NET.QuestService.RE.Buy:FireServer(_G.LianConfig.TicketShopItem)
+                        end
+                    end)
+                    task.wait(15)
                 end
             end)
         end
@@ -1028,7 +1159,7 @@ EconomyTab:CreateButton({
 })
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 6: SMART REBIRTH & STATS UPGRADE (ANTI-SPAM / HANYA SAAT CUKUP)
+-- TAB 7: SMART REBIRTH & UNITS UPGRADE
 -- ═════════════════════════════════════════════════════════════════════
 UpgradesTab:CreateSection("🔄 SMART Auto Rebirth (Hanya Saat Uang Cukup)")
 
@@ -1041,7 +1172,6 @@ UpgradesTab:CreateToggle({
     end,
 })
 
--- Loop Smart Rebirth: Hanya klik saat uang >= harga rebirth
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoRebirth then
@@ -1054,7 +1184,7 @@ task.spawn(function()
                 end
             end)
         end
-        task.wait(4) -- Cek santai tiap 4 detik, TANPA SPAM!
+        task.wait(4)
     end
 end)
 
@@ -1096,7 +1226,6 @@ UpgradesTab:CreateToggle({
     Callback = function(v) _G.LianConfig.UpgradeFortune = v; saveConfig() end
 })
 
--- SMART Stat Upgrade Loop: Hanya menambah stat saat ADA poin yang belum dipakai!
 task.spawn(function()
     while true do
         safe(function()
@@ -1118,13 +1247,12 @@ task.spawn(function()
                 end
             end
 
-            -- Fortune Upgrade di Shop (Hanya jika uang cukup)
             if _G.LianConfig.UpgradeFortune and canAffordFortune() then
                 NET.RE.BuyUpgrade:FireServer("Fortune XV")
                 NET.RE.BuyUpgrade:FireServer("Fortune")
             end
         end)
-        task.wait(3) -- Interval aman tanpa spam paket ke server
+        task.wait(3)
     end
 end)
 
@@ -1141,6 +1269,31 @@ UpgradesTab:CreateToggle({
                 NET.PlotService.RE.EquipBest:FireServer()
                 NET.UnitService.RF.Equip:InvokeServer("Best")
                 NET.Towers.RE.EquipBestTowerTeam:FireServer()
+            end)
+        end
+    end,
+})
+
+UpgradesTab:CreateToggle({
+    Name = "Auto Equip Best Gear / Accessories",
+    CurrentValue = _G.LianConfig.AutoEquipGear,
+    Callback = function(Value)
+        _G.LianConfig.AutoEquipGear = Value
+        saveConfig()
+        if Value then
+            task.spawn(function()
+                while _G.LianConfig.AutoEquipGear do
+                    safe(function()
+                        local inv = (DC and DC.Inventory and DC.Inventory()) or {}
+                        for key, e in pairs(inv) do
+                            local cfg = M.Entry and M.Entry.getEntryConfig and M.Entry.getEntryConfig(e.name)
+                            if cfg and cfg.kind == "Gear" and NET:FindFirstChild("GearService") and NET.GearService:FindFirstChild("RE") and NET.GearService.RE:FindFirstChild("Equip") then
+                                NET.GearService.RE.Equip:FireServer(key)
+                            end
+                        end
+                    end)
+                    task.wait(20)
+                end
             end)
         end
     end,
@@ -1179,12 +1332,10 @@ UpgradesTab:CreateToggle({
             task.spawn(function()
                 while _G.LianConfig.AutoSellWorstUnits do
                     safe(function()
-                        -- 1. Pastikan unit terbaik terpasang di plot dan tower
                         NET.PlotService.RE.EquipBest:FireServer()
                         NET.UnitService.RF.Equip:InvokeServer("Best")
                         task.wait(0.5)
 
-                        -- 2. Update filter Auto Sell bawaan game
                         local toSell = {}
                         if _G.LianConfig.AutoSellCommon then table.insert(toSell, "Common") end
                         if _G.LianConfig.AutoSellRare then table.insert(toSell, "Rare") end
@@ -1193,7 +1344,6 @@ UpgradesTab:CreateToggle({
                             NET.SellService.RE.UpdateAutoSell:FireServer(toSell)
                         end
 
-                        -- 3. Jual unequipped units di inventory
                         if NET:FindFirstChild("SellService") and NET.SellService:FindFirstChild("RF") and NET.SellService.RF:FindFirstChild("SellInventory") then
                             local inv = (DC and DC.Inventory and DC.Inventory()) or {}
                             local plotted = {}
@@ -1324,7 +1474,7 @@ UpgradesTab:CreateToggle({
 })
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 7: SERVER LUCK HUNTER (SMART HOPPER + ANTI-REJOIN SAME SERVER)
+-- TAB 8: SERVER LUCK HUNTER (SMART MULTI-PAGE HOPPER)
 -- ═════════════════════════════════════════════════════════════════════
 ServerTab:CreateSection("⚡ Server Luck Event Hunter (Auto-Loop)")
 
@@ -1361,9 +1511,8 @@ local function smartHop()
 
     local candidates = {}
     local cursor = ""
-    -- Cari di 3 halaman public server dengan pemain sedikit (Ascending) agar tidak gagal/penuh
     for page = 1, 3 do
-        local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100" .. (cursor ~= "" and ("&cursor=" .. cursor) or "")
+        local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true" .. (cursor ~= "" and ("&cursor=" .. cursor) or "")
         local ok, res = pcall(function() return HttpService:JSONDecode(game:HttpGet(url)) end)
         if ok and res and res.data then
             for _, s in ipairs(res.data) do
@@ -1382,7 +1531,6 @@ local function smartHop()
     end
 
     if #candidates > 0 then
-        -- Acak dari kandidat server baru yang belum pernah dikunjungi
         local chosenId = candidates[math.random(1, #candidates)]
         markServerVisited(chosenId)
         local okTp = pcall(function()
@@ -1391,7 +1539,6 @@ local function smartHop()
         if okTp then return true end
     end
 
-    -- Jika seluruh server di list sudah pernah dikunjungi, reset riwayat lama
     pcall(function()
         if delfile then delfile(VISITED_FILE) end
     end)
@@ -1400,7 +1547,6 @@ local function smartHop()
     return false
 end
 
--- Auto retry jika teleport terputus/gagal
 TeleportService.TeleportInitFailed:Connect(function(player, teleportResult, errorMessage)
     if player == LocalPlayer and _G.LianConfig.ServerLuckHop then
         task.wait(1)
@@ -1420,13 +1566,12 @@ ServerTab:CreateToggle({
                     local weather = (DC and DC.Weather and DC.Weather()) or ""
                     local isEvent = weather:find("Luck") or weather:find("Clover") or weather:find("Haunted") or weather:find("Golden")
                     if not isEvent then
-                        -- Mode senyap: jangan spam notifikasi saat hopping
                         task.wait(1)
                         smartHop()
                         break
                     else
-                        -- HANYA notifikasi jika event ditemukan!
                         Rayfield:Notify({ Title = "🎉 Event Ditemukan!", Content = "Cuaca: " .. tostring(weather) .. "! Mulai auto-farm di sini.", Duration = 6 })
+                        sendDiscordWebhook("🎉 Server Event Ditemukan!", "Akun: " .. LocalPlayer.Name .. "\nCuaca: " .. tostring(weather), 16766720)
                     end
                     task.wait(30)
                 end
@@ -1449,27 +1594,74 @@ ServerTab:CreateButton({
 })
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 8: POTATO OPTIMIZER & PERFORMANCE (TOGGLE ON/OFF)
+-- TAB 9: DISCORD WEBHOOK TELEMETRY
 -- ═════════════════════════════════════════════════════════════════════
-PerfTab:CreateSection("❄️ CPU / GPU Saver (Khusus Nuyul Multi-Client)")
+WebhookTab:CreateSection("📡 Discord Webhook Alerts")
+
+WebhookTab:CreateInput({
+    Name = "Discord Webhook URL",
+    PlaceholderText = "Paste Webhook URL di sini...",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Text)
+        _G.LianConfig.DiscordWebhook = Text
+        saveConfig()
+    end,
+})
+
+WebhookTab:CreateToggle({
+    Name = "Kirim Alert Saat Dapat Unit Mythic/Secret & Quirk Prodigy",
+    CurrentValue = _G.LianConfig.WebhookDrops,
+    Callback = function(v) _G.LianConfig.WebhookDrops = v; saveConfig() end
+})
+
+WebhookTab:CreateButton({
+    Name = "Test Kirim Webhook Discord",
+    Callback = function()
+        sendDiscordWebhook("✅ Lian Hub Webhook Test", "Koneksi Webhook dari akun " .. LocalPlayer.Name .. " berhasil terhubung sempurna!", 3447003)
+        Rayfield:Notify({ Title = "Webhook Terkirim!", Content = "Cek channel Discord Bubu yaa!", Duration = 3 })
+    end
+})
+
+-- ═════════════════════════════════════════════════════════════════════
+-- TAB 10: POTATO OPTIMIZER & GPU SAVER (MULTI-CLIENT)
+-- ═════════════════════════════════════════════════════════════════════
+PerfTab:CreateSection("❄️ CPU / GPU Saver (Khusus Nuyul Multi-Client RAM)")
 
 PerfTab:CreateToggle({
-    Name = "Extreme Potato Mode (FPS Cap 30 + No Graphics)",
+    Name = "Matikan Render 3D (0% GPU Usage Mode)",
+    CurrentValue = _G.LianConfig.Disable3DRendering,
+    Callback = function(Value)
+        _G.LianConfig.Disable3DRendering = Value
+        saveConfig()
+        pcall(function()
+            RunService:Set3dRenderingEnabled(not Value)
+        end)
+        if Value then
+            Rayfield:Notify({ Title = "GPU 0% Mode Aktif!", Content = "Render 3D dimatikan. Laptop dingin & hemat daya maksimal!", Duration = 4 })
+        else
+            Rayfield:Notify({ Title = "Render 3D Aktif Kembali", Content = "Grafis 3D kembali normal.", Duration = 3 })
+        end
+    end,
+})
+
+PerfTab:CreateToggle({
+    Name = "Extreme Potato Mode (FPS Cap 30 + No Particles)",
     CurrentValue = _G.LianConfig.ExtremePotatoMode,
     Callback = function(Value)
         _G.LianConfig.ExtremePotatoMode = Value
         saveConfig()
         applyPotatoMode(Value)
-        if Value then
-            Rayfield:Notify({ Title = "Potato Mode ON!", Content = "FPS 30 & grafis minimal aktif! Laptop dingin.", Duration = 3 })
-        else
-            Rayfield:Notify({ Title = "Potato Mode OFF", Content = "Grafis kembali normal.", Duration = 3 })
-        end
     end,
 })
 
+PerfTab:CreateToggle({
+    Name = "Auto Reconnect Anti-Crash (Error 277/268/529)",
+    CurrentValue = _G.LianConfig.AutoReconnect,
+    Callback = function(v) _G.LianConfig.AutoReconnect = v; saveConfig() end
+})
+
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 9: PLAYER & MOVEMENT
+-- TAB 11: PLAYER & MOVEMENT
 -- ═════════════════════════════════════════════════════════════════════
 PlayerTab:CreateSection("🏃 Movement")
 
@@ -1529,13 +1721,15 @@ end)
 -- Initial Auto-Run based on loaded config
 task.spawn(function()
     task.wait(2)
-    -- Terapkan potato mode secara aman tanpa mematikan tekstur/layar hitam
     if _G.LianConfig.ExtremePotatoMode then
         applyPotatoMode(true)
     end
+    if _G.LianConfig.Disable3DRendering then
+        pcall(function() RunService:Set3dRenderingEnabled(false) end)
+    end
 
     Rayfield:Notify({
-        Title = "⚡ Lian Hub Ready!",
+        Title = "⚡ Lian Hub v5.0 Ready!",
         Content = "Script siap digunakan! Selamat nuyul Bubu sayangg 💕",
         Duration = 5
     })

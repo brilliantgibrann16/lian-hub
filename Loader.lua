@@ -3,7 +3,7 @@
     ⚡ LIAN HUB — 100% KEYLESS ANIME DICE NUYUL & AUTO FARM SUITE ⚡
     Author : Lian (@brilliantgibrann16)
     Repo   : https://github.com/brilliantgibrann16/lian-hub
-    Status : 100% KEYLESS • ZERO ADS • FULL NUYUL CLUSTER FEATURES
+    Status : VERIFIED WITH LIAN SPY DUMP • 100% WORKING REMOTES & UI CLICKER
     ═════════════════════════════════════════════════════════════════════════
 --]]
 
@@ -28,37 +28,43 @@ LocalPlayer.Idled:Connect(function()
     task.wait(1)
 end)
 
--- 2. Anime Dice Network & Data Controller Detection
+-- 2. Network & Framework References (Verified via Lian Spy)
 local NET = RS:WaitForChild("Network", 10)
 local okDC, DC = pcall(function()
     return require(RS.Framework.Features.Data.DataController)
 end)
 
 -- Helper Functions
-local function safeCall(fn, ...)
+local function safe(fn, ...)
     local ok, res = pcall(fn, ...)
     return ok, res
 end
 
-local function getRoot()
-    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    return char:FindFirstChild("HumanoidRootPart")
+local function clickBtn(btn)
+    if not btn or not btn:IsA("GuiButton") then return end
+    safe(function()
+        if firesignal then
+            firesignal(btn.MouseButton1Click)
+            firesignal(btn.Activated)
+        end
+    end)
 end
 
 -- Global State Flags
 _G.LianNuyul = {
     AutoRoll = false,
     FastRoll = false,
-    AutoCollectPlot = false,
+    AutoCollectCash = false,
+    AutoDailyReward = false,
     AutoQuests = false,
+    AutoPumpkinPass = false,
+    AutoSpin = false,
     AutoEquipBest = false,
     AutoQuirk = false,
-    QuirkTarget = "Prodigy", -- "Prodigy" atau "Fortune's Favor"
-    AutoSell = false,
+    QuirkTarget = "Prodigy",
     AutoTutorial = false,
     TargetRolls = 1000,
     LeaveOnTarget = false,
-    DiscordWebhook = "",
     PotatoMode = false,
     InfJump = false,
     Noclip = false
@@ -80,18 +86,19 @@ local Window = Rayfield:CreateWindow({
 })
 
 -- TABS
-local NuyulTab = Window:CreateTab("Nuyul Automation", 4483362458)
+local FarmTab = Window:CreateTab("Auto Farm", 4483362458)
+local RewardsTab = Window:CreateTab("Daily & Rewards", 4483362458)
+local QuestTab = Window:CreateTab("Quests & Plot", 4483362458)
 local QuirkTab = Window:CreateTab("Quirk Reroll", 4483362458)
-local EconomyTab = Window:CreateTab("Plot & Quest", 4483362458)
-local PerfTab = Window:CreateTab("Multi-Account Perf", 4483362458)
-local PlayerTab = Window:CreateTab("Movement & Misc", 4483362458)
+local PerfTab = Window:CreateTab("Potato & Perf", 4483362458)
+local PlayerTab = Window:CreateTab("Player & Move", 4483362458)
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 1: NUYUL AUTOMATION (DICE & TUTORIAL)
+-- TAB 1: AUTO FARM (ROLL & ONBOARDING)
 -- ═════════════════════════════════════════════════════════════════════
-NuyulTab:CreateSection("🎲 Auto Roll & Farm")
+FarmTab:CreateSection("🎲 Dice Rolling Engine")
 
-NuyulTab:CreateToggle({
+FarmTab:CreateToggle({
     Name = "Auto Roll Dice",
     CurrentValue = false,
     Flag = "ToggleAutoRoll",
@@ -100,7 +107,7 @@ NuyulTab:CreateToggle({
         if Value then
             task.spawn(function()
                 while _G.LianNuyul.AutoRoll do
-                    safeCall(function()
+                    safe(function()
                         if NET and NET:FindFirstChild("RollService") then
                             local RF_Roll = NET.RollService:FindFirstChild("RF") and NET.RollService.RF:FindFirstChild("RollDice")
                             if RF_Roll then
@@ -115,7 +122,7 @@ NuyulTab:CreateToggle({
                 end
             end)
         else
-            safeCall(function()
+            safe(function()
                 if NET and NET:FindFirstChild("RollService") then
                     local RE_Auto = NET.RollService:FindFirstChild("RE") and NET.RollService.RE:FindFirstChild("SetAutoRoll")
                     if RE_Auto then RE_Auto:FireServer(false) end
@@ -125,7 +132,7 @@ NuyulTab:CreateToggle({
     end,
 })
 
-NuyulTab:CreateToggle({
+FarmTab:CreateToggle({
     Name = "Fast Roll Mode (No Animation)",
     CurrentValue = false,
     Callback = function(Value)
@@ -133,7 +140,7 @@ NuyulTab:CreateToggle({
     end,
 })
 
-NuyulTab:CreateToggle({
+FarmTab:CreateToggle({
     Name = "Auto Skip / Complete Tutorial (Akun Baru)",
     CurrentValue = false,
     Callback = function(Value)
@@ -141,7 +148,7 @@ NuyulTab:CreateToggle({
         if Value then
             task.spawn(function()
                 while _G.LianNuyul.AutoTutorial do
-                    safeCall(function()
+                    safe(function()
                         local step = DC and DC.OnboardingStep and DC.OnboardingStep() or -1
                         if step < 14 and step >= 0 then
                             local RE_Advance = NET:FindFirstChild("OnboardingService") and NET.OnboardingService.RE:FindFirstChild("Advance")
@@ -155,9 +162,9 @@ NuyulTab:CreateToggle({
     end,
 })
 
-NuyulTab:CreateSection("🎯 Target Rolls & Auto Disconnect")
+FarmTab:CreateSection("🎯 Target Rolls & Disconnect (Nuyul)")
 
-NuyulTab:CreateInput({
+FarmTab:CreateInput({
     Name = "Target Rolls (Syarat Trade)",
     PlaceholderText = "Default: 1000",
     RemoveTextAfterFocusLost = false,
@@ -167,8 +174,8 @@ NuyulTab:CreateInput({
     end,
 })
 
-NuyulTab:CreateToggle({
-    Name = "Auto Disconnect Saat Target Tercapai",
+FarmTab:CreateToggle({
+    Name = "Auto Disconnect Saat Target Rolls Tercapai",
     CurrentValue = false,
     Callback = function(Value)
         _G.LianNuyul.LeaveOnTarget = Value
@@ -177,8 +184,8 @@ NuyulTab:CreateToggle({
                 while _G.LianNuyul.LeaveOnTarget do
                     local curRolls = (DC and DC.Rolls and DC.Rolls()) or 0
                     if curRolls >= _G.LianNuyul.TargetRolls then
-                        Rayfield:Notify({ Title = "Target Tercapai!", Content = "Rolls sudah " .. curRolls .. ". Disconnecting...", Duration = 5 })
-                        task.wait(2)
+                        Rayfield:Notify({ Title = "Target Tercapai!", Content = "Rolls sudah " .. curRolls .. ". Keluar game...", Duration = 4 })
+                        task.wait(1.5)
                         LocalPlayer:Kick("Lian Hub: Target " .. _G.LianNuyul.TargetRolls .. " Rolls Tercapai!")
                         break
                     end
@@ -190,12 +197,231 @@ NuyulTab:CreateToggle({
 })
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 2: QUIRK REROLL (LUCK & TRAIT HUNTER)
+-- TAB 2: DAILY REWARDS & FREE CLAIMS (VERIFIED)
+-- ═════════════════════════════════════════════════════════════════════
+RewardsTab:CreateSection("🎁 Daily & Free Claims")
+
+RewardsTab:CreateToggle({
+    Name = "Auto Claim Daily / Group / Offline Rewards",
+    CurrentValue = false,
+    Callback = function(Value)
+        _G.LianNuyul.AutoDailyReward = Value
+        if Value then
+            task.spawn(function()
+                while _G.LianNuyul.AutoDailyReward do
+                    -- 1. Remote Firing: Daily Reward (Hari 1-7)
+                    safe(function()
+                        if NET and NET:FindFirstChild("DailyRewardService") and NET.DailyRewardService.RE:FindFirstChild("Claim") then
+                            for day = 1, 7 do
+                                NET.DailyRewardService.RE.Claim:FireServer(day)
+                            end
+                            NET.DailyRewardService.RE.Claim:FireServer()
+                        end
+                    end)
+
+                    -- 2. Remote Firing: Group Reward & Offline Earnings
+                    safe(function()
+                        if NET:FindFirstChild("GroupRewardService") and NET.GroupRewardService.RE:FindFirstChild("Claim") then
+                            NET.GroupRewardService.RE.Claim:FireServer()
+                        end
+                        if NET:FindFirstChild("OfflineEarningsService") and NET.OfflineEarningsService.RE:FindFirstChild("Claim") then
+                            NET.OfflineEarningsService.RE.Claim:FireServer()
+                        end
+                    end)
+
+                    -- 3. UI Clicker Fallback (Klik tombol di PlayerGui langsung)
+                    safe(function()
+                        local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+                        if pGui and pGui:FindFirstChild("Root") and pGui.Root:FindFirstChild("Menus") then
+                            local menus = pGui.Root.Menus
+                            -- Group Reward Button
+                            if menus:FindFirstChild("GroupRewards") and menus.GroupRewards:FindFirstChild("Claim") then
+                                clickBtn(menus.GroupRewards.Claim)
+                            end
+                            -- Offline Reward Button
+                            if menus:FindFirstChild("OfflineRewards") and menus.OfflineRewards:FindFirstChild("Buttons") and menus.OfflineRewards.Buttons:FindFirstChild("Claim") then
+                                clickBtn(menus.OfflineRewards.Buttons.Claim)
+                            end
+                        end
+                    end)
+
+                    task.wait(15)
+                end
+            end)
+        end
+    end,
+})
+
+RewardsTab:CreateToggle({
+    Name = "Auto Claim Battle / Pumpkin Pass (Free + Claim All)",
+    CurrentValue = false,
+    Callback = function(Value)
+        _G.LianNuyul.AutoPumpkinPass = Value
+        if Value then
+            task.spawn(function()
+                while _G.LianNuyul.AutoPumpkinPass do
+                    -- Remote Firing
+                    safe(function()
+                        if NET and NET:FindFirstChild("HalloweenService") and NET.HalloweenService.RE:FindFirstChild("ClaimAllPath") then
+                            NET.HalloweenService.RE.ClaimAllPath:FireServer()
+                        end
+                    end)
+                    -- UI Clicker
+                    safe(function()
+                        local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+                        if pGui and pGui:FindFirstChild("Root") and pGui.Root:FindFirstChild("Menus") then
+                            local pass = pGui.Root.Menus:FindFirstChild("PumpkinPass")
+                            if pass and pass:FindFirstChild("Body") and pass.Body:FindFirstChild("Header") and pass.Body.Header:FindFirstChild("ClaimAll") then
+                                clickBtn(pass.Body.Header.ClaimAll)
+                            end
+                        end
+                    end)
+                    task.wait(20)
+                end
+            end)
+        end
+    end,
+})
+
+RewardsTab:CreateToggle({
+    Name = "Auto Use Free Spin Wheel",
+    CurrentValue = false,
+    Callback = function(Value)
+        _G.LianNuyul.AutoSpin = Value
+        if Value then
+            task.spawn(function()
+                while _G.LianNuyul.AutoSpin do
+                    safe(function()
+                        if NET and NET:FindFirstChild("SpinService") and NET.SpinService.RE:FindFirstChild("Use") then
+                            NET.SpinService.RE.Use:FireServer()
+                        end
+                    end)
+                    task.wait(30)
+                end
+            end)
+        end
+    end,
+})
+
+-- ═════════════════════════════════════════════════════════════════════
+-- TAB 3: QUESTS & PLOT CASH (100% FIXED)
+-- ═════════════════════════════════════════════════════════════════════
+QuestTab:CreateSection("💰 Plot Cash Collection")
+
+QuestTab:CreateToggle({
+    Name = "Auto Collect Cash (Semua Plot Slot 1-20)",
+    CurrentValue = false,
+    Callback = function(Value)
+        _G.LianNuyul.AutoCollectCash = Value
+        if Value then
+            task.spawn(function()
+                while _G.LianNuyul.AutoCollectCash do
+                    safe(function()
+                        if NET and NET:FindFirstChild("PlotService") and NET.PlotService.RE:FindFirstChild("CollectBalance") then
+                            -- Loop semua slot plot 1 sampai 20
+                            for slot = 1, 20 do
+                                NET.PlotService.RE.CollectBalance:FireServer(slot)
+                            end
+                            NET.PlotService.RE.CollectBalance:FireServer()
+                        end
+                    end)
+                    task.wait(1.5)
+                end
+            end)
+        end
+    end,
+})
+
+QuestTab:CreateButton({
+    Name = "Equip Best Unit (Plot + Towers)",
+    Callback = function()
+        safe(function()
+            if NET and NET:FindFirstChild("PlotService") and NET.PlotService.RE:FindFirstChild("EquipBest") then
+                NET.PlotService.RE.EquipBest:FireServer()
+            end
+            if NET and NET:FindFirstChild("UnitService") and NET.UnitService.RF:FindFirstChild("Equip") then
+                NET.UnitService.RF.Equip:InvokeServer("Best")
+            end
+            if NET and NET:FindFirstChild("Towers") and NET.Towers.RE:FindFirstChild("EquipBestTowerTeam") then
+                NET.Towers.RE.EquipBestTowerTeam:FireServer()
+            end
+        end)
+        Rayfield:Notify({ Title = "Lian Hub", Content = "Best Units & Team Equipped!", Duration = 3 })
+    end,
+})
+
+QuestTab:CreateSection("📜 Auto Quests (Dual-Engine: Remote + UI)")
+
+QuestTab:CreateToggle({
+    Name = "Auto Claim Quests (Daily, Weekly & Event)",
+    CurrentValue = false,
+    Callback = function(Value)
+        _G.LianNuyul.AutoQuests = Value
+        if Value then
+            task.spawn(function()
+                while _G.LianNuyul.AutoQuests do
+                    -- Engine 1: ClientComm / Remotes
+                    safe(function()
+                        local Network = require(RS.Packages.Network)
+                        local QuestConfig = require(RS.Framework.Features.Quests.QuestConfig)
+                        local questSignal = Network.ClientComm.new(RS.Network, false, "QuestService"):GetSignal("Claim")
+                        local now = math.floor(workspace:GetServerTimeNow())
+                        
+                        for _, period in ipairs({"Daily", "Weekly"}) do
+                            local ok, data = pcall(function() return DC.Quests[period]() end)
+                            if ok and data and data.progress and data.claimed then
+                                local periodConfig = QuestConfig.Periods[period]
+                                if periodConfig and periodConfig.quests then
+                                    for _, quest in ipairs(periodConfig.quests) do
+                                        local prog = data.progress[quest.id] or 0
+                                        if prog >= quest.target and not data.claimed[quest.id] then
+                                            questSignal:Fire(period, quest.id, data.expiresAt)
+                                            task.wait(0.2)
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end)
+
+                    -- Engine 2: Direct UI Claim Clicker (Klik semua tombol Claim di Quests Menu)
+                    safe(function()
+                        local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+                        if pGui and pGui:FindFirstChild("Root") and pGui.Root:FindFirstChild("Menus") then
+                            local qMenu = pGui.Root.Menus:FindFirstChild("Quests")
+                            if qMenu then
+                                for _, desc in ipairs(qMenu:GetDescendants()) do
+                                    if desc:IsA("GuiButton") and desc.Name == "Claim" then
+                                        clickBtn(desc)
+                                    end
+                                end
+                            end
+
+                            local hMenu = pGui.Root.Menus:FindFirstChild("HalloweenQuests")
+                            if hMenu then
+                                for _, desc in ipairs(hMenu:GetDescendants()) do
+                                    if desc:IsA("GuiButton") and desc.Name == "Claim" then
+                                        clickBtn(desc)
+                                    end
+                                end
+                            end
+                        end
+                    end)
+
+                    task.wait(10)
+                end
+            end)
+        end
+    end,
+})
+
+-- ═════════════════════════════════════════════════════════════════════
+-- TAB 4: QUIRK / TRAIT REROLL
 -- ═════════════════════════════════════════════════════════════════════
 QuirkTab:CreateSection("✨ Auto Quirk Rolling")
 
 QuirkTab:CreateDropdown({
-    Name = "Pilih Target Trait / Quirk",
+    Name = "Pilih Target Trait",
     Options = {"Prodigy (High Luck)", "Fortune's Favor (Super Luck)"},
     CurrentOption = {"Prodigy (High Luck)"},
     Callback = function(Option)
@@ -215,18 +441,14 @@ QuirkTab:CreateToggle({
         if Value then
             task.spawn(function()
                 while _G.LianNuyul.AutoQuirk do
-                    safeCall(function()
-                        if NET and NET:FindFirstChild("QuirkService") then
-                            local RE_Roll = NET.QuirkService:FindFirstChild("RE") and NET.QuirkService.RE:FindFirstChild("Roll")
-                            if RE_Roll then
-                                -- Cari unit key
-                                local okInv, inv = pcall(function() return DC.Inventory.Units() end)
-                                if okInv and inv then
-                                    for key, unit in pairs(inv) do
-                                        if unit.Quirk ~= _G.LianNuyul.QuirkTarget then
-                                            RE_Roll:FireServer(key)
-                                            break
-                                        end
+                    safe(function()
+                        if NET and NET:FindFirstChild("QuirkService") and NET.QuirkService.RE:FindFirstChild("Roll") then
+                            local okInv, inv = pcall(function() return DC.Inventory.Units() end)
+                            if okInv and inv then
+                                for key, unit in pairs(inv) do
+                                    if unit.Quirk ~= _G.LianNuyul.QuirkTarget then
+                                        NET.QuirkService.RE.Roll:FireServer(key)
+                                        break
                                     end
                                 end
                             end
@@ -240,98 +462,16 @@ QuirkTab:CreateToggle({
 })
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 3: PLOT ECONOMY & QUESTS
+-- TAB 5: POTATO OPTIMIZER (KHUSUS NUYUL MULTI-CLIENT)
 -- ═════════════════════════════════════════════════════════════════════
-EconomyTab:CreateSection("💰 Plot Money & Units")
-
-EconomyTab:CreateToggle({
-    Name = "Auto Collect Plot Balance",
-    CurrentValue = false,
-    Callback = function(Value)
-        _G.LianNuyul.AutoCollectPlot = Value
-        if Value then
-            task.spawn(function()
-                while _G.LianNuyul.AutoCollectPlot do
-                    safeCall(function()
-                        if NET and NET:FindFirstChild("PlotService") then
-                            local RE_Collect = NET.PlotService.RE:FindFirstChild("CollectBalance")
-                            if RE_Collect then RE_Collect:FireServer() end
-                        end
-                    end)
-                    task.wait(1.5)
-                end
-            end)
-        end
-    end,
-})
-
-EconomyTab:CreateButton({
-    Name = "Auto Equip Best Unit",
-    Callback = function()
-        safeCall(function()
-            if NET and NET:FindFirstChild("UnitService") then
-                local RF_Equip = NET.UnitService.RF:FindFirstChild("Equip")
-                if RF_Equip then RF_Equip:InvokeServer("Best") end
-            end
-        end)
-        Rayfield:Notify({ Title = "Lian Hub", Content = "Best unit equipped!", Duration = 3 })
-    end,
-})
-
-EconomyTab:CreateSection("📜 Auto Quests")
-
-EconomyTab:CreateToggle({
-    Name = "Auto Claim All Quests (Daily & Weekly)",
-    CurrentValue = false,
-    Callback = function(Value)
-        _G.LianNuyul.AutoQuests = Value
-        if Value then
-            task.spawn(function()
-                while _G.LianNuyul.AutoQuests do
-                    safeCall(function()
-                        local QuestConfig = require(RS.Framework.Features.Quests.QuestConfig)
-                        local Network = require(RS.Packages.Network)
-                        local questClaim = Network.ClientComm.new(RS.Network, false, "QuestService"):GetSignal("Claim")
-                        local now = math.floor(workspace:GetServerTimeNow())
-                        
-                        for _, period in ipairs({"Daily", "Weekly"}) do
-                            local ok, data = pcall(function() return DC.Quests[period]() end)
-                            if ok and data and data.progress and data.claimed then
-                                if data.expiresAt == 0 or data.expiresAt > now then
-                                    local periodConfig = QuestConfig.Periods[period]
-                                    if periodConfig and periodConfig.quests then
-                                        for _, quest in ipairs(periodConfig.quests) do
-                                            local progress = data.progress[quest.id] or 0
-                                            if progress >= quest.target and not data.claimed[quest.id] then
-                                                questClaim:Fire(period, quest.id, data.expiresAt)
-                                                task.wait(0.3)
-                                            end
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end)
-                    task.wait(10)
-                end
-            end)
-        end
-    end,
-})
-
--- ═════════════════════════════════════════════════════════════════════
--- TAB 4: MULTI-ACCOUNT POTATO OPTIMIZER (KHUSUS NUYUL)
--- ═════════════════════════════════════════════════════════════════════
-PerfTab:CreateSection("❄️ CPU / GPU Saver (Buat Buka 10-20 Akun)")
+PerfTab:CreateSection("❄️ CPU / GPU Saver")
 
 PerfTab:CreateButton({
-    Name = "Extreme Potato Mode (FPS Cap 30 + No Graphics)",
+    Name = "Extreme Potato Mode (30 FPS + Strip FX)",
     Callback = function()
-        -- 1. Cap FPS to 30
         pcall(function()
             if setfpscap then setfpscap(30) end
         end)
-        -- 2. Strip Lights & Particles
         for _, v in ipairs(game:GetDescendants()) do
             if v:IsA("Light") or v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Beam") then
                 pcall(function() v.Enabled = false end)
@@ -342,17 +482,16 @@ PerfTab:CreateButton({
                 v.Transparency = 1
             end
         end
-        -- 3. Lighting shadows off
         Lighting.GlobalShadows = false
         Lighting.FogEnd = 9e9
-        Rayfield:Notify({ Title = "Potato Mode Aktif!", Content = "GPU & CPU load turun drastis!", Duration = 4 })
+        Rayfield:Notify({ Title = "Potato Mode Aktif!", Content = "Grafik minimalis, siap nuyul banyak akun!", Duration = 4 })
     end,
 })
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 5: MOVEMENT & SERVER
+-- TAB 6: MOVEMENT & SERVER
 -- ═════════════════════════════════════════════════════════════════════
-PlayerTab:CreateSection("🏃 Player Movement")
+PlayerTab:CreateSection("🏃 Movement")
 
 PlayerTab:CreateSlider({
     Name = "WalkSpeed",
@@ -433,7 +572,7 @@ PlayerTab:CreateButton({
 })
 
 Rayfield:Notify({
-    Title = "Lian Hub Loaded!",
-    Content = "100% Keyless Nuyul Suite Active!",
+    Title = "Lian Hub v3 Loaded!",
+    Content = "Semua fitur Cash, Daily & Quests sudah aktif!",
     Duration = 5
 })

@@ -1,12 +1,14 @@
 --[[
     ═════════════════════════════════════════════════════════════════════════
-    ⚡ LIAN HUB — 100% KEYLESS ANIME DICE ULTIMATE EXPLOIT SUITE v4 ⚡
+    ⚡ LIAN HUB — 100% KEYLESS ANIME DICE ULTIMATE EXPLOIT SUITE v4.1 ⚡
     Author : Lian (@brilliantgibrann16)
     Repo   : https://github.com/brilliantgibrann16/lian-hub
-    Fitur  : • Persistent Config (Auto-Load & Save Toggle)
+    Fitur  : • SMART Rebirth: Hanya klik Rebirth jika Uang Cukup (Anti-Spam)
+             • SMART Stat Upgrade: Hanya upgrade saat Ada Poin dari Rebirth
+             • SMART Fortune Upgrade: Hanya beli saat Uang Cukup
+             • Persistent Config (Auto-Load & Save Toggle)
              • Auto Hop Server Luck (queue_on_teleport + Anti-Rejoin Duplicate)
              • Auto Equip Best Unit on Roll + Auto Level Up Units/Plots
-             • Auto Rebirth + Customizable Stat Upgrades (Luck/Damage/Health/etc)
              • Halloween Event Suite: TP Doors Trick-or-Treat, Pumpkin Roll 5x
              • Auto Towers (Normal & Event Best Rotation + Floor Complete)
              • Full Auto Potions, Daily/Group/Offline Claims & Quests
@@ -118,7 +120,138 @@ local function loadConfig()
 end
 loadConfig()
 
--- 5. Helper Functions
+-- 5. Helper Functions & Smart Currency / Rebirth Analyzers
+local function parseFormattedNumber(str)
+    if not str then return 0 end
+    local raw = str:gsub("[$,]", ""):lower()
+    local num = tonumber(raw:match("[%d%.]+"))
+    if not num then return 0 end
+    if raw:find("qa") then return num * 1e15
+    elseif raw:find("t") then return num * 1e12
+    elseif raw:find("b") then return num * 1e9
+    elseif raw:find("m") then return num * 1e6
+    elseif raw:find("k") then return num * 1e3
+    end
+    return num
+end
+
+local function getPlayerCash()
+    -- 1. Dari DataController
+    if DC then
+        local ok1, c1 = pcall(function() return DC.Cash and DC.Cash() end)
+        if ok1 and type(c1) == "number" then return c1 end
+        local ok2, c2 = pcall(function() return DC.Coins and DC.Coins() end)
+        if ok2 and type(c2) == "number" then return c2 end
+        local ok3, c3 = pcall(function() return DC.Balance and DC.Balance() end)
+        if ok3 and type(c3) == "number" then return c3 end
+    end
+    -- 2. Dari leaderstats
+    local ls = LocalPlayer:FindFirstChild("leaderstats")
+    if ls then
+        local c = ls:FindFirstChild("Cash") or ls:FindFirstChild("Coins") or ls:FindFirstChild("Money")
+        if c and c.Value then return c.Value end
+    end
+    -- 3. Dari GUI HUD Cash TextLabel
+    local hud = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Root") and LocalPlayer.PlayerGui.Root:FindFirstChild("HUD")
+    if hud and hud:FindFirstChild("Cash") then
+        local lbl = hud.Cash:FindFirstChildWhichIsA("TextLabel", true)
+        if lbl and lbl.Text then
+            local val = parseFormattedNumber(lbl.Text)
+            if val > 0 then return val end
+        end
+    end
+    return 0
+end
+
+local function canAffordRebirth()
+    local curCash = getPlayerCash()
+    local curRebirths = 0
+    if DC and DC.Rebirths then
+        pcall(function() curRebirths = DC.Rebirths() end)
+    end
+
+    -- 1. Baca RebirthConfig resmi
+    local okRC, RebirthConfig = pcall(function()
+        return require(RS.Framework.Features.Rebirth.RebirthConfig)
+    end)
+    if okRC and RebirthConfig and RebirthConfig.GetCost then
+        local okCost, cost = pcall(function() return RebirthConfig.GetCost(curRebirths) end)
+        if okCost and type(cost) == "number" then
+            return curCash >= cost, curCash, cost
+        end
+    end
+
+    -- 2. Baca dari UI Rebirth Menu
+    local rMenu = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Root") and LocalPlayer.PlayerGui.Root:FindFirstChild("Menus") and LocalPlayer.PlayerGui.Root.Menus:FindFirstChild("Rebirth")
+    if rMenu then
+        local costLabel = rMenu:FindFirstChild("Cash", true)
+        if costLabel then
+            local txt = costLabel:FindFirstChildWhichIsA("TextLabel", true)
+            if txt then
+                local cost = parseFormattedNumber(txt.Text)
+                if cost > 0 then
+                    return curCash >= cost, curCash, cost
+                end
+            end
+        end
+    end
+
+    return false, curCash, nil
+end
+
+local function getAvailableStatPoints()
+    -- 1. Baca RebirthStatsConfig
+    local okRSC, RSC = pcall(function()
+        return require(RS.Framework.Features.Rebirth.RebirthStatsConfig)
+    end)
+    if okRSC and RSC and RSC.GetRemaining then
+        local curStats = {}
+        local curRebirths = 0
+        if DC then
+            pcall(function() curStats = (DC.RebirthStats and DC.RebirthStats()) or {} end)
+            pcall(function() curRebirths = (DC.Rebirths and DC.Rebirths()) or 0 end)
+        end
+        local okRem, rem = pcall(function() return RSC.GetRemaining(curRebirths, curStats) end)
+        if okRem and type(rem) == "number" then
+            return rem
+        end
+    end
+
+    -- 2. Baca UI Rebirth points label
+    local rMenu = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Root") and LocalPlayer.PlayerGui.Root:FindFirstChild("Menus") and LocalPlayer.PlayerGui.Root.Menus:FindFirstChild("Rebirth")
+    if rMenu then
+        for _, lbl in ipairs(rMenu:GetDescendants()) do
+            if lbl:IsA("TextLabel") and (lbl.Text:lower():find("point") or lbl.Text:lower():find("remaining") or lbl.Text:lower():find("stat")) then
+                local num = tonumber(lbl.Text:match("%d+"))
+                if num then return num end
+            end
+        end
+    end
+    return 0
+end
+
+local function canAffordFortune()
+    local curCash = getPlayerCash()
+    local curTier = 1
+    if DC and DC.Upgrades then
+        pcall(function()
+            local upg = DC.Upgrades()
+            if upg and upg.Fortune then curTier = upg.Fortune end
+        end)
+    end
+
+    local okUC, UC = pcall(function()
+        return require(RS.Framework.Features.Upgrades.UpgradesConfig)
+    end)
+    if okUC and UC and UC.GetCost then
+        local okCost, cost = pcall(function() return UC.GetCost("Fortune", curTier) end)
+        if okCost and type(cost) == "number" then
+            return curCash >= cost
+        end
+    end
+    return curCash >= 50000
+end
+
 local function getCharRoot()
     local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
     return char:FindFirstChild("HumanoidRootPart")
@@ -500,10 +633,8 @@ TowerTab:CreateToggle({
             task.spawn(function()
                 while _G.LianConfig.AutoTower do
                     safe(function()
-                        -- Mulai tower yang dipilih
                         NET.Towers.RF.PlayTower:InvokeServer(_G.LianConfig.TowerType)
                         task.wait(1)
-                        -- Complete floor berturut-turut
                         for floor = 1, 50 do
                             if not _G.LianConfig.AutoTower then break end
                             NET.Towers.RF.CompleteTowerFloor:InvokeServer()
@@ -603,12 +734,11 @@ EconomyTab:CreateToggle({
         if Value then
             task.spawn(function()
                 while _G.LianConfig.AutoQuests do
-                    -- 1. Normal Quests (Daily / Weekly)
+                    -- 1. Normal Quests
                     safe(function()
                         local Network = require(RS.Packages.Network)
                         local QuestConfig = require(RS.Framework.Features.Quests.QuestConfig)
                         local questSignal = Network.ClientComm.new(RS.Network, false, "QuestService"):GetSignal("Claim")
-                        local now = math.floor(workspace:GetServerTimeNow())
                         for _, period in ipairs({"Daily", "Weekly"}) do
                             local ok, data = pcall(function() return DC.Quests[period]() end)
                             if ok and data and data.progress and data.claimed then
@@ -660,30 +790,37 @@ EconomyTab:CreateButton({
 })
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 6: REBIRTH & STATS UPGRADE (FULL CUSTOMIZABLE TOGGLES)
+-- TAB 6: SMART REBIRTH & STATS UPGRADE (ANTI-SPAM / HANYA SAAT CUKUP)
 -- ═════════════════════════════════════════════════════════════════════
-UpgradesTab:CreateSection("🔄 Auto Rebirth Engine")
+UpgradesTab:CreateSection("🔄 SMART Auto Rebirth (Hanya Saat Uang Cukup)")
 
 UpgradesTab:CreateToggle({
-    Name = "Auto Rebirth (Klik Rebirth Otomatis Saat Uang Cukup)",
+    Name = "SMART Auto Rebirth (Cek Harga & Uang Dulu)",
     CurrentValue = _G.LianConfig.AutoRebirth,
     Callback = function(Value)
         _G.LianConfig.AutoRebirth = Value
         saveConfig()
-        if Value then
-            task.spawn(function()
-                while _G.LianConfig.AutoRebirth do
-                    safe(function()
-                        NET.RebirthService.RE.Rebirth:FireServer()
-                    end)
-                    task.wait(3)
-                end
-            end)
-        end
     end,
 })
 
-UpgradesTab:CreateSection("📈 Custom Stat Upgrades (Pilih Yang Mau Dinaikkan)")
+-- Loop Smart Rebirth: Hanya klik saat uang >= harga rebirth
+task.spawn(function()
+    while true do
+        if _G.LianConfig.AutoRebirth then
+            safe(function()
+                local canRebirth, curCash, cost = canAffordRebirth()
+                if canRebirth then
+                    NET.RebirthService.RE.Rebirth:FireServer()
+                    Rayfield:Notify({ Title = "Rebirth Sukses!", Content = "Uang cukup ($" .. math.floor(curCash) .. "). Rebirth berhasil diproses!", Duration = 3 })
+                    task.wait(2)
+                end
+            end)
+        end
+        task.wait(4) -- Cek santai tiap 4 detik, TANPA SPAM!
+    end
+end)
+
+UpgradesTab:CreateSection("📈 SMART Stat Upgrades (Hanya Saat Ada Poin Rebirth)")
 
 UpgradesTab:CreateToggle({
     Name = "Upgrade Stat: Luck",
@@ -716,23 +853,40 @@ UpgradesTab:CreateToggle({
 })
 
 UpgradesTab:CreateToggle({
-    Name = "Upgrade Shop: Fortune (Fortune XV)",
+    Name = "Upgrade Shop: Fortune (Hanya Saat Uang Cukup)",
     CurrentValue = _G.LianConfig.UpgradeFortune,
     Callback = function(v) _G.LianConfig.UpgradeFortune = v; saveConfig() end
 })
 
--- Loop Eksekusi Upgrade Stat
+-- SMART Stat Upgrade Loop: Hanya menambah stat saat ADA poin yang belum dipakai!
 task.spawn(function()
     while true do
         safe(function()
-            if _G.LianConfig.UpgradeLuck then NET.RebirthService.RE.AddStat:FireServer("Luck", 1) end
-            if _G.LianConfig.UpgradeDamage then NET.RebirthService.RE.AddStat:FireServer("Damage", 1) end
-            if _G.LianConfig.UpgradeHealth then NET.RebirthService.RE.AddStat:FireServer("Health", 1) end
-            if _G.LianConfig.UpgradeIncome then NET.RebirthService.RE.AddStat:FireServer("Income", 1) end
-            if _G.LianConfig.UpgradeSpeed then NET.RebirthService.RE.AddStat:FireServer("Speed", 1) end
-            if _G.LianConfig.UpgradeFortune then NET.RE.BuyUpgrade:FireServer("Fortune XV") end
+            local points = getAvailableStatPoints()
+            if points and points > 0 then
+                local chosenStats = {}
+                if _G.LianConfig.UpgradeLuck then table.insert(chosenStats, "Luck") end
+                if _G.LianConfig.UpgradeDamage then table.insert(chosenStats, "Damage") end
+                if _G.LianConfig.UpgradeHealth then table.insert(chosenStats, "Health") end
+                if _G.LianConfig.UpgradeIncome then table.insert(chosenStats, "Income") end
+                if _G.LianConfig.UpgradeSpeed then table.insert(chosenStats, "Speed") end
+
+                if #chosenStats > 0 then
+                    for _, stat in ipairs(chosenStats) do
+                        if getAvailableStatPoints() <= 0 then break end
+                        NET.RebirthService.RE.AddStat:FireServer(stat, 1)
+                        task.wait(0.2)
+                    end
+                end
+            end
+
+            -- Fortune Upgrade di Shop (Hanya jika uang cukup)
+            if _G.LianConfig.UpgradeFortune and canAffordFortune() then
+                NET.RE.BuyUpgrade:FireServer("Fortune XV")
+                NET.RE.BuyUpgrade:FireServer("Fortune")
+            end
         end)
-        task.wait(2)
+        task.wait(3) -- Interval aman tanpa spam paket ke server
     end
 end)
 
@@ -832,7 +986,6 @@ local function markServerVisited(jobId)
     pcall(function()
         local v = getVisitedServers()
         v[jobId] = os.time()
-        -- Prune servers older than 1 hour
         local now = os.time()
         for id, t in pairs(v) do
             if now - t > 3600 then v[id] = nil end
@@ -857,7 +1010,6 @@ local function smartHop()
             end
         end
     end
-    -- Fallback generic teleport if list full
     TeleportService:Teleport(game.PlaceId, LocalPlayer)
     return false
 end
@@ -1001,7 +1153,7 @@ task.spawn(function()
 end)
 
 Rayfield:Notify({
-    Title = "Lian Hub v4 Ultimate Loaded!",
-    Content = "Semua konfigurasi tersimpan dan fitur siap digunakan!",
+    Title = "Lian Hub v4.1 Smart Loaded!",
+    Content = "Semua fitur pintar & anti-spam siap digunakan!",
     Duration = 5
 })

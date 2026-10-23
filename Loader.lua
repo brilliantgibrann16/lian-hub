@@ -43,7 +43,7 @@ LocalPlayer.Idled:Connect(function()
     task.wait(1)
 end)
 
--- 2. Teleport Auto-Execute Queue (Biar pas pindah server script langsung jalan otomatis!)
+-- 2. Teleport Auto-Execute Queue (Didaftarkan saat Smart Hop dimulai)
 local function setupAutoExecuteOnTeleport()
     local qot = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
     if qot then
@@ -52,7 +52,6 @@ local function setupAutoExecuteOnTeleport()
         end)
     end
 end
-setupAutoExecuteOnTeleport()
 
 -- 3. Network & Framework
 local NET = RS:WaitForChild("Network", 15)
@@ -129,6 +128,8 @@ local function loadConfig()
                 for k, v in pairs(data) do
                     _G.LianConfig[k] = v
                 end
+                -- Keamanan: ServerLuckHop dinonaktifkan saat fresh boot agar tidak terjebak loop teleport layar hitam
+                _G.LianConfig.ServerLuckHop = false
             end
         end
     end)
@@ -264,20 +265,17 @@ local function applyPotatoMode(enable)
     if enable then
         pcall(function() if setfpscap then setfpscap(30) end end)
         for _, v in ipairs(game:GetDescendants()) do
-            if v:IsA("Light") or v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Beam") then
+            if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Beam") or v:IsA("Sparkles") or v:IsA("Fire") or v:IsA("Smoke") then
                 pcall(function() v.Enabled = false end)
-            elseif v:IsA("BasePart") then
-                v.Material = Enum.Material.SmoothPlastic
-                v.CastShadow = false
-            elseif v:IsA("Decal") or v:IsA("Texture") then
-                v.Transparency = 1
             end
         end
-        Lighting.GlobalShadows = false
-        Lighting.FogEnd = 9e9
     else
         pcall(function() if setfpscap then setfpscap(60) end end)
-        Lighting.GlobalShadows = true
+        for _, v in ipairs(game:GetDescendants()) do
+            if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Beam") or v:IsA("Sparkles") or v:IsA("Fire") or v:IsA("Smoke") then
+                pcall(function() v.Enabled = true end)
+            end
+        end
     end
 end
 
@@ -1401,31 +1399,14 @@ end)
 -- Initial Auto-Run based on loaded config
 task.spawn(function()
     task.wait(2)
-    -- Auto apply potato mode if enabled in saved config
+    -- Terapkan potato mode secara aman tanpa mematikan tekstur/layar hitam
     if _G.LianConfig.ExtremePotatoMode then
         applyPotatoMode(true)
     end
 
-    -- Auto check server luck if enabled in saved config (Mode Senyap)
-    if _G.LianConfig.ServerLuckHop then
-        local weather = (DC and DC.Weather and DC.Weather()) or ""
-        local isEvent = weather:find("Luck") or weather:find("Clover") or weather:find("Haunted") or weather:find("Golden")
-        if not isEvent then
-            task.wait(1)
-            smartHop()
-        else
-            Rayfield:Notify({
-                Title = "🎉 Event Ditemukan!",
-                Content = "Cuaca Event: " .. tostring(weather) .. "! Mulai auto-farm di sini.",
-                Duration = 6
-            })
-        end
-    else
-        -- HANYA munculkan notifikasi Lian Hub Loaded jika BUKAN sedang dalam loop Server Hop!
-        Rayfield:Notify({
-            Title = "Lian Hub Loaded!",
-            Content = "Semua konfigurasi tersimpan aktif tanpa notifikasi spam!",
-            Duration = 4
-        })
-    end
+    Rayfield:Notify({
+        Title = "⚡ Lian Hub Ready!",
+        Content = "Script siap digunakan! Selamat nuyul Bubu sayangg 💕",
+        Duration = 5
+    })
 end)

@@ -55,9 +55,45 @@ end
 
 -- 3. Network & Framework
 local NET = RS:WaitForChild("Network", 15)
-local okDC, DC = pcall(function()
-    return require(RS.Framework.Features.Data.DataController)
+
+-- Drop thread identity to 2 around every require of game modules (bypass executor identity restriction)
+local function asGame(fn, ...)
+    if type(setthreadidentity) ~= "function" or type(getthreadidentity) ~= "function" then
+        return fn(...)
+    end
+    local prev = getthreadidentity()
+    setthreadidentity(2)
+    local packed = table.pack(pcall(fn, ...))
+    setthreadidentity(prev)
+    if not packed[1] then error(packed[2], 0) end
+    return table.unpack(packed, 2, packed.n)
+end
+
+local M = {}
+pcall(function()
+    local F = RS:WaitForChild("Framework", 10):WaitForChild("Features", 10)
+    local function req(mod)
+        local ok, res = pcall(asGame, require, mod)
+        return ok and res or nil
+    end
+    M.Data = req(F.Data.DataController)
+    M.Buff = req(F.Buffs.BuffController)
+    M.Entry = req(F.Inventory.EntryRegistry)
+    M.Dice = req(F.Rolling.Dice)
+    M.Upgrades = req(F.Upgrades.Upgrades)
+    M.Tree = req(F.Upgrades.TreeStructure)
+    M.Rebirths = req(F.Rebirth.Rebirths)
+    M.RStats = req(F.Rebirth.RebirthStatsConfig)
+    M.PlotConfig = req(F.Plot.PlotConfig)
+    M.UnitUtil = req(F.Inventory.Kinds.Unit.UnitUtil)
+    M.Towers = req(F.Towers.Towers)
+    M.TowerRefs = req(F.Towers.TowerRefs)
 end)
+
+local DC = M.Data
+if not DC then
+    pcall(function() DC = require(RS.Framework.Features.Data.DataController) end)
+end
 
 local function safe(fn, ...)
     local ok, res = pcall(fn, ...)
@@ -628,9 +664,9 @@ HalloweenTab:CreateButton({
 })
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 4: TOWERS (SMART ADAPTIVE AI & EVENT ROTATION)
+-- TAB 4: TOWERS (SMART ADAPTIVE SIMULATOR AI & EVENT ROTATION)
 -- ═════════════════════════════════════════════════════════════════════
-TowerTab:CreateSection("🧠 Smart Tower Matcher AI (Kekuatan Unit vs Tower)")
+TowerTab:CreateSection("🧠 Smart Tower Matcher AI (Simulasi Pertarungan Unit)")
 
 local HALLOWEEN_TOWERS = {
     { name = "The Abyss", minDmg = 500000 },
@@ -652,9 +688,7 @@ local NORMAL_TOWERS = {
 
 local function getEstimatedPlayerDamage()
     local dmg = 100
-    if DC and DC.Damage then
-        pcall(function() dmg = DC.Damage() end)
-    end
+    if DC and DC.Damage then pcall(function() dmg = DC.Damage() end) end
     if DC and DC.RebirthStats then
         pcall(function()
             local rStats = DC.RebirthStats()
@@ -666,7 +700,73 @@ local function getEstimatedPlayerDamage()
     return dmg
 end
 
+local function getTowerTeamData()
+    local inv = DC and DC.Inventory and DC.Inventory() or {}
+    local team = {}
+    local dm = (M.Buff and M.Buff.GetBuff and M.Buff.GetBuff("Damage Multiplier")) or 1
+    local hm = (M.Buff and M.Buff.GetBuff and M.Buff.GetBuff("Health Multiplier")) or 1
+    for i = 1, 6 do
+        local key = (DC and DC.TowerTeam and DC.TowerTeam() or {})[i]
+        local e = key and inv[key]
+        local cfg = e and M.Entry and M.Entry.getEntryConfig and M.Entry.getEntryConfig(e.name)
+        if cfg and cfg.kind == "Unit" then
+            local attrs = e.attributes or {}
+            local okD, d = pcall(cfg.damage, attrs)
+            local okH, h = pcall(cfg.health, attrs)
+            if okD and okH then
+                table.insert(team, { damage = d * dm, health = h * hm })
+            end
+        end
+    end
+    return team
+end
+
+local function simTowerCombat(cfg, team)
+    local hp = {}
+    for i, m in ipairs(team) do hp[i] = m.health end
+    local member, floor = 1, 1
+    local limit = cfg.maxFloors or 50
+    while floor <= limit do
+        local okEh, eh = pcall(cfg.enemyHealth, floor)
+        local okEd, ed = pcall(cfg.enemyDamage, floor)
+        if not okEh or not okEd then break end
+        local cleared = false
+        local guard = 0
+        while member <= #team do
+            guard = guard + 1
+            if guard > 3000 then return floor - 1 end
+            eh = eh - team[member].damage
+            if eh <= 0 then cleared = true break end
+            hp[member] = hp[member] - ed
+            if hp[member] <= 0 then member = member + 1 end
+        end
+        if not cleared then return floor - 1 end
+        floor = floor + 1
+    end
+    return limit
+end
+
 local function getSmartTowerChoice()
+    -- 1. Simulasi matematis in-memory jika module game tersedia
+    if M.Towers and M.Towers.GetAll then
+        local team = getTowerTeamData()
+        if #team > 0 then
+            local allTowers = M.Towers.GetAll()
+            local bestName, maxCleared = nil, -1
+            for name, cfg in pairs(allTowers) do
+                local ok, cleared = pcall(simTowerCombat, cfg, team)
+                if ok and cleared > maxCleared then
+                    maxCleared = cleared
+                    bestName = name
+                end
+            end
+            if bestName and maxCleared > 0 then
+                return bestName
+            end
+        end
+    end
+
+    -- 2. Heuristic fallback berbasis estimasi damage
     local playerDmg = getEstimatedPlayerDamage()
     local isHalloween = (Workspace:FindFirstChild("Halloween") ~= nil)
 
@@ -1095,7 +1195,37 @@ UpgradesTab:CreateToggle({
 
                         -- 3. Jual unequipped units di inventory
                         if NET:FindFirstChild("SellService") and NET.SellService:FindFirstChild("RF") and NET.SellService.RF:FindFirstChild("SellInventory") then
-                            NET.SellService.RF.SellInventory:InvokeServer()
+                            local inv = (DC and DC.Inventory and DC.Inventory()) or {}
+                            local plotted = {}
+                            for slot, v in pairs((DC and DC.Slots and DC.Slots()) or {}) do
+                                if type(v) == "table" and v.unitId then plotted[v.unitId] = true end
+                            end
+                            local towerTeam = {}
+                            for _, k in pairs((DC and DC.TowerTeam and DC.TowerTeam()) or {}) do
+                                towerTeam[k] = true
+                            end
+
+                            local list = {}
+                            for key, e in pairs(inv) do
+                                if type(e) == "table" and not plotted[key] and not towerTeam[key] then
+                                    local attrs = e.attributes or {}
+                                    if not attrs.locked then
+                                        local cfg = M.Entry and M.Entry.getEntryConfig and M.Entry.getEntryConfig(e.name)
+                                        local rarity = cfg and cfg.rarity or "Common"
+                                        local shouldSell = false
+                                        if rarity == "Common" and _G.LianConfig.AutoSellCommon then shouldSell = true
+                                        elseif rarity == "Rare" and _G.LianConfig.AutoSellRare then shouldSell = true
+                                        elseif rarity == "Epic" and _G.LianConfig.AutoSellEpic then shouldSell = true
+                                        end
+                                        if shouldSell then table.insert(list, key) end
+                                    end
+                                end
+                            end
+                            if #list > 0 then
+                                NET.SellService.RF.SellInventory:InvokeServer(list)
+                            else
+                                NET.SellService.RF.SellInventory:InvokeServer()
+                            end
                         end
                     end)
                     task.wait(8)

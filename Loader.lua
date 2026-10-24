@@ -1,33 +1,28 @@
 --[[
     ═════════════════════════════════════════════════════════════════════════
-    ⚡ LIAN HUB — 100% KEYLESS ANIME DICE MASTER EXPLOIT SUITE v6.2 ⚡
+    ⚡ LIAN HUB — 100% KEYLESS ANIME DICE MASTER EXPLOIT SUITE v6.3 ⚡
     Author : Lian (@brilliantgibrann16)
     Target : Anime Dice (PlaceId: 113290951185459 / Universe: 10708913337)
     ═════════════════════════════════════════════════════════════════════════
-    [CHANGELOG v6.0 MASTER EXPLOIT DEV EDITION]:
-    ★ 100% Decoupled Background Worker Loops:
-      - All farm routines (Roll, Halloween, Potions, Rebirth, Stats, Towers,
-        Quests, Plots, Auto Sell) run in permanent background worker threads.
-      - On fresh inject or server hop re-execute, ALL saved 'true' toggles
-        IMMEDIATELY start working with ZERO clicks required!
-    ★ Laptop Minimizer & Floating Toggle Menu:
-      - Sleek draggable floating button "[⚡ Lian Hub]" on CoreGui/gethui.
-      - Hotkeys: RightControl / Insert / LeftAlt to toggle visibility.
-      - Never lost if user clicks 'X' or closes on laptop!
-    ★ Smart Halloween Roll:
-      - Dropdown choice: 500 Labu (5x Rolls) vs 100 Labu (1x Roll).
-      - Checks balance before roll to prevent remote error spam.
-    ★ Smart Rebirth & Stat Upgrades:
-      - Auto Rebirth ONLY fires when Money >= Cost (Zero Spam!).
-      - Stat Priority Dropdown (Balance, Money, Luck, Damage, Health, Speed).
-      - Stat allocation ONLY fires when Available Points > 0 (Zero Spam!).
-      - Auto Buy Tree Upgrades (Fortune, etc. near dice UI) via M.Tree & BuyUpgrade.
-    ★ Advanced Potion Stacking & Selector:
-      - Drink & stack potions by category (Luck, Income, Damage, Speed, Halloween, Tower).
-      - Tower Potion Farming Selector.
-    ★ Native Tower Team Auto-Equip:
-      - Uses official ReplicatedStorage.Network.Towers.RE.EquipBestTowerTeam.
-      - 5.5s server debounce + sequence action parsing ("floorCompleted" / "ended").
+    [CHANGELOG v6.3 REVOLUTION EDITION]:
+    ★ 100% Exact Remote Mappings:
+      - PlotService.RE.CollectBalance (Fixed from CollectCash!)
+      - TrickOrTreatService.RE.Knocked + Landed (Fixed from HalloweenService!)
+      - SellService.RF.SellInventory + PlotService.RE.EquipBest
+      - Towers.RF.PlayTower + CompleteTowerFloor + EquipBestTowerTeam
+      - PumpkinDiceService.RF.Roll + RebirthService.RE.Rebirth + AddStat
+    ★ Robust Framework & DataController Resolver:
+      - Waits up to 25s for ReplicatedStorage.Framework IsLoaded.
+      - Dual-mode require (asGame identity 2 + standard require fallback).
+      - Multi-layer cash & rebirth cost resolver (DataController -> HUD -> leaderstats).
+    ★ Ruthless Plot Optimizer & Auto-Sell:
+      - Equips best units to Plot.
+      - Immediately sells all remaining units in inventory outside the plot!
+      - Zero locks, zero rarity filters, zero clutter.
+    ★ 100% Decoupled Background Workers:
+      - Permanent worker loops; toggles take effect instantly on fresh or re-exec.
+    ★ Draggable Floating Button & Laptop Hotkeys:
+      - [⚡ Lian Hub] floating pill button + RightControl / Insert / LeftAlt.
     ═════════════════════════════════════════════════════════════════════════
 ]]--
 
@@ -47,7 +42,7 @@ local GuiService = game:GetService("GuiService")
 
 local LocalPlayer = Players.LocalPlayer
 
--- 1. Anti-AFK (Bebas idle kick 20 menit)
+-- 1. Anti-AFK
 LocalPlayer.Idled:Connect(function()
     pcall(function()
         VirtualUser:CaptureController()
@@ -56,7 +51,7 @@ LocalPlayer.Idled:Connect(function()
     task.wait(1)
 end)
 
--- 2. Teleport Auto-Execute Queue (Didaftarkan saat Smart Hop / Reconnect dimulai)
+-- 2. Teleport Auto-Execute Queue
 local function setupAutoExecuteOnTeleport()
     local qot = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
     if qot then
@@ -66,9 +61,7 @@ local function setupAutoExecuteOnTeleport()
     end
 end
 
--- 3. Network & Framework (Non-blocking & Solara Safe)
-local NET = RS:FindFirstChild("Network") or RS:WaitForChild("Network", 4)
-
+-- 3. Thread Identity Dropper (Solara-Safe)
 local function asGame(fn, ...)
     if type(setthreadidentity) ~= "function" or type(getthreadidentity) ~= "function" then
         local ok, res = pcall(fn, ...)
@@ -83,48 +76,119 @@ local function asGame(fn, ...)
     return table.unpack(packed, 2, packed.n)
 end
 
+-- 4. Verified Remote Registry
+local NET = RS:FindFirstChild("Network") or RS:WaitForChild("Network", 20)
+
+local R = {}
+local function getRemote(svc, kind, name)
+    if not NET then return nil end
+    local folder = svc and NET:FindFirstChild(svc) or NET
+    if not folder then folder = svc and NET:WaitForChild(svc, 4) or NET end
+    if not folder then return nil end
+    local sub = folder:FindFirstChild(kind) or folder:WaitForChild(kind, 4)
+    if not sub then return nil end
+    return sub:FindFirstChild(name) or sub:WaitForChild(name, 4)
+end
+
+R.Roll = getRemote("RollService", "RF", "RollDice")
+R.SetAutoRoll = getRemote("RollService", "RE", "SetAutoRoll")
+R.PumpkinRoll = getRemote("PumpkinDiceService", "RF", "Roll")
+R.Collect = getRemote("PlotService", "RE", "CollectBalance")
+R.EquipBest = getRemote("PlotService", "RE", "EquipBest")
+R.LevelSlot = getRemote("PlotService", "RE", "LevelUpSlot")
+R.Sell = getRemote("SellService", "RF", "SellInventory")
+R.BuyUpgrade = getRemote(nil, "RE", "BuyUpgrade")
+R.BuyDice = getRemote("DiceShopService", "RE", "BuyDice")
+R.EquipDice = getRemote("DiceShopService", "RE", "EquipDice")
+R.Rebirth = getRemote("RebirthService", "RE", "Rebirth")
+R.AddStat = getRemote("RebirthService", "RE", "AddStat")
+R.PlayTower = getRemote("Towers", "RF", "PlayTower")
+R.FloorTower = getRemote("Towers", "RF", "CompleteTowerFloor")
+R.BestTeam = getRemote("Towers", "RE", "EquipBestTowerTeam")
+R.Boost = getRemote("BoostService", "RE", "Use")
+R.Spin = getRemote("SpinService", "RE", "Use")
+R.Daily = getRemote("DailyRewardService", "RE", "Claim")
+R.Offline = getRemote("OfflineEarningsService", "RE", "Claim")
+R.Code = getRemote("CodesService", "RE", "RedeemCode")
+R.HalloweenPath = getRemote("HalloweenService", "RE", "ClaimAllPath")
+R.HalloweenQuest = getRemote("HalloweenQuestService", "RE", "Claim")
+R.TrickKnock = getRemote("TrickOrTreatService", "RE", "Knocked")
+R.TrickLand = getRemote("TrickOrTreatService", "RE", "Landed")
+R.QuirkRoll = getRemote("QuirkService", "RE", "Roll")
+R.QuirkProtect = getRemote("QuirkService", "RE", "SetQuirkProtected")
+R.TradeReq = getRemote("TradeService", "RE", "RequestTrade")
+R.TradeResp = getRemote("TradeService", "RE", "RespondToRequest")
+R.TradeOffer = getRemote("TradeService", "RE", "ChangeOffer")
+R.TradeAdv = getRemote("TradeService", "RE", "AdvanceTrade")
+R.TradeEvent = getRemote("TradeService", "RE", "TradeEvent")
+
+local function fire(remote, ...)
+    if remote then
+        pcall(function(...) remote:FireServer(...) end, ...)
+    end
+end
+
+local function invoke(remote, ...)
+    if remote then
+        local ok, res = pcall(function(...) return remote:InvokeServer(...) end, ...)
+        if ok then return res end
+    end
+    return nil
+end
+
+local function safe(fn, ...)
+    local ok, res = pcall(fn, ...)
+    return ok and res
+end
+
+-- 5. Game Framework Modules Loader
 local M = {}
-task.spawn(function()
-    pcall(function()
-        local F = RS:FindFirstChild("Framework") or RS:WaitForChild("Framework", 4)
-        if not F then return end
-        local Feat = F:FindFirstChild("Features") or F:WaitForChild("Features", 4)
-        if not Feat then return end
-        local function req(mod)
-            if not mod then return nil end
-            local ok, res = pcall(asGame, require, mod)
-            return ok and res or nil
-        end
-        if Feat:FindFirstChild("Data") then M.Data = req(Feat.Data:FindFirstChild("DataController")) end
-        if Feat:FindFirstChild("Buffs") then M.Buff = req(Feat.Buffs:FindFirstChild("BuffController")) end
-        if Feat:FindFirstChild("Inventory") then M.Entry = req(Feat.Inventory:FindFirstChild("EntryRegistry")) end
-        if Feat:FindFirstChild("Rolling") then M.Dice = req(Feat.Rolling:FindFirstChild("Dice")) end
-        if Feat:FindFirstChild("Upgrades") then
-            M.Upgrades = req(Feat.Upgrades:FindFirstChild("Upgrades"))
-            M.Tree = req(Feat.Upgrades:FindFirstChild("TreeStructure"))
-        end
-        if Feat:FindFirstChild("Rebirth") then
-            M.Rebirths = req(Feat.Rebirth:FindFirstChild("Rebirths"))
-            M.RStats = req(Feat.Rebirth:FindFirstChild("RebirthStatsConfig"))
-        end
-        if Feat:FindFirstChild("Plot") then M.PlotConfig = req(Feat.Plot:FindFirstChild("PlotConfig")) end
-        if Feat:FindFirstChild("Inventory") and Feat.Inventory:FindFirstChild("Kinds") and Feat.Inventory.Kinds:FindFirstChild("Unit") then
-            M.UnitUtil = req(Feat.Inventory.Kinds.Unit:FindFirstChild("UnitUtil"))
-        end
-        if Feat:FindFirstChild("Towers") then
-            M.Towers = req(Feat.Towers:FindFirstChild("Towers"))
-            M.TowerRefs = req(Feat.Towers:FindFirstChild("TowerRefs"))
-        end
-        if Feat:FindFirstChild("Quests") then
-            M.Quests = req(Feat.Quests:FindFirstChild("QuestConfig"))
-        end
-    end)
-end)
+local function initFramework()
+    local fw = RS:WaitForChild("Framework", 25)
+    if not fw then return end
+    local t0 = os.clock()
+    while not fw:GetAttribute("IsLoaded") and os.clock() - t0 < 20 do
+        task.wait(0.5)
+    end
+    local Feat = fw:WaitForChild("Features", 15)
+    if not Feat then return end
+
+    local function req(mod)
+        if not mod then return nil end
+        local ok, res = pcall(asGame, require, mod)
+        if ok and res then return res end
+        local ok2, res2 = pcall(require, mod)
+        if ok2 and res2 then return res2 end
+        return nil
+    end
+
+    if Feat:FindFirstChild("Data") then M.Data = req(Feat.Data:FindFirstChild("DataController")) end
+    if Feat:FindFirstChild("Buffs") then M.Buff = req(Feat.Buffs:FindFirstChild("BuffController")) end
+    if Feat:FindFirstChild("Inventory") then M.Entry = req(Feat.Inventory:FindFirstChild("EntryRegistry")) end
+    if Feat:FindFirstChild("Rolling") then M.Dice = req(Feat.Rolling:FindFirstChild("Dice")) end
+    if Feat:FindFirstChild("Upgrades") then
+        M.Upgrades = req(Feat.Upgrades:FindFirstChild("Upgrades"))
+        M.Tree = req(Feat.Upgrades:FindFirstChild("TreeStructure"))
+    end
+    if Feat:FindFirstChild("Rebirth") then
+        M.Rebirths = req(Feat.Rebirth:FindFirstChild("Rebirths"))
+        M.RStats = req(Feat.Rebirth:FindFirstChild("RebirthStatsConfig"))
+    end
+    if Feat:FindFirstChild("Plot") then M.PlotConfig = req(Feat.Plot:FindFirstChild("PlotConfig")) end
+    if Feat:FindFirstChild("Towers") then
+        M.Towers = req(Feat.Towers:FindFirstChild("Towers"))
+        M.TowerRefs = req(Feat.Towers:FindFirstChild("TowerRefs"))
+    end
+    if Feat:FindFirstChild("Quests") then M.Quests = req(Feat.Quests:FindFirstChild("QuestConfig")) end
+end
+task.spawn(initFramework)
 
 local function getDC()
     if M.Data then return M.Data end
     pcall(function()
-        M.Data = require(RS.Framework.Features.Data.DataController)
+        if RS:FindFirstChild("Framework") and RS.Framework:FindFirstChild("Features") and RS.Framework.Features:FindFirstChild("Data") then
+            M.Data = asGame(require, RS.Framework.Features.Data.DataController) or require(RS.Framework.Features.Data.DataController)
+        end
     end)
     return M.Data
 end
@@ -137,14 +201,8 @@ local DC = setmetatable({}, {
     end
 })
 
-local function safe(fn, ...)
-    local ok, res = pcall(fn, ...)
-    return ok and res
-end
-
--- 4. Persistent Configuration Storage (Auto Save & Load)
+-- 6. Persistent Configuration
 local CONFIG_FILE = "LianHub_AnimeDice_Config.json"
-local VISITED_FILE = "LianHub_VisitedServers.json"
 
 _G.LianConfig = {
     AutoRoll = false,
@@ -175,12 +233,13 @@ _G.LianConfig = {
     AutoDailyReward = false,
     AutoQuests = false,
     AutoRedeemCodes = false,
+    AutoClaimOffline = true,
+    AutoLuckySpin = true,
     AutoTicketShop = false,
     TicketShopItem = "Clover",
     AutoRebirth = false,
     RebirthStatPriority = "Balance / Rata (Money, Luck, Damage, Health, Speed)",
     AutoBuyTreeUpgrades = false,
-    AutoEquipBestOnRoll = false,
     AutoBuyBestDice = false,
     AutoFuseUnits = false,
     AutoEquipBestPlotAndSellRest = true,
@@ -223,12 +282,11 @@ local function loadConfig()
             end
         end
     end)
-    -- Safe guard: Always boot with hopping disabled to prevent teleport loops
     _G.LianConfig.ServerLuckHop = false
 end
 loadConfig()
 
--- 5. Helper Functions
+-- 7. Calculation & Game Data Helpers
 local function parseFormattedNumber(str)
     if not str then return 0 end
     local raw = tostring(str):lower():gsub("[$,]", "")
@@ -244,20 +302,24 @@ local function parseFormattedNumber(str)
 end
 
 local function getPlayerCash()
-    if DC then
-        local ok1, c1 = pcall(function() return DC.Cash and DC.Cash() end)
-        if ok1 and type(c1) == "number" then return c1 end
-        local ok2, c2 = pcall(function() return DC.Money and DC.Money() end)
-        if ok2 and type(c2) == "number" then return c2 end
-        local ok3, c3 = pcall(function() return DC.Coins and DC.Coins() end)
-        if ok3 and type(c3) == "number" then return c3 end
-        local ok4, c4 = pcall(function() return DC.Balance and DC.Balance() end)
-        if ok4 and type(c4) == "number" then return c4 end
+    local dc = getDC()
+    if dc then
+        local ok, money = pcall(function()
+            if dc.Money then return dc.Money() end
+            if dc.Cash then return dc.Cash() end
+            if dc.Coins then return dc.Coins() end
+            return nil
+        end)
+        if ok and type(money) == "number" and money >= 0 then
+            return money
+        end
     end
     local ls = LocalPlayer:FindFirstChild("leaderstats")
     if ls then
-        local c = ls:FindFirstChild("Cash") or ls:FindFirstChild("Coins") or ls:FindFirstChild("Money")
-        if c and c.Value then return c.Value end
+        for _, name in ipairs({"Cash", "Coins", "Money", "Balance"}) do
+            local val = ls:FindFirstChild(name)
+            if val and val.Value then return tonumber(val.Value) or 0 end
+        end
     end
     local hud = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Root") and LocalPlayer.PlayerGui.Root:FindFirstChild("HUD")
     if hud and hud:FindFirstChild("Cash") then
@@ -273,7 +335,8 @@ end
 local function canAffordRebirth()
     local curCash = getPlayerCash()
     local curRebirths = 0
-    if DC and DC.Rebirths then pcall(function() curRebirths = DC.Rebirths() end) end
+    local dc = getDC()
+    if dc and dc.Rebirth then pcall(function() curRebirths = dc.Rebirth() or 0 end) end
 
     if M.Rebirths and M.Rebirths.GetNext then
         local okNxt, nxt = pcall(function() return M.Rebirths.GetNext(curRebirths) end)
@@ -309,9 +372,10 @@ end
 local function getAvailableStatPoints()
     local curStats = {}
     local curRebirths = 0
-    if DC then
-        pcall(function() curStats = (DC.RebirthStats and DC.RebirthStats()) or {} end)
-        pcall(function() curRebirths = (DC.Rebirths and DC.Rebirths()) or 0 end)
+    local dc = getDC()
+    if dc then
+        pcall(function() curStats = (dc.RebirthStats and dc.RebirthStats()) or {} end)
+        pcall(function() curRebirths = (dc.Rebirth and dc.Rebirth()) or 0 end)
     end
     if M.RStats and M.RStats.GetRemaining then
         local okRem, rem = pcall(function() return M.RStats.GetRemaining(curRebirths, curStats) end)
@@ -332,7 +396,8 @@ end
 local function buyUpgradesTree()
     local money = getPlayerCash()
     if not M.Upgrades or not M.Tree then return end
-    local owned = (DC and DC.Upgrades and DC.Upgrades()) or {}
+    local dc = getDC()
+    local owned = (dc and dc.Upgrades and dc.Upgrades()) or {}
     local cands = {}
     for name, u in pairs(M.Upgrades) do
         if name ~= "Start" and not owned[name] then
@@ -346,130 +411,12 @@ local function buyUpgradesTree()
     local bought = 0
     for _, c in ipairs(cands) do
         if bought >= 4 or c.price > money then break end
-        if NET and NET:FindFirstChild("RE") and NET.RE:FindFirstChild("BuyUpgrade") then
-            NET.RE.BuyUpgrade:FireServer(c.name)
-            money = money - c.price
-            bought = bought + 1
-            task.wait(0.2)
-        end
+        fire(R.BuyUpgrade, c.name)
+        money = money - c.price
+        bought = bought + 1
+        task.wait(0.2)
     end
 end
-
-local function equipBestEverything()
-    safe(function()
-        if NET:FindFirstChild("PlotService") and NET.PlotService:FindFirstChild("RE") and NET.PlotService.RE:FindFirstChild("EquipBest") then
-            NET.PlotService.RE.EquipBest:FireServer()
-        end
-        if NET:FindFirstChild("UnitService") and NET.UnitService:FindFirstChild("RF") and NET.UnitService.RF:FindFirstChild("Equip") then
-            NET.UnitService.RF.Equip:InvokeServer("Best")
-        end
-        if NET:FindFirstChild("Towers") and NET.Towers:FindFirstChild("RE") and NET.Towers.RE:FindFirstChild("EquipBestTowerTeam") then
-            NET.Towers.RE.EquipBestTowerTeam:FireServer()
-        end
-        if NET:FindFirstChild("GearService") and NET.GearService:FindFirstChild("RE") and NET.GearService.RE:FindFirstChild("Equip") then
-            local inv = (DC and DC.Inventory and DC.Inventory()) or {}
-            for key, item in pairs(inv) do
-                if item and item.name and (item.kind == "Gear" or item.name:find("Gear") or item.name:find("Ring") or item.name:find("Amulet")) then
-                    NET.GearService.RE.Equip:FireServer(key)
-                end
-            end
-        end
-    end)
-end
-
-local function getUnitIncome(item)
-    if not item then return 0 end
-    local name = tostring(item.name or "")
-    local cfg = M.Entry and M.Entry.getEntryConfig and M.Entry.getEntryConfig(name)
-    local attrs = item.attributes or {}
-    if cfg and cfg.income then
-        local ok, inc = pcall(cfg.income, attrs)
-        if ok and type(inc) == "number" then return inc end
-    end
-    local lvl = tonumber(attrs.level or attrs.lvl or 1) or 1
-    local base = tonumber(attrs.income or item.income or 10) or 10
-    return base * lvl
-end
-
-local function equipBestPlotAndSellOutside()
-    safe(function()
-        local inv = (DC and DC.Inventory and DC.Inventory()) or {}
-        local maxSlots = getMaxPlotSlots()
-        local slotsData = (DC and DC.Slots and DC.Slots()) or {}
-
-        local plotted = {}
-        local lowestPlotIncome = math.huge
-        local plottedCount = 0
-        local hasEmptySlot = false
-
-        for slot = 1, maxSlots do
-            local s = slotsData[slot]
-            if type(s) == "table" and (s.unitId or s.key) then
-                local uKey = s.unitId or s.key
-                plotted[uKey] = true
-                plottedCount = plottedCount + 1
-                local item = inv[uKey]
-                local inc = getUnitIncome(item)
-                if inc < lowestPlotIncome then
-                    lowestPlotIncome = inc
-                end
-            else
-                hasEmptySlot = true
-            end
-        end
-
-        local shouldEquip = hasEmptySlot or (plottedCount < maxSlots)
-        if not shouldEquip then
-            for key, item in pairs(inv) do
-                if not plotted[key] then
-                    local inc = getUnitIncome(item)
-                    if inc > lowestPlotIncome then
-                        shouldEquip = true
-                        break
-                    end
-                end
-            end
-        end
-
-        if shouldEquip then
-            if NET:FindFirstChild("PlotService") and NET.PlotService:FindFirstChild("RE") and NET.PlotService.RE:FindFirstChild("EquipBest") then
-                NET.PlotService.RE.EquipBest:FireServer()
-                task.wait(1.2)
-            end
-            slotsData = (DC and DC.Slots and DC.Slots()) or {}
-            table.clear(plotted)
-            for slot = 1, maxSlots do
-                local s = slotsData[slot]
-                if type(s) == "table" and (s.unitId or s.key) then
-                    plotted[s.unitId or s.key] = true
-                end
-            end
-        end
-
-        local sellList = {}
-        for key, item in pairs(inv) do
-            if not plotted[key] then
-                table.insert(sellList, key)
-            end
-        end
-
-        if #sellList > 0 then
-            if NET:FindFirstChild("SellService") and NET.SellService:FindFirstChild("RF") and NET.SellService.RF:FindFirstChild("SellInventory") then
-                local ok, money, numSold = pcall(function()
-                    return NET.SellService.RF.SellInventory:InvokeServer(sellList)
-                end)
-                if ok then
-                    Rayfield:Notify({
-                        Title = "🧹 Auto-Sell Selesai!",
-                        Content = #sellList .. " unit di luar plot berhasil dijual! Slot plot terisi unit terbaik.",
-                        Duration = 3
-                    })
-                end
-            end
-        end
-    end)
-end
-
 
 local function findMyPlot()
     local plots = Workspace:FindFirstChild("Plots") or Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Plots")
@@ -505,6 +452,45 @@ local function getMaxPlotSlots()
     return m > 0 and m or 18
 end
 
+-- Ruthless Plot Optimizer: Equip best to plot, immediately sell all rest outside plot!
+local function equipBestPlotAndSellOutside()
+    safe(function()
+        fire(R.EquipBest)
+        task.wait(1.0)
+
+        local dc = getDC()
+        local inv = (dc and dc.Inventory and dc.Inventory()) or {}
+        local slots = (dc and dc.Slots and dc.Slots()) or {}
+
+        local plotted = {}
+        for slotNum, s in pairs(slots) do
+            if type(s) == "table" and (s.unitId or s.key) then
+                plotted[s.unitId or s.key] = true
+            end
+        end
+
+        local sellList = {}
+        for key, item in pairs(inv) do
+            if not plotted[key] then
+                table.insert(sellList, key)
+            end
+        end
+
+        if #sellList > 0 and R.Sell then
+            local ok, money, numSold = pcall(function()
+                return R.Sell:InvokeServer(sellList)
+            end)
+            if ok then
+                Rayfield:Notify({
+                    Title = "🧹 Auto-Sell Sukses!",
+                    Content = #sellList .. " unit di luar plot berhasil dijual!",
+                    Duration = 2.5
+                })
+            end
+        end
+    end)
+end
+
 local function applyPotatoMode(enable)
     if enable then
         pcall(function() if setfpscap then setfpscap(_G.LianConfig.TargetFPS or 30) end end)
@@ -532,7 +518,7 @@ local function applyPotatoMode(enable)
     end
 end
 
--- 6. Auto-Reconnect Watcher (Error 277 / 268 / Disconnect)
+-- 8. Auto-Reconnect Watcher
 local isReconnecting = false
 GuiService.ErrorMessageChanged:Connect(function(msg)
     if _G.LianConfig.AutoReconnect and not isReconnecting then
@@ -545,7 +531,7 @@ GuiService.ErrorMessageChanged:Connect(function(msg)
     end
 end)
 
--- 7. Load UI (Rayfield — Pure Keyless, Solara & Multi-Executor Safe)
+-- 9. Load Rayfield UI
 local Rayfield
 local okRay, rayLib = pcall(function()
     return loadstring(game:HttpGet('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua'))()
@@ -562,11 +548,11 @@ else
 end
 
 if not Rayfield then
-    error("[Lian Hub] Gagal memuat Rayfield dari GitHub Raw dan Sirius! Periksa koneksi internet executor.", 0)
+    error("[Lian Hub] Gagal memuat library Rayfield. Periksa koneksi internet.", 0)
 end
 
 local Window = Rayfield:CreateWindow({
-    Name = "⚡ Lian Hub v6.2 | Anime Dice Master Suite",
+    Name = "⚡ Lian Hub v6.3 | Anime Dice Master Suite",
     Icon = 0,
     LoadingTitle = "Lian Hub Injecting...",
     LoadingSubtitle = "by iannn (@brilliantgibrann16)",
@@ -577,7 +563,7 @@ local Window = Rayfield:CreateWindow({
     KeySystem = false
 })
 
--- Floating Draggable Toggle Button (Laptop Minimizer Safety)
+-- Floating Draggable Toggle Button
 pcall(function()
     local parentGui = (gethui and gethui()) or game:GetService("CoreGui")
     local oldBtn = parentGui:FindFirstChild("LianHubFloatingBtn")
@@ -662,16 +648,6 @@ FarmTab:CreateToggle({
     Callback = function(Value)
         _G.LianConfig.FastRoll = Value
         saveConfig()
-    end,
-})
-
-FarmTab:CreateToggle({
-    Name = "Auto Equip Best Units Tiap Roll (Plot + Tower)",
-    CurrentValue = _G.LianConfig.AutoEquipBestOnRoll,
-    Callback = function(Value)
-        _G.LianConfig.AutoEquipBestOnRoll = Value
-        saveConfig()
-        if Value then equipBestEverything() end
     end,
 })
 
@@ -866,7 +842,7 @@ HalloweenTab:CreateToggle({
 HalloweenTab:CreateSection("🍬 Trick-or-Treat & Event Doors")
 
 HalloweenTab:CreateToggle({
-    Name = "Auto Trick-or-Treat (Auto Teleport & Claim Door)",
+    Name = "Auto Trick-or-Treat (Knock & Claim Door)",
     CurrentValue = _G.LianConfig.AutoTrickOrTreat,
     Callback = function(Value)
         _G.LianConfig.AutoTrickOrTreat = Value
@@ -875,7 +851,7 @@ HalloweenTab:CreateToggle({
 })
 
 HalloweenTab:CreateToggle({
-    Name = "Auto Claim Halloween Event Doors",
+    Name = "Auto Claim Halloween Event Quests",
     CurrentValue = _G.LianConfig.AutoHalloweenDoors,
     Callback = function(Value)
         _G.LianConfig.AutoHalloweenDoors = Value
@@ -939,12 +915,8 @@ TowerTab:CreateToggle({
 TowerTab:CreateButton({
     Name = "🔥 Force Equip Best Tower Team Sekarang",
     Callback = function()
-        safe(function()
-            if NET and NET:FindFirstChild("Towers") and NET.Towers:FindFirstChild("RE") and NET.Towers.RE:FindFirstChild("EquipBestTowerTeam") then
-                NET.Towers.RE.EquipBestTowerTeam:FireServer()
-                Rayfield:Notify({ Title = "Tower Team", Content = "Best Tower Team berhasil dipasang!", Duration = 3 })
-            end
-        end)
+        fire(R.BestTeam)
+        Rayfield:Notify({ Title = "Tower Team", Content = "Best Tower Team berhasil dipasang!", Duration = 3 })
     end,
 })
 
@@ -1200,7 +1172,7 @@ local function sendDiscordWebhook(title, desc, color)
             title = title,
             description = desc,
             color = color or 5814783,
-            footer = { text = "⚡ Lian Hub v6.0 | Anime Dice Telemetry" },
+            footer = { text = "⚡ Lian Hub v6.3 | Anime Dice Telemetry" },
             timestamp = DateTime.now():ToIsoDate()
         }}
     }
@@ -1316,23 +1288,20 @@ end)
 -- 🚀 MASTER 100% DECOUPLED BACKGROUND WORKERS
 -- ═════════════════════════════════════════════════════════════════════
 
--- 1. Auto Roll Dice Worker (Dengan Emergency Auto-Sell Saat Penuh)
+-- 1. Auto Roll Dice Worker
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoRoll then
             if _G.LianConfig.AutoEquipBestPlotAndSellRest then
                 safe(equipBestPlotAndSellOutside)
             end
-            safe(function() NET.RollService.RE.SetAutoRoll:FireServer(true) end)
+            fire(R.SetAutoRoll, true)
             task.spawn(function()
-                safe(function() NET.RollService.RF.RollDice:InvokeServer() end)
+                invoke(R.Roll)
             end)
-            if _G.LianConfig.AutoEquipBestOnRoll then
-                equipBestEverything()
-            end
             task.wait(_G.LianConfig.FastRoll and 0.08 or 0.3)
         else
-            safe(function() NET.RollService.RE.SetAutoRoll:FireServer(false) end)
+            fire(R.SetAutoRoll, false)
             task.wait(0.5)
         end
     end
@@ -1343,10 +1312,8 @@ task.spawn(function()
     while true do
         if _G.LianConfig.AutoRollHalloween then
             safe(function()
-                if NET:FindFirstChild("PumpkinDiceService") and NET.PumpkinDiceService:FindFirstChild("RF") and NET.PumpkinDiceService.RF:FindFirstChild("Roll") then
-                    local rollCount = _G.LianConfig.HalloweenRollOption:find("100") and 1 or 5
-                    NET.PumpkinDiceService.RF.Roll:InvokeServer(rollCount)
-                end
+                local rollCount = _G.LianConfig.HalloweenRollOption:find("100") and 1 or 5
+                invoke(R.PumpkinRoll, rollCount)
             end)
             task.wait(0.35)
         else
@@ -1360,7 +1327,8 @@ task.spawn(function()
     while true do
         if _G.LianConfig.AutoPotions then
             safe(function()
-                local inv = (DC and DC.Inventory and DC.Inventory()) or {}
+                local dc = getDC()
+                local inv = (dc and dc.Inventory and dc.Inventory()) or {}
                 local queue = {}
                 for key, e in pairs(inv) do
                     if e and (e.amount or 0) > 0 then
@@ -1380,10 +1348,8 @@ task.spawn(function()
                 end
                 for _, p in ipairs(queue) do
                     if not _G.LianConfig.AutoPotions then break end
-                    if NET:FindFirstChild("BoostService") and NET.BoostService:FindFirstChild("RE") and NET.BoostService.RE:FindFirstChild("Use") then
-                        NET.BoostService.RE.Use:FireServer(p.key)
-                        task.wait(0.2)
-                    end
+                    fire(R.Boost, p.key)
+                    task.wait(0.2)
                 end
             end)
             task.wait(3)
@@ -1400,12 +1366,10 @@ task.spawn(function()
             safe(function()
                 local canRebirth, curCash, cost = canAffordRebirth()
                 if canRebirth then
-                    if NET:FindFirstChild("RebirthService") and NET.RebirthService:FindFirstChild("RE") and NET.RebirthService.RE:FindFirstChild("Rebirth") then
-                        NET.RebirthService.RE.Rebirth:FireServer()
-                        Rayfield:Notify({ Title = "Rebirth Sukses!", Content = "Uang cukup ($" .. math.floor(curCash) .. "). Rebirth diproses!", Duration = 3 })
-                        task.wait(1.5)
-                        equipBestEverything()
-                    end
+                    fire(R.Rebirth)
+                    Rayfield:Notify({ Title = "Rebirth Sukses!", Content = "Uang cukup ($" .. math.floor(curCash) .. "). Rebirth diproses!", Duration = 3 })
+                    task.wait(1.5)
+                    fire(R.EquipBest)
                 end
             end)
             task.wait(1.5)
@@ -1420,7 +1384,7 @@ task.spawn(function()
     while true do
         safe(function()
             local pts = getAvailableStatPoints()
-            if pts > 0 and NET:FindFirstChild("RebirthService") and NET.RebirthService:FindFirstChild("RE") and NET.RebirthService.RE:FindFirstChild("AddStat") then
+            if pts > 0 and R.AddStat then
                 local prio = _G.LianConfig.RebirthStatPriority
                 local statList = {}
                 if prio:find("Balance") then statList = {"Money", "Luck", "Damage", "Health", "Speed"}
@@ -1430,7 +1394,8 @@ task.spawn(function()
                 elseif prio:find("Health") then statList = {"Health"}
                 elseif prio:find("Speed") then statList = {"Speed"}
                 end
-                local spentT = table.clone((DC and DC.RebirthStats and DC.RebirthStats()) or {})
+                local dc = getDC()
+                local spentT = table.clone((dc and dc.RebirthStats and dc.RebirthStats()) or {})
                 for _ = 1, math.min(pts, 15) do
                     local pick, low = nil, math.huge
                     for _, name in ipairs(statList) do
@@ -1441,7 +1406,7 @@ task.spawn(function()
                     end
                     if not pick then break end
                     spentT[pick] = low + 1
-                    NET.RebirthService.RE.AddStat:FireServer(pick)
+                    fire(R.AddStat, pick)
                     task.wait(0.15)
                 end
             end
@@ -1468,24 +1433,22 @@ task.spawn(function()
         if _G.LianConfig.SmartTowerAI or _G.LianConfig.AutoTower then
             safe(function()
                 if _G.LianConfig.AutoEquipTowerTeam then
-                    if NET:FindFirstChild("Towers") and NET.Towers:FindFirstChild("RE") and NET.Towers.RE:FindFirstChild("EquipBestTowerTeam") then
-                        NET.Towers.RE.EquipBestTowerTeam:FireServer()
-                        task.wait(1)
-                    end
+                    fire(R.BestTeam)
+                    task.wait(1)
                 end
                 local towerName = _G.LianConfig.TowerType
                 if _G.LianConfig.SmartTowerAI then
                     local towers = {"The Abyss", "Bell Tower", "Attic", "Crypt", "Foyer", "Front Yard"}
                     towerName = towers[math.random(1, #towers)]
                 end
-                if NET:FindFirstChild("Towers") and NET.Towers:FindFirstChild("RF") and NET.Towers.RF:FindFirstChild("PlayTower") then
-                    local okStart, resStart = pcall(function() return NET.Towers.RF.PlayTower:InvokeServer(towerName) end)
-                    if okStart and resStart then
+                if R.PlayTower then
+                    local resStart = invoke(R.PlayTower, towerName)
+                    if resStart then
                         task.wait(1)
                         for floor = 1, 50 do
                             if not (_G.LianConfig.SmartTowerAI or _G.LianConfig.AutoTower) then break end
-                            local okFloor, resSeq = pcall(function() return NET.Towers.RF.CompleteTowerFloor:InvokeServer() end)
-                            if not okFloor or resSeq == "destroyed" then break end
+                            local resSeq = invoke(R.FloorTower)
+                            if not resSeq or resSeq == "destroyed" then break end
                             if type(resSeq) == "table" then
                                 local ended = false
                                 for _, a in ipairs(resSeq) do
@@ -1498,7 +1461,7 @@ task.spawn(function()
                     end
                 end
             end)
-            task.wait(5.5) -- 5.5s PlayTower server debounce
+            task.wait(5.5)
         else
             task.wait(1)
         end
@@ -1513,9 +1476,7 @@ task.spawn(function()
                 local maxSlots = getMaxPlotSlots()
                 for slot = 1, maxSlots do
                     if not _G.LianConfig.AutoCollectCash then break end
-                    if NET:FindFirstChild("PlotService") and NET.PlotService:FindFirstChild("RF") and NET.PlotService.RF:FindFirstChild("CollectCash") then
-                        NET.PlotService.RF.CollectCash:InvokeServer(slot)
-                    end
+                    fire(R.Collect, slot)
                 end
             end)
         end
@@ -1524,9 +1485,7 @@ task.spawn(function()
                 local maxSlots = getMaxPlotSlots()
                 for slot = 1, maxSlots do
                     if not _G.LianConfig.AutoLevelUpSlots then break end
-                    if NET:FindFirstChild("PlotService") and NET.PlotService:FindFirstChild("RE") and NET.PlotService.RE:FindFirstChild("LevelUpSlot") then
-                        NET.PlotService.RE.LevelUpSlot:FireServer(slot)
-                    end
+                    fire(R.LevelSlot, slot)
                 end
             end)
         end
@@ -1538,45 +1497,29 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoDailyReward then
-            safe(function()
-                if NET:FindFirstChild("DailyRewardService") and NET.DailyRewardService:FindFirstChild("RE") and NET.DailyRewardService.RE:FindFirstChild("Claim") then
-                    NET.DailyRewardService.RE.Claim:FireServer()
-                end
-            end)
+            safe(function() fire(R.Daily) end)
         end
         if _G.LianConfig.AutoClaimOffline then
-            safe(function()
-                if NET:FindFirstChild("OfflineEarningsService") and NET.OfflineEarningsService:FindFirstChild("RE") and NET.OfflineEarningsService.RE:FindFirstChild("Claim") then
-                    NET.OfflineEarningsService.RE.Claim:FireServer()
-                end
-            end)
+            safe(function() fire(R.Offline) end)
         end
         if _G.LianConfig.AutoLuckySpin then
-            safe(function()
-                if NET:FindFirstChild("SpinService") and NET.SpinService:FindFirstChild("RE") and NET.SpinService.RE:FindFirstChild("Use") then
-                    NET.SpinService.RE.Use:FireServer()
-                end
-            end)
+            safe(function() fire(R.Spin) end)
         end
         if _G.LianConfig.AutoRedeemCodes then
             safe(function()
                 local codes = {"RELEASE", "HALLOWEEN", "LUCK", "UPDATE", "SUB2DEV", "ANIME", "DICE", "PUMPKIN"}
-                if NET:FindFirstChild("CodesService") and NET.CodesService:FindFirstChild("RE") and NET.CodesService.RE:FindFirstChild("RedeemCode") then
-                    for _, c in ipairs(codes) do
-                        NET.CodesService.RE.RedeemCode:FireServer(c)
-                        task.wait(0.2)
-                    end
+                for _, c in ipairs(codes) do
+                    fire(R.Code, c)
+                    task.wait(0.2)
                 end
             end)
         end
         if _G.LianConfig.AutoQuests then
             safe(function()
-                if NET:FindFirstChild("QuestService") and NET.QuestService:FindFirstChild("RE") and NET.QuestService.RE:FindFirstChild("Claim") then
-                    for _, p in ipairs({"Daily", "Weekly"}) do
-                        if M.Quests and M.Quests.Periods and M.Quests.Periods[p] then
-                            for _, q in ipairs(M.Quests.Periods[p].quests or {}) do
-                                NET.QuestService.RE.Claim:FireServer(p, q.id)
-                            end
+                for _, p in ipairs({"Daily", "Weekly"}) do
+                    if M.Quests and M.Quests.Periods and M.Quests.Periods[p] then
+                        for _, q in ipairs(M.Quests.Periods[p].quests or {}) do
+                            fire(R.HalloweenQuest, p, q.id)
                         end
                     end
                 end
@@ -1614,9 +1557,9 @@ task.spawn(function()
                             local pivot = d:GetPivot()
                             hrp.CFrame = pivot * CFrame.new(0, 2, 3)
                             task.wait(0.4)
-                            if NET:FindFirstChild("HalloweenService") and NET.HalloweenService:FindFirstChild("RE") and NET.HalloweenService.RE:FindFirstChild("TrickOrTreat") then
-                                NET.HalloweenService.RE.TrickOrTreat:FireServer(d.Name)
-                            end
+                            fire(R.TrickKnock, d.Name)
+                            task.wait(0.2)
+                            fire(R.TrickLand, d.Name)
                             task.wait(0.3)
                         end
                     end
@@ -1630,16 +1573,14 @@ task.spawn(function()
     end
 end)
 
--- 12. Halloween Event Doors Worker
+-- 12. Halloween Event Quests Worker
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoHalloweenDoors then
             safe(function()
                 local floors = {"The Abyss", "Bell Tower", "Attic", "Crypt", "Foyer", "Front Yard"}
-                if NET:FindFirstChild("HalloweenQuestService") and NET.HalloweenQuestService:FindFirstChild("RE") and NET.HalloweenQuestService.RE:FindFirstChild("Claim") then
-                    for _, f in ipairs(floors) do
-                        NET.HalloweenQuestService.RE.Claim:FireServer("Daily", f)
-                    end
+                for _, f in ipairs(floors) do
+                    fire(R.HalloweenQuest, "Daily", f)
                 end
             end)
             task.wait(3)
@@ -1653,11 +1594,7 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoPumpkinPass then
-            safe(function()
-                if NET:FindFirstChild("HalloweenService") and NET.HalloweenService:FindFirstChild("RE") and NET.HalloweenService.RE:FindFirstChild("ClaimAllPath") then
-                    NET.HalloweenService.RE.ClaimAllPath:FireServer()
-                end
-            end)
+            safe(function() fire(R.HalloweenPath) end)
             task.wait(6)
         else
             task.wait(1)
@@ -1667,32 +1604,33 @@ end)
 
 -- 14. Auto Trade Feeder Listener
 pcall(function()
-    if NET:FindFirstChild("TradeService") and NET.TradeService:FindFirstChild("RE") and NET.TradeService.RE:FindFirstChild("TradeEvent") then
-        NET.TradeService.RE.TradeEvent.OnClientEvent:Connect(function(event, data)
+    if R.TradeEvent then
+        R.TradeEvent.OnClientEvent:Connect(function(event, data)
             if not _G.LianConfig.AutoTradeFeeder then return end
             local master = _G.LianConfig.MasterAccount
             if not master or master == "" then return end
             if event == "Request" and data and data.player then
                 if data.player.Name:lower() == master:lower() then
-                    NET.TradeService.RE.RespondToRequest:FireServer(true)
+                    fire(R.TradeResp, true)
                     Rayfield:Notify({ Title = "Trade Diterima!", Content = "Trade otomatis dari Akun Utama: " .. data.player.Name, Duration = 4 })
                 else
-                    NET.TradeService.RE.RespondToRequest:FireServer(false)
+                    fire(R.TradeResp, false)
                 end
             elseif event == "Started" then
                 task.wait(0.5)
-                local inv = (DC and DC.Inventory and DC.Inventory()) or {}
+                local dc = getDC()
+                local inv = (dc and dc.Inventory and dc.Inventory()) or {}
                 for key, unit in pairs(inv) do
                     local rarity = unit.rarity or (unit.attrs and unit.attrs.rarity) or ""
                     if (_G.LianConfig.TradeMythic and rarity == "Mythic") or (_G.LianConfig.TradeSecret and rarity == "Secret") then
-                        NET.TradeService.RE.ChangeOffer:FireServer(key, 1)
+                        fire(R.TradeOffer, key, 1)
                         task.wait(0.2)
                     end
                 end
                 task.wait(0.5)
-                NET.TradeService.RE.AdvanceTrade:FireServer()
+                fire(R.TradeAdv)
                 task.wait(3.2)
-                NET.TradeService.RE.AdvanceTrade:FireServer()
+                fire(R.TradeAdv)
             end
         end)
     end
@@ -1703,7 +1641,8 @@ task.spawn(function()
     while true do
         if _G.LianConfig.ServerLuckHop then
             safe(function()
-                local weather = (DC and DC.Weather and DC.Weather()) or ""
+                local dc = getDC()
+                local weather = (dc and dc.Weather and dc.Weather()) or ""
                 if weather ~= "Bloodmoon" and weather ~= "Eclipse" and weather ~= "Full Moon" then
                     setupAutoExecuteOnTeleport()
                     local placeId = game.PlaceId
@@ -1736,7 +1675,7 @@ if _G.LianConfig.Disable3DRendering then
 end
 
 Rayfield:Notify({
-    Title = "⚡ Lian Hub v6.2 Ready!",
+    Title = "⚡ Lian Hub v6.3 Ready!",
     Content = "Master Exploit Suite aktif! Gunakan tombol [⚡ Lian Hub] atau RightControl untuk hide/show.",
     Duration = 5
 })

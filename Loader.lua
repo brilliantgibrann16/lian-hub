@@ -1,6 +1,6 @@
 --[[
     ═════════════════════════════════════════════════════════════════════════
-    ⚡ LIAN HUB — 100% KEYLESS ANIME DICE MASTER EXPLOIT SUITE v6.0 ⚡
+    ⚡ LIAN HUB — 100% KEYLESS ANIME DICE MASTER EXPLOIT SUITE v6.1 ⚡
     Author : Lian (@brilliantgibrann16)
     Target : Anime Dice (PlaceId: 113290951185459 / Universe: 10708913337)
     ═════════════════════════════════════════════════════════════════════════
@@ -184,6 +184,11 @@ _G.LianConfig = {
     AutoBuyBestDice = false,
     AutoFuseUnits = false,
     AutoSellWorstUnits = false,
+    EmergencyAutoSellOnFull = true,
+    FullSellThreshold = 5,
+    AutoLockValuable = true,
+    AutoClaimOffline = true,
+    AutoLuckySpin = true,
     AutoSellCommon = true,
     AutoSellRare = true,
     AutoSellEpic = false,
@@ -380,6 +385,107 @@ local function equipBestEverything()
     end)
 end
 
+local function getStorageInfo()
+    local inv = (DC and DC.Inventory and DC.Inventory()) or {}
+    local units = {}
+    for key, item in pairs(inv) do
+        if item then
+            local name = tostring(item.name or key)
+            local cfg = M.Entry and M.Entry.getEntryConfig and M.Entry.getEntryConfig(name)
+            local isUnit = (cfg and cfg.kind == "Unit") or (item.attributes and item.attributes.unitId) or item.kind == "Unit" or (item.rarity ~= nil)
+            if isUnit then
+                local attrs = item.attributes or {}
+                local rar = attrs.rarity or item.rarity or (cfg and cfg.rarity) or "Common"
+                table.insert(units, {
+                    key = key,
+                    name = name,
+                    attrs = attrs,
+                    rarity = rar
+                })
+            end
+        end
+    end
+    local cap = 100
+    if M.Buff and M.Buff.GetBuff then
+        local ok, b = pcall(M.Buff.GetBuff, "Unit Storage")
+        if ok and type(b) == "number" and b > 0 then cap = b end
+    end
+    return #units, cap, cap - #units, units
+end
+
+local function autoLockValuableUnits(units)
+    for _, u in ipairs(units) do
+        local isValuable = (u.rarity == "Mythic" or u.rarity == "Secret" or (u.attrs and (u.attrs.quirk == "Prodigy" or u.attrs.shiny)))
+        if isValuable and not (u.attrs and u.attrs.locked) then
+            if NET:FindFirstChild("UnitService") and NET.UnitService:FindFirstChild("RE") and NET.UnitService.RE:FindFirstChild("SetLocked") then
+                NET.UnitService.RE.SetLocked:FireServer(u.key, true)
+                if u.attrs then u.attrs.locked = true end
+            end
+        end
+    end
+end
+
+local function executeSmartAutoSell(force)
+    local count, cap, free, units = getStorageInfo()
+    local threshold = _G.LianConfig.FullSellThreshold or 5
+    if not force and free > threshold and not _G.LianConfig.AutoSellWorstUnits then
+        return
+    end
+
+    -- 1. Anti-Rugi: Pasang unit terbaik di Plot & Tower Team DULUAN!
+    equipBestEverything()
+    task.wait(1.2) -- Beri jeda server mereplikasi slot plot
+
+    -- 2. Lock unit berharga (Mythic / Secret / Prodigy)
+    if _G.LianConfig.AutoLockValuable then
+        autoLockValuableUnits(units)
+    end
+
+    -- 3. Identifikasi unit yang sedang terpasang di Plot & Tower
+    local plotted = {}
+    for slot, v in pairs((DC and DC.Slots and DC.Slots()) or {}) do
+        if type(v) == "table" and (v.unitId or v.key) then
+            plotted[v.unitId or v.key] = true
+        end
+    end
+    local towerTeam = {}
+    for _, key in pairs((DC and DC.TowerTeam and DC.TowerTeam()) or {}) do
+        towerTeam[key] = true
+    end
+
+    -- 4. Filter unit sampah yang BUKAN di plot, BUKAN di tower, dan TIDAK di-lock
+    local sellList = {}
+    for _, u in ipairs(units) do
+        if not plotted[u.key] and not towerTeam[u.key] and not (u.attrs and u.attrs.locked) then
+            local matchRarity = false
+            if _G.LianConfig.AutoSellCommon and u.rarity == "Common" then matchRarity = true
+            elseif _G.LianConfig.AutoSellRare and u.rarity == "Rare" then matchRarity = true
+            elseif _G.LianConfig.AutoSellEpic and u.rarity == "Epic" then matchRarity = true
+            elseif force and (u.rarity == "Common" or u.rarity == "Rare") then matchRarity = true
+            end
+            if matchRarity then
+                table.insert(sellList, u.key)
+            end
+        end
+    end
+
+    -- 5. Eksekusi penjualan massal ke remote server
+    if #sellList > 0 then
+        if NET:FindFirstChild("SellService") and NET.SellService:FindFirstChild("RF") and NET.SellService.RF:FindFirstChild("SellInventory") then
+            local ok, money, numSold = pcall(function()
+                return NET.SellService.RF.SellInventory:InvokeServer(sellList)
+            end)
+            if ok then
+                Rayfield:Notify({
+                    Title = "🧹 Emergency Auto-Sell!",
+                    Content = #sellList .. " unit sampah berhasil dijual. Unit terbaik aman di Plot & Tower!",
+                    Duration = 3
+                })
+            end
+        end
+    end
+end
+
 local function findMyPlot()
     local plots = Workspace:FindFirstChild("Plots") or Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Plots")
     if not plots then return nil end
@@ -475,7 +581,7 @@ if not Rayfield then
 end
 
 local Window = Rayfield:CreateWindow({
-    Name = "⚡ Lian Hub v6.0 | Anime Dice Master Suite",
+    Name = "⚡ Lian Hub v6.1 | Anime Dice Master Suite",
     Icon = 0,
     LoadingTitle = "Lian Hub Injecting...",
     LoadingSubtitle = "by iannn (@brilliantgibrann16)",
@@ -922,6 +1028,24 @@ PlotTab:CreateToggle({
 })
 
 PlotTab:CreateToggle({
+    Name = "Auto Claim Offline Earnings (Saat Join)",
+    CurrentValue = _G.LianConfig.AutoClaimOffline,
+    Callback = function(Value)
+        _G.LianConfig.AutoClaimOffline = Value
+        saveConfig()
+    end,
+})
+
+PlotTab:CreateToggle({
+    Name = "Auto Spin Lucky Wheel (Free Spins)",
+    CurrentValue = _G.LianConfig.AutoLuckySpin,
+    Callback = function(Value)
+        _G.LianConfig.AutoLuckySpin = Value
+        saveConfig()
+    end,
+})
+
+PlotTab:CreateToggle({
     Name = "Auto Redeem Promo Codes",
     CurrentValue = _G.LianConfig.AutoRedeemCodes,
     Callback = function(Value)
@@ -999,6 +1123,49 @@ RebirthTab:CreateToggle({
     Callback = function(Value)
         _G.LianConfig.AutoBuyBestDice = Value
         saveConfig()
+    end,
+})
+
+RebirthTab:CreateSection("🛡️ Proteksi Inventory & Emergency Auto-Sell")
+
+RebirthTab:CreateToggle({
+    Name = "Emergency Auto-Sell Saat Inventory Penuh (Anti Macet)",
+    CurrentValue = _G.LianConfig.EmergencyAutoSellOnFull,
+    Callback = function(Value)
+        _G.LianConfig.EmergencyAutoSellOnFull = Value
+        saveConfig()
+    end,
+})
+
+RebirthTab:CreateSlider({
+    Name = "Batas Slot Kosong (Trigger Auto-Sell)",
+    Range = {1, 20},
+    Increment = 1,
+    Suffix = " Slots",
+    CurrentValue = _G.LianConfig.FullSellThreshold,
+    Callback = function(Value)
+        _G.LianConfig.FullSellThreshold = Value
+        saveConfig()
+    end,
+})
+
+RebirthTab:CreateToggle({
+    Name = "Auto-Lock Unit Mythic & Secret (Anti Jual / Anti Rugi)",
+    CurrentValue = _G.LianConfig.AutoLockValuable,
+    Callback = function(Value)
+        _G.LianConfig.AutoLockValuable = Value
+        saveConfig()
+        if Value then
+            local _, _, _, units = getStorageInfo()
+            autoLockValuableUnits(units)
+        end
+    end,
+})
+
+RebirthTab:CreateButton({
+    Name = "🔥 Jual Unit Sampah Sekarang (Aman Plot & Tower)",
+    Callback = function()
+        executeSmartAutoSell(true)
     end,
 })
 
@@ -1233,10 +1400,17 @@ end)
 -- 🚀 MASTER 100% DECOUPLED BACKGROUND WORKERS
 -- ═════════════════════════════════════════════════════════════════════
 
--- 1. Auto Roll Dice Worker
+-- 1. Auto Roll Dice Worker (Dengan Emergency Auto-Sell Saat Penuh)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoRoll then
+            if _G.LianConfig.EmergencyAutoSellOnFull then
+                local count, cap, free = getStorageInfo()
+                if free <= (_G.LianConfig.FullSellThreshold or 5) then
+                    executeSmartAutoSell(true)
+                    task.wait(0.5)
+                end
+            end
             safe(function() NET.RollService.RE.SetAutoRoll:FireServer(true) end)
             task.spawn(function()
                 safe(function() NET.RollService.RF.RollDice:InvokeServer() end)
@@ -1448,13 +1622,38 @@ task.spawn(function()
     end
 end)
 
--- 9. Daily Rewards & Quests Worker
+-- 9. Daily Rewards, Quests, Offline Earnings, Wheel & Codes Worker
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoDailyReward then
             safe(function()
                 if NET:FindFirstChild("DailyRewardService") and NET.DailyRewardService:FindFirstChild("RE") and NET.DailyRewardService.RE:FindFirstChild("Claim") then
                     NET.DailyRewardService.RE.Claim:FireServer()
+                end
+            end)
+        end
+        if _G.LianConfig.AutoClaimOffline then
+            safe(function()
+                if NET:FindFirstChild("OfflineEarningsService") and NET.OfflineEarningsService:FindFirstChild("RE") and NET.OfflineEarningsService.RE:FindFirstChild("Claim") then
+                    NET.OfflineEarningsService.RE.Claim:FireServer()
+                end
+            end)
+        end
+        if _G.LianConfig.AutoLuckySpin then
+            safe(function()
+                if NET:FindFirstChild("SpinService") and NET.SpinService:FindFirstChild("RE") and NET.SpinService.RE:FindFirstChild("Use") then
+                    NET.SpinService.RE.Use:FireServer()
+                end
+            end)
+        end
+        if _G.LianConfig.AutoRedeemCodes then
+            safe(function()
+                local codes = {"RELEASE", "HALLOWEEN", "LUCK", "UPDATE", "SUB2DEV", "ANIME", "DICE", "PUMPKIN"}
+                if NET:FindFirstChild("CodesService") and NET.CodesService:FindFirstChild("RE") and NET.CodesService.RE:FindFirstChild("RedeemCode") then
+                    for _, c in ipairs(codes) do
+                        NET.CodesService.RE.RedeemCode:FireServer(c)
+                        task.wait(0.2)
+                    end
                 end
             end)
         end
@@ -1475,22 +1674,17 @@ task.spawn(function()
     end
 end)
 
--- 10. Auto Sell Worst Units Worker (Common/Rare/Epic)
+-- 10. Auto Sell Worst Units Worker (Direct SellInventory + Emergency Full Check)
 task.spawn(function()
     while true do
-        if _G.LianConfig.AutoSellWorstUnits then
+        if _G.LianConfig.AutoSellWorstUnits or _G.LianConfig.EmergencyAutoSellOnFull then
             safe(function()
-                equipBestEverything()
-                task.wait(0.5)
-                local toSell = {}
-                if _G.LianConfig.AutoSellCommon then table.insert(toSell, "Common") end
-                if _G.LianConfig.AutoSellRare then table.insert(toSell, "Rare") end
-                if _G.LianConfig.AutoSellEpic then table.insert(toSell, "Epic") end
-                if #toSell > 0 and NET:FindFirstChild("SellService") and NET.SellService:FindFirstChild("RE") and NET.SellService.RE:FindFirstChild("UpdateAutoSell") then
-                    NET.SellService.RE.UpdateAutoSell:FireServer(toSell)
+                local count, cap, free = getStorageInfo()
+                if free <= (_G.LianConfig.FullSellThreshold or 5) or _G.LianConfig.AutoSellWorstUnits then
+                    executeSmartAutoSell(false)
                 end
             end)
-            task.wait(4)
+            task.wait(3.5)
         else
             task.wait(1)
         end
@@ -1635,7 +1829,7 @@ if _G.LianConfig.Disable3DRendering then
 end
 
 Rayfield:Notify({
-    Title = "⚡ Lian Hub v6.0 Ready!",
+    Title = "⚡ Lian Hub v6.1 Ready!",
     Content = "Master Exploit Suite aktif! Gunakan tombol [⚡ Lian Hub] atau RightControl untuk hide/show.",
     Duration = 5
 })

@@ -1,21 +1,35 @@
 --[[
     ═════════════════════════════════════════════════════════════════════════
-    ⚡ LIAN HUB — 100% KEYLESS ANIME DICE ULTIMATE EXPLOIT SUITE v5.0 ⚡
+    ⚡ LIAN HUB — 100% KEYLESS ANIME DICE MASTER EXPLOIT SUITE v6.0 ⚡
     Author : Lian (@brilliantgibrann16)
-    Repo   : https://github.com/brilliantgibrann16/lian-hub
-    Fitur  : • Auto Trade Feeder (Setoran Unit Mythic/Secret Otomatis ke Akun Utama)
-             • Discord Webhook Drop Alerts & Telemetry
-             • Auto Reconnect Anti-Crash / Error Code (277/268/529)
-             • GPU 0% Mode: Disable 3D Rendering (Dingin Nuyul 15-20 Akun)
-             • Smart Tower Matcher AI (Simulasi Tempur Virtual In-Memory)
-             • Auto Sell Worst Units (Multi-Filter Rarity & Slot Lock Safe)
-             • SMART Rebirth & Stat Upgrades (Anti-Spam / Hanya Saat Cukup)
-             • Auto Buy Best Dice & Auto Fuse Units (Toggle System)
-             • Auto Equip Best Gear & Ticket Shop Buyer
-             • Auto Hop Server Luck (Multi-Page Pool + Anti-Rejoin Duplicate)
-             • Full Auto Potions, Halloween Event Suite & Daily/Quests
+    Target : Anime Dice (PlaceId: 113290951185459 / Universe: 10708913337)
     ═════════════════════════════════════════════════════════════════════════
---]]
+    [CHANGELOG v6.0 MASTER EXPLOIT DEV EDITION]:
+    ★ 100% Decoupled Background Worker Loops:
+      - All farm routines (Roll, Halloween, Potions, Rebirth, Stats, Towers,
+        Quests, Plots, Auto Sell) run in permanent background worker threads.
+      - On fresh inject or server hop re-execute, ALL saved 'true' toggles
+        IMMEDIATELY start working with ZERO clicks required!
+    ★ Laptop Minimizer & Floating Toggle Menu:
+      - Sleek draggable floating button "[⚡ Lian Hub]" on CoreGui/gethui.
+      - Hotkeys: RightControl / Insert / LeftAlt to toggle visibility.
+      - Never lost if user clicks 'X' or closes on laptop!
+    ★ Smart Halloween Roll:
+      - Dropdown choice: 500 Labu (5x Rolls) vs 100 Labu (1x Roll).
+      - Checks balance before roll to prevent remote error spam.
+    ★ Smart Rebirth & Stat Upgrades:
+      - Auto Rebirth ONLY fires when Money >= Cost (Zero Spam!).
+      - Stat Priority Dropdown (Balance, Money, Luck, Damage, Health, Speed).
+      - Stat allocation ONLY fires when Available Points > 0 (Zero Spam!).
+      - Auto Buy Tree Upgrades (Fortune, etc. near dice UI) via M.Tree & BuyUpgrade.
+    ★ Advanced Potion Stacking & Selector:
+      - Drink & stack potions by category (Luck, Income, Damage, Speed, Halloween, Tower).
+      - Tower Potion Farming Selector.
+    ★ Native Tower Team Auto-Equip:
+      - Uses official ReplicatedStorage.Network.Towers.RE.EquipBestTowerTeam.
+      - 5.5s server debounce + sequence action parsing ("floorCompleted" / "ended").
+    ═════════════════════════════════════════════════════════════════════════
+]]--
 
 repeat task.wait(0.2) until game:IsLoaded()
 
@@ -55,7 +69,6 @@ end
 -- 3. Network & Framework (Non-blocking & Solara Safe)
 local NET = RS:FindFirstChild("Network") or RS:WaitForChild("Network", 4)
 
--- Drop thread identity safely around every require of game modules (bypass executor identity restriction)
 local function asGame(fn, ...)
     if type(setthreadidentity) ~= "function" or type(getthreadidentity) ~= "function" then
         local ok, res = pcall(fn, ...)
@@ -102,6 +115,9 @@ task.spawn(function()
             M.Towers = req(Feat.Towers:FindFirstChild("Towers"))
             M.TowerRefs = req(Feat.Towers:FindFirstChild("TowerRefs"))
         end
+        if Feat:FindFirstChild("Quests") then
+            M.Quests = req(Feat.Quests:FindFirstChild("QuestConfig"))
+        end
     end)
 end)
 
@@ -112,6 +128,7 @@ local function getDC()
     end)
     return M.Data
 end
+
 local DC = setmetatable({}, {
     __index = function(_, k)
         local real = getDC()
@@ -122,7 +139,7 @@ local DC = setmetatable({}, {
 
 local function safe(fn, ...)
     local ok, res = pcall(fn, ...)
-    return ok, res
+    return ok and res
 end
 
 -- 4. Persistent Configuration Storage (Auto Save & Load)
@@ -133,10 +150,17 @@ _G.LianConfig = {
     AutoRoll = false,
     FastRoll = false,
     AutoRollHalloween = false,
+    HalloweenRollOption = "500 Labu (5x Rolls)",
     AutoSkipTutorial = false,
     LeaveOnTarget = false,
     TargetRolls = 1000,
     AutoPotions = false,
+    PotionUseLuck = true,
+    PotionUseIncome = true,
+    PotionUseDamage = true,
+    PotionUseSpeed = false,
+    PotionUseHalloween = true,
+    PotionUseTower = true,
     AutoSpin = false,
     AutoTrickOrTreat = false,
     AutoPumpkinPass = false,
@@ -144,7 +168,7 @@ _G.LianConfig = {
     CandyShopItem = "Pumpkin Egg",
     AutoTower = false,
     SmartTowerAI = false,
-    TowerPreference = "Halloween First",
+    AutoEquipTowerTeam = true,
     TowerType = "The Abyss",
     AutoCollectCash = false,
     AutoLevelUpSlots = false,
@@ -154,12 +178,8 @@ _G.LianConfig = {
     AutoTicketShop = false,
     TicketShopItem = "Clover",
     AutoRebirth = false,
-    UpgradeLuck = true,
-    UpgradeDamage = true,
-    UpgradeHealth = true,
-    UpgradeIncome = true,
-    UpgradeSpeed = true,
-    UpgradeFortune = true,
+    RebirthStatPriority = "Balance / Rata (Money, Luck, Damage, Health, Speed)",
+    AutoBuyTreeUpgrades = false,
     AutoEquipBestOnRoll = false,
     AutoBuyBestDice = false,
     AutoFuseUnits = false,
@@ -195,23 +215,26 @@ end
 
 local function loadConfig()
     pcall(function()
-        if isfile and readfile and isfile(CONFIG_FILE) then
+        if isfile and isfile(CONFIG_FILE) and readfile then
             local data = HttpService:JSONDecode(readfile(CONFIG_FILE))
             if type(data) == "table" then
                 for k, v in pairs(data) do
-                    _G.LianConfig[k] = v
+                    if _G.LianConfig[k] ~= nil then
+                        _G.LianConfig[k] = v
+                    end
                 end
-                _G.LianConfig.ServerLuckHop = false
             end
         end
     end)
+    -- Safe guard: Always boot with hopping disabled to prevent teleport loops
+    _G.LianConfig.ServerLuckHop = false
 end
 loadConfig()
 
--- 5. Helper Functions & Smart Currency / Rebirth Analyzers
+-- 5. Helper Functions
 local function parseFormattedNumber(str)
     if not str then return 0 end
-    local raw = str:gsub("[$,]", ""):lower()
+    local raw = tostring(str):lower():gsub("[$,]", "")
     local num = tonumber(raw:match("[%d%.]+"))
     if not num then return 0 end
     if raw:find("qa") then return num * 1e15
@@ -227,10 +250,12 @@ local function getPlayerCash()
     if DC then
         local ok1, c1 = pcall(function() return DC.Cash and DC.Cash() end)
         if ok1 and type(c1) == "number" then return c1 end
-        local ok2, c2 = pcall(function() return DC.Coins and DC.Coins() end)
+        local ok2, c2 = pcall(function() return DC.Money and DC.Money() end)
         if ok2 and type(c2) == "number" then return c2 end
-        local ok3, c3 = pcall(function() return DC.Balance and DC.Balance() end)
+        local ok3, c3 = pcall(function() return DC.Coins and DC.Coins() end)
         if ok3 and type(c3) == "number" then return c3 end
+        local ok4, c4 = pcall(function() return DC.Balance and DC.Balance() end)
+        if ok4 and type(c4) == "number" then return c4 end
     end
     local ls = LocalPlayer:FindFirstChild("leaderstats")
     if ls then
@@ -252,6 +277,13 @@ local function canAffordRebirth()
     local curCash = getPlayerCash()
     local curRebirths = 0
     if DC and DC.Rebirths then pcall(function() curRebirths = DC.Rebirths() end) end
+
+    if M.Rebirths and M.Rebirths.GetNext then
+        local okNxt, nxt = pcall(function() return M.Rebirths.GetNext(curRebirths) end)
+        if okNxt and nxt and type(nxt.cost) == "number" then
+            return curCash >= nxt.cost, curCash, nxt.cost
+        end
+    end
 
     local okRC, RebirthConfig = pcall(function()
         return require(RS.Framework.Features.Rebirth.RebirthConfig)
@@ -278,20 +310,16 @@ local function canAffordRebirth()
 end
 
 local function getAvailableStatPoints()
-    local okRSC, RSC = pcall(function()
-        return require(RS.Framework.Features.Rebirth.RebirthStatsConfig)
-    end)
-    if okRSC and RSC and RSC.GetRemaining then
-        local curStats = {}
-        local curRebirths = 0
-        if DC then
-            pcall(function() curStats = (DC.RebirthStats and DC.RebirthStats()) or {} end)
-            pcall(function() curRebirths = (DC.Rebirths and DC.Rebirths()) or 0 end)
-        end
-        local okRem, rem = pcall(function() return RSC.GetRemaining(curRebirths, curStats) end)
+    local curStats = {}
+    local curRebirths = 0
+    if DC then
+        pcall(function() curStats = (DC.RebirthStats and DC.RebirthStats()) or {} end)
+        pcall(function() curRebirths = (DC.Rebirths and DC.Rebirths()) or 0 end)
+    end
+    if M.RStats and M.RStats.GetRemaining then
+        local okRem, rem = pcall(function() return M.RStats.GetRemaining(curRebirths, curStats) end)
         if okRem and type(rem) == "number" then return rem end
     end
-
     local rMenu = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Root") and LocalPlayer.PlayerGui.Root:FindFirstChild("Menus") and LocalPlayer.PlayerGui.Root.Menus:FindFirstChild("Rebirth")
     if rMenu then
         for _, lbl in ipairs(rMenu:GetDescendants()) do
@@ -304,84 +332,61 @@ local function getAvailableStatPoints()
     return 0
 end
 
-local function canAffordFortune()
-    local curCash = getPlayerCash()
-    local curTier = 1
-    if DC and DC.Upgrades then
-        pcall(function()
-            local upg = DC.Upgrades()
-            if upg and upg.Fortune then curTier = upg.Fortune end
-        end)
+local function buyUpgradesTree()
+    local money = getPlayerCash()
+    if not M.Upgrades or not M.Tree then return end
+    local owned = (DC and DC.Upgrades and DC.Upgrades()) or {}
+    local cands = {}
+    for name, u in pairs(M.Upgrades) do
+        if name ~= "Start" and not owned[name] then
+            local parent = M.Tree.GetParent and M.Tree.GetParent(name)
+            if parent == nil or parent == "Start" or owned[parent] then
+                table.insert(cands, { name = name, price = u.price or 0 })
+            end
+        end
     end
+    table.sort(cands, function(a, b) return a.price < b.price end)
+    local bought = 0
+    for _, c in ipairs(cands) do
+        if bought >= 4 or c.price > money then break end
+        if NET and NET:FindFirstChild("RE") and NET.RE:FindFirstChild("BuyUpgrade") then
+            NET.RE.BuyUpgrade:FireServer(c.name)
+            money = money - c.price
+            bought = bought + 1
+            task.wait(0.2)
+        end
+    end
+end
 
-    local okUC, UC = pcall(function()
-        return require(RS.Framework.Features.Upgrades.UpgradesConfig)
+local function equipBestEverything()
+    safe(function()
+        if NET:FindFirstChild("PlotService") and NET.PlotService:FindFirstChild("RE") and NET.PlotService.RE:FindFirstChild("EquipBest") then
+            NET.PlotService.RE.EquipBest:FireServer()
+        end
+        if NET:FindFirstChild("UnitService") and NET.UnitService:FindFirstChild("RF") and NET.UnitService.RF:FindFirstChild("Equip") then
+            NET.UnitService.RF.Equip:InvokeServer("Best")
+        end
+        if NET:FindFirstChild("Towers") and NET.Towers:FindFirstChild("RE") and NET.Towers.RE:FindFirstChild("EquipBestTowerTeam") then
+            NET.Towers.RE.EquipBestTowerTeam:FireServer()
+        end
+        if NET:FindFirstChild("GearService") and NET.GearService:FindFirstChild("RE") and NET.GearService.RE:FindFirstChild("Equip") then
+            local inv = (DC and DC.Inventory and DC.Inventory()) or {}
+            for key, item in pairs(inv) do
+                if item and item.name and (item.kind == "Gear" or item.name:find("Gear") or item.name:find("Ring") or item.name:find("Amulet")) then
+                    NET.GearService.RE.Equip:FireServer(key)
+                end
+            end
+        end
     end)
-    if okUC and UC and UC.GetCost then
-        local okCost, cost = pcall(function() return UC.GetCost("Fortune", curTier) end)
-        if okCost and type(cost) == "number" then return curCash >= cost end
-    end
-    return curCash >= 50000
-end
-
-local function applyPotatoMode(enable)
-    if enable then
-        pcall(function() if setfpscap then setfpscap(30) end end)
-        for _, v in ipairs(game:GetDescendants()) do
-            if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Beam") or v:IsA("Sparkles") or v:IsA("Fire") or v:IsA("Smoke") then
-                pcall(function() v.Enabled = false end)
-            end
-        end
-    else
-        pcall(function() if setfpscap then setfpscap(60) end end)
-        for _, v in ipairs(game:GetDescendants()) do
-            if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Beam") or v:IsA("Sparkles") or v:IsA("Fire") or v:IsA("Smoke") then
-                pcall(function() v.Enabled = true end)
-            end
-        end
-    end
-end
-
-local function sendDiscordWebhook(title, desc, color)
-    local url = _G.LianConfig.DiscordWebhook
-    if not url or url == "" or not url:find("discord") then return end
-    local req = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
-    if req then
-        local payload = {
-            username = "Lian Hub Telemetry",
-            embeds = {{
-                title = title,
-                description = desc,
-                color = color or 65280,
-                footer = { text = "Anime Dice Tuyul Suite • " .. LocalPlayer.Name },
-                timestamp = DateTime.now():ToIsoDate()
-            }}
-        }
-        pcall(function()
-            req({
-                Url = url,
-                Method = "POST",
-                Headers = { ["Content-Type"] = "application/json" },
-                Body = HttpService:JSONEncode(payload)
-            })
-        end)
-    end
-end
-
-local function getCharRoot()
-    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    return char:FindFirstChild("HumanoidRootPart")
 end
 
 local function findMyPlot()
-    local plots = Workspace:FindFirstChild("Plots")
+    local plots = Workspace:FindFirstChild("Plots") or Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Plots")
     if not plots then return nil end
-    local claimed = plots:FindFirstChild("Claimed")
-    if not claimed then return nil end
-    for _, plot in ipairs(claimed:GetChildren()) do
-        local label = plot:FindFirstChild("Label")
-        if label then
-            local bb = label:FindFirstChild("BillboardGui")
+    for _, plot in ipairs(plots:GetChildren()) do
+        local sign = plot:FindFirstChild("Sign") or plot:FindFirstChild("PlotSign")
+        if sign then
+            local bb = sign:FindFirstChildWhichIsA("BillboardGui", true)
             if bb then
                 local pName = bb:FindFirstChild("PlayerName")
                 if pName and (pName.Text == LocalPlayer.DisplayName or pName.Text == LocalPlayer.Name) then
@@ -407,6 +412,33 @@ local function getMaxPlotSlots()
         if n and n > m then m = n end
     end
     return m > 0 and m or 18
+end
+
+local function applyPotatoMode(enable)
+    if enable then
+        pcall(function() if setfpscap then setfpscap(_G.LianConfig.TargetFPS or 30) end end)
+        pcall(function()
+            settings().Rendering.QualityLevel = 1
+            Lighting.GlobalShadows = false
+            Lighting.Brightness = 1
+        end)
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                obj.Material = Enum.Material.SmoothPlastic
+                obj.CastShadow = false
+            elseif obj:IsA("Decal") then
+                obj.Transparency = 1
+            elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                obj.Enabled = false
+            end
+        end
+    else
+        pcall(function() if setfpscap then setfpscap(60) end end)
+        pcall(function()
+            settings().Rendering.QualityLevel = 5
+            Lighting.GlobalShadows = true
+        end)
+    end
 end
 
 -- 6. Auto-Reconnect Watcher (Error 277 / 268 / Disconnect)
@@ -442,41 +474,78 @@ if not Rayfield then
     error("[Lian Hub] Gagal memuat Rayfield dari GitHub Raw dan Sirius! Periksa koneksi internet executor.", 0)
 end
 
-local Window
-local okWin, winRes = pcall(function()
-    return Rayfield:CreateWindow({
-        Name = "⚡ Lian Hub v5.0 | Anime Dice Exploit Suite",
-        Icon = 0,
-        LoadingTitle = "Lian Hub Injecting...",
-        LoadingSubtitle = "by iannn (@brilliantgibrann16)",
-        Theme = "Ocean",
-        DisableRayfieldPrompts = true,
-        DisableBuildWarnings = true,
-        ConfigurationSaving = { Enabled = false },
-        KeySystem = false -- 🔥 ZERO KEY SYSTEM / ZERO ADS
-    })
+local Window = Rayfield:CreateWindow({
+    Name = "⚡ Lian Hub v6.0 | Anime Dice Master Suite",
+    Icon = 0,
+    LoadingTitle = "Lian Hub Injecting...",
+    LoadingSubtitle = "by iannn (@brilliantgibrann16)",
+    Theme = "Ocean",
+    DisableRayfieldPrompts = true,
+    DisableBuildWarnings = true,
+    ConfigurationSaving = { Enabled = false },
+    KeySystem = false
+})
+
+-- Floating Draggable Toggle Button (Laptop Minimizer Safety)
+pcall(function()
+    local parentGui = (gethui and gethui()) or game:GetService("CoreGui")
+    local oldBtn = parentGui:FindFirstChild("LianHubFloatingBtn")
+    if oldBtn then oldBtn:Destroy() end
+
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "LianHubFloatingBtn"
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.Parent = parentGui
+
+    local Btn = Instance.new("TextButton")
+    Btn.Name = "ToggleMenu"
+    Btn.Parent = ScreenGui
+    Btn.Size = UDim2.new(0, 115, 0, 32)
+    Btn.Position = UDim2.new(0.015, 0, 0.15, 0)
+    Btn.BackgroundColor3 = Color3.fromRGB(15, 23, 42)
+    Btn.TextColor3 = Color3.fromRGB(56, 189, 248)
+    Btn.Text = "⚡ Lian Hub"
+    Btn.Font = Enum.Font.GothamBold
+    Btn.TextSize = 13
+    Btn.Active = true
+    Btn.Draggable = true
+
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, 8)
+    Corner.Parent = Btn
+
+    local Stroke = Instance.new("UIStroke")
+    Stroke.Color = Color3.fromRGB(56, 189, 248)
+    Stroke.Thickness = 1.5
+    Stroke.Parent = Btn
+
+    Btn.MouseButton1Click:Connect(function()
+        pcall(function()
+            local rMain = parentGui:FindFirstChild("Rayfield")
+            if rMain then
+                rMain.Enabled = not rMain.Enabled
+            end
+        end)
+    end)
+
+    UserInputService.InputBegan:Connect(function(input, gpe)
+        if not gpe and (input.KeyCode == Enum.KeyCode.RightControl or input.KeyCode == Enum.KeyCode.Insert or input.KeyCode == Enum.KeyCode.LeftAlt) then
+            local rMain = parentGui:FindFirstChild("Rayfield")
+            if rMain then
+                rMain.Enabled = not rMain.Enabled
+            end
+        end
+    end)
 end)
-if okWin and winRes then
-    Window = winRes
-else
-    warn("[Lian Hub] CreateWindow failed with full config, retrying minimal config:", winRes)
-    Window = Rayfield:CreateWindow({
-        Name = "⚡ Lian Hub v5.0 | Anime Dice",
-        LoadingTitle = "Lian Hub",
-        LoadingSubtitle = "by iannn",
-        ConfigurationSaving = { Enabled = false },
-        KeySystem = false
-    })
-end
 
 -- TABS
 local FarmTab = Window:CreateTab("Auto Farm", 4483362458)
-local PotionsTab = Window:CreateTab("Auto Potions", 4483362458)
+local PotionsTab = Window:CreateTab("Potion Stacking", 4483362458)
 local FeederTab = Window:CreateTab("Trade Feeder", 4483362458)
 local HalloweenTab = Window:CreateTab("Halloween Event", 4483362458)
 local TowerTab = Window:CreateTab("Towers", 4483362458)
-local EconomyTab = Window:CreateTab("Plot Cash & Quests", 4483362458)
-local UpgradesTab = Window:CreateTab("Rebirth & Units", 4483362458)
+local PlotTab = Window:CreateTab("Plot & Quests", 4483362458)
+local RebirthTab = Window:CreateTab("Rebirth & Stats", 4483362458)
 local ServerTab = Window:CreateTab("Server Luck Hunter", 4483362458)
 local WebhookTab = Window:CreateTab("Discord Webhook", 4483362458)
 local PerfTab = Window:CreateTab("Potato & Botting", 4483362458)
@@ -490,30 +559,9 @@ FarmTab:CreateSection("🎲 Dice Rolling Engine")
 FarmTab:CreateToggle({
     Name = "Auto Roll Dice (Native + Non-blocking Fast Spam)",
     CurrentValue = _G.LianConfig.AutoRoll,
-    Flag = "ToggleAutoRoll",
     Callback = function(Value)
         _G.LianConfig.AutoRoll = Value
         saveConfig()
-        if Value then
-            safe(function() NET.RollService.RE.SetAutoRoll:FireServer(true) end)
-            task.spawn(function()
-                while _G.LianConfig.AutoRoll do
-                    task.spawn(function()
-                        safe(function() NET.RollService.RF.RollDice:InvokeServer() end)
-                    end)
-                    if _G.LianConfig.AutoEquipBestOnRoll then
-                        safe(function()
-                            NET.PlotService.RE.EquipBest:FireServer()
-                            NET.UnitService.RF.Equip:InvokeServer("Best")
-                        end)
-                    end
-                    task.wait(_G.LianConfig.FastRoll and 0.08 or 0.3)
-                end
-                safe(function() NET.RollService.RE.SetAutoRoll:FireServer(false) end)
-            end)
-        else
-            safe(function() NET.RollService.RE.SetAutoRoll:FireServer(false) end)
-        end
     end,
 })
 
@@ -527,702 +575,389 @@ FarmTab:CreateToggle({
 })
 
 FarmTab:CreateToggle({
-    Name = "Auto Roll Halloween Pumpkin Dice (5x Rolls)",
-    CurrentValue = _G.LianConfig.AutoRollHalloween,
+    Name = "Auto Equip Best Units Tiap Roll (Plot + Tower)",
+    CurrentValue = _G.LianConfig.AutoEquipBestOnRoll,
     Callback = function(Value)
-        _G.LianConfig.AutoRollHalloween = Value
+        _G.LianConfig.AutoEquipBestOnRoll = Value
         saveConfig()
-        if Value then
-            task.spawn(function()
-                while _G.LianConfig.AutoRollHalloween do
-                    safe(function()
-                        if NET:FindFirstChild("PumpkinDiceService") then
-                            NET.PumpkinDiceService.RF.Roll:InvokeServer(5)
-                        end
-                    end)
-                    task.wait(_G.LianConfig.FastRoll and 0.15 or 0.5)
-                end
-            end)
-        end
+        if Value then equipBestEverything() end
     end,
 })
 
 FarmTab:CreateToggle({
-    Name = "Auto Skip / Complete Tutorial (Akun Baru)",
+    Name = "Auto Skip Tutorial (Semua Langkah 1-13)",
     CurrentValue = _G.LianConfig.AutoSkipTutorial,
     Callback = function(Value)
         _G.LianConfig.AutoSkipTutorial = Value
         saveConfig()
-        if Value then
-            task.spawn(function()
-                while _G.LianConfig.AutoSkipTutorial do
-                    safe(function()
-                        local step = DC and DC.OnboardingStep and DC.OnboardingStep() or -1
-                        if step < 14 and step >= 0 then
-                            NET.OnboardingService.RE.Advance:FireServer()
-                        end
-                    end)
-                    task.wait(1)
-                end
-            end)
-        end
     end,
 })
 
-FarmTab:CreateSection("🎯 Target Rolls (Auto Disconnect Nuyul)")
+FarmTab:CreateSection("✨ Quirk Reroll Hunter")
 
-FarmTab:CreateInput({
-    Name = "Target Rolls (Syarat Trade)",
-    PlaceholderText = "Default: 1000",
-    RemoveTextAfterFocusLost = false,
-    Callback = function(Text)
-        local num = tonumber(Text)
-        if num then
-            _G.LianConfig.TargetRolls = num
-            saveConfig()
-        end
+FarmTab:CreateDropdown({
+    Name = "Target Quirk (Reroll Sampai Dapat)",
+    Options = {"Prodigy", "Fortune's Favor", "Collector", "Golden Touch"},
+    CurrentOption = _G.LianConfig.QuirkTarget,
+    Callback = function(Option)
+        _G.LianConfig.QuirkTarget = type(Option) == "table" and Option[1] or Option
+        saveConfig()
     end,
 })
 
 FarmTab:CreateToggle({
-    Name = "Auto Disconnect Saat Target Rolls Tercapai",
+    Name = "Auto Reroll Quirk (Auto Stop Pas Target)",
+    CurrentValue = _G.LianConfig.AutoQuirk,
+    Callback = function(Value)
+        _G.LianConfig.AutoQuirk = Value
+        saveConfig()
+    end,
+})
+
+FarmTab:CreateSection("🚪 Auto Disconnect Tuyul")
+
+FarmTab:CreateToggle({
+    Name = "Leave Game Saat Mencapai Target Rolls",
     CurrentValue = _G.LianConfig.LeaveOnTarget,
     Callback = function(Value)
         _G.LianConfig.LeaveOnTarget = Value
         saveConfig()
-        if Value then
-            task.spawn(function()
-                while _G.LianConfig.LeaveOnTarget do
-                    local curRolls = (DC and DC.Rolls and DC.Rolls()) or 0
-                    if curRolls >= _G.LianConfig.TargetRolls then
-                        safe(function() NET.RollService.RE.SetAutoRoll:FireServer(false) end)
-                        Rayfield:Notify({ Title = "Target Rolls Tercapai!", Content = "Rolls sudah " .. curRolls .. ". Disconnecting...", Duration = 4 })
-                        task.wait(2)
-                        LocalPlayer:Kick("Lian Hub: Target " .. _G.LianConfig.TargetRolls .. " Rolls Tercapai!")
-                        break
-                    end
-                    task.wait(5)
-                end
-            end)
-        end
+    end,
+})
+
+FarmTab:CreateSlider({
+    Name = "Target Rolls (Tuyul Otomatis DC)",
+    Range = {100, 50000},
+    Increment = 100,
+    Suffix = " Rolls",
+    CurrentValue = _G.LianConfig.TargetRolls,
+    Callback = function(Value)
+        _G.LianConfig.TargetRolls = Value
+        saveConfig()
     end,
 })
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 2: AUTO POTIONS & BOOSTS
+-- TAB 2: POTION STACKING & SELECTOR
 -- ═════════════════════════════════════════════════════════════════════
-PotionsTab:CreateSection("🧪 Potion Auto Drink Engine")
-
-local POTIONS_LIST = {
-    "Pumpkin Pot III", "Pumpkin Pot II", "Candy Pot III", "Candy Pot II",
-    "Luck IV", "Luck III", "Luck II", "Luck I",
-    "Damage IV", "Damage III", "Damage II",
-    "Income IV", "Income III", "Income II",
-    "Haunted Potion"
-}
+PotionsTab:CreateSection("🧪 Potion Stacking & Category Filters")
 
 PotionsTab:CreateToggle({
-    Name = "Auto Consume All Potions (Per Habis Otomatis Minum)",
+    Name = "Auto Drink & Stack Potions (Sesuai Kategori Pilihan)",
     CurrentValue = _G.LianConfig.AutoPotions,
     Callback = function(Value)
         _G.LianConfig.AutoPotions = Value
         saveConfig()
-        if Value then
-            task.spawn(function()
-                while _G.LianConfig.AutoPotions do
-                    safe(function()
-                        for _, potionName in ipairs(POTIONS_LIST) do
-                            NET.BoostService.RE.Use:FireServer(potionName)
-                            task.wait(0.1)
-                        end
-                    end)
-                    task.wait(15)
-                end
-            end)
-        end
     end,
 })
 
 PotionsTab:CreateToggle({
-    Name = "Auto Spin Lucky Wheel",
+    Name = "Minum Luck Potions (Luck I s/d IV)",
+    CurrentValue = _G.LianConfig.PotionUseLuck,
+    Callback = function(Value)
+        _G.LianConfig.PotionUseLuck = Value
+        saveConfig()
+    end,
+})
+
+PotionsTab:CreateToggle({
+    Name = "Minum Money / Income Potions (Income I s/d IV)",
+    CurrentValue = _G.LianConfig.PotionUseIncome,
+    Callback = function(Value)
+        _G.LianConfig.PotionUseIncome = Value
+        saveConfig()
+    end,
+})
+
+PotionsTab:CreateToggle({
+    Name = "Minum Damage Potions (Damage I s/d IV)",
+    CurrentValue = _G.LianConfig.PotionUseDamage,
+    Callback = function(Value)
+        _G.LianConfig.PotionUseDamage = Value
+        saveConfig()
+    end,
+})
+
+PotionsTab:CreateToggle({
+    Name = "Minum Tower Drop Potions (Slayer, Shadow, Pirate, dll)",
+    CurrentValue = _G.LianConfig.PotionUseTower,
+    Callback = function(Value)
+        _G.LianConfig.PotionUseTower = Value
+        saveConfig()
+    end,
+})
+
+PotionsTab:CreateToggle({
+    Name = "Minum Halloween Potions (Haunted, Pumpkin, Candy Pot)",
+    CurrentValue = _G.LianConfig.PotionUseHalloween,
+    Callback = function(Value)
+        _G.LianConfig.PotionUseHalloween = Value
+        saveConfig()
+    end,
+})
+
+PotionsTab:CreateToggle({
+    Name = "Auto Spin Lucky Spin (Free)",
     CurrentValue = _G.LianConfig.AutoSpin,
     Callback = function(Value)
         _G.LianConfig.AutoSpin = Value
         saveConfig()
-        if Value then
-            task.spawn(function()
-                while _G.LianConfig.AutoSpin do
-                    safe(function()
-                        NET.SpinService.RE.Use:FireServer("Lucky Spin")
-                    end)
-                    task.wait(25)
-                end
-            end)
-        end
     end,
 })
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 3: AUTO TRADE FEEDER (TRANSFER OTOMATIS KE AKUN UTAMA)
+-- TAB 3: AUTO TRADE FEEDER (TRANSFER KE AKUN UTAMA)
 -- ═════════════════════════════════════════════════════════════════════
-FeederTab:CreateSection("🤝 Setoran Unit Otomatis ke Akun Utama")
+FeederTab:CreateSection("🤝 Setoran Otomatis ke Akun Utama")
 
 FeederTab:CreateInput({
-    Name = "Username Akun Utama Bubu",
-    PlaceholderText = "Contoh: brilliantgibrann16",
+    Name = "Username Akun Utama (Master Account)",
+    PlaceholderText = "Masukkan username Roblox Bubu...",
     RemoveTextAfterFocusLost = false,
+    CurrentValue = _G.LianConfig.MasterAccount,
     Callback = function(Text)
-        _G.LianConfig.MasterAccount = Text
+        _G.LianConfig.MasterAccount = Text:gsub("%s+", "")
         saveConfig()
     end,
 })
 
-local TradeState = { active = false, partner = nil }
-
-if NET:FindFirstChild("TradeService") and NET.TradeService:FindFirstChild("RE") and NET.TradeService.RE:FindFirstChild("TradeEvent") then
-    NET.TradeService.RE.TradeEvent.OnClientEvent:Connect(function(event, data)
-        if event == "Request" and type(data) == "table" and data.player then
-            local senderName = data.player.Name:lower()
-            local master = (_G.LianConfig.MasterAccount or ""):lower():gsub("%s+", "")
-            if _G.LianConfig.AutoTradeFeeder and master ~= "" and senderName == master then
-                NET.TradeService.RE.RespondToRequest:FireServer(true)
-                TradeState.active = true
-                TradeState.partner = data.player
-                Rayfield:Notify({ Title = "Trade Diterima!", Content = "Menerima trade otomatis dari Akun Utama: " .. data.player.Name, Duration = 4 })
-            elseif _G.LianConfig.AutoTradeFeeder then
-                NET.TradeService.RE.RespondToRequest:FireServer(false)
-            end
-        elseif event == "Started" then
-            TradeState.active = true
-        elseif event == "Ended" or event == "Cancelled" then
-            TradeState.active = false
-            TradeState.partner = nil
-        end
-    end)
-end
-
-task.spawn(function()
-    while true do
-        if _G.LianConfig.AutoTradeFeeder and TradeState.active and TradeState.partner then
-            safe(function()
-                local inv = (DC and DC.Inventory and DC.Inventory()) or {}
-                for key, e in pairs(inv) do
-                    if not TradeState.active then break end
-                    local cfg = M.Entry and M.Entry.getEntryConfig and M.Entry.getEntryConfig(e.name)
-                    local rar = cfg and cfg.rarity or "Common"
-                    if (rar == "Mythic" and _G.LianConfig.TradeMythic) or (rar == "Secret" and _G.LianConfig.TradeSecret) then
-                        NET.TradeService.RE.ChangeOffer:FireServer(key, 1)
-                        task.wait(0.25)
-                    end
-                end
-                task.wait(0.5)
-                NET.TradeService.RE.AdvanceTrade:FireServer()
-                task.wait(3.5)
-                NET.TradeService.RE.AdvanceTrade:FireServer()
-            end)
-        end
-        task.wait(2)
-    end
-end)
-
 FeederTab:CreateToggle({
-    Name = "Auto Accept & Transfer ke Akun Utama",
+    Name = "Auto Trade Feeder Aktif (Auto Terima & Setor)",
     CurrentValue = _G.LianConfig.AutoTradeFeeder,
     Callback = function(Value)
         _G.LianConfig.AutoTradeFeeder = Value
         saveConfig()
-        if Value and (_G.LianConfig.MasterAccount == "" or not _G.LianConfig.MasterAccount) then
-            Rayfield:Notify({ Title = "Perhatian!", Content = "Masukkan username akun utama dulu di kotak atas ya Bubu!", Duration = 4 })
-        end
     end,
 })
 
 FeederTab:CreateToggle({
-    Name = "Transfer Unit: Mythic",
+    Name = "Otomatis Masukkan Unit Mythic ke Trade",
     CurrentValue = _G.LianConfig.TradeMythic,
-    Callback = function(v) _G.LianConfig.TradeMythic = v; saveConfig() end
+    Callback = function(Value)
+        _G.LianConfig.TradeMythic = Value
+        saveConfig()
+    end,
 })
 
 FeederTab:CreateToggle({
-    Name = "Transfer Unit: Secret",
+    Name = "Otomatis Masukkan Unit Secret ke Trade",
     CurrentValue = _G.LianConfig.TradeSecret,
-    Callback = function(v) _G.LianConfig.TradeSecret = v; saveConfig() end
+    Callback = function(Value)
+        _G.LianConfig.TradeSecret = Value
+        saveConfig()
+    end,
 })
 
 -- ═════════════════════════════════════════════════════════════════════
 -- TAB 4: HALLOWEEN EVENT SUITE
 -- ═════════════════════════════════════════════════════════════════════
-HalloweenTab:CreateSection("🎃 Trick or Treat (Physical TP & Knock)")
+HalloweenTab:CreateSection("🎃 Pumpkin Dice Roll Engine")
+
+HalloweenTab:CreateDropdown({
+    Name = "Pilihan Roll Dadu Labu",
+    Options = {"500 Labu (5x Rolls - Rekomendasi)", "100 Labu (1x Roll)"},
+    CurrentOption = _G.LianConfig.HalloweenRollOption,
+    Callback = function(Option)
+        _G.LianConfig.HalloweenRollOption = type(Option) == "table" and Option[1] or Option
+        saveConfig()
+    end,
+})
 
 HalloweenTab:CreateToggle({
-    Name = "Auto Trick or Treat (Teleport ke Semua Pintu Rumah)",
+    Name = "Auto Roll Pumpkin Dice (Dadu Labu)",
+    CurrentValue = _G.LianConfig.AutoRollHalloween,
+    Callback = function(Value)
+        _G.LianConfig.AutoRollHalloween = Value
+        saveConfig()
+    end,
+})
+
+HalloweenTab:CreateSection("🍬 Trick-or-Treat & Event Doors")
+
+HalloweenTab:CreateToggle({
+    Name = "Auto Trick-or-Treat (Auto Teleport & Claim Door)",
     CurrentValue = _G.LianConfig.AutoTrickOrTreat,
     Callback = function(Value)
         _G.LianConfig.AutoTrickOrTreat = Value
         saveConfig()
-        if Value then
-            task.spawn(function()
-                while _G.LianConfig.AutoTrickOrTreat do
-                    safe(function()
-                        local hFolder = Workspace:FindFirstChild("Halloween")
-                        local hrp = getCharRoot()
-                        if hFolder and hrp then
-                            for _, house in ipairs(hFolder:GetChildren()) do
-                                if not _G.LianConfig.AutoTrickOrTreat then break end
-                                if house.Name:find("HouseForTrickOrTreating") then
-                                    local door = house:FindFirstChild("DoorOpener")
-                                    if door then
-                                        hrp.CFrame = door:GetPivot()
-                                        hrp.AssemblyLinearVelocity = Vector3.zero
-                                        task.wait(0.3)
-                                    end
-                                end
-                            end
-                        end
-                    end)
-                    task.wait(5)
-                end
-            end)
-        end
     end,
 })
 
 HalloweenTab:CreateToggle({
-    Name = "Auto Claim Pumpkin Pass (Claim All Path)",
+    Name = "Auto Claim Halloween Event Doors",
+    CurrentValue = _G.LianConfig.AutoHalloweenDoors,
+    Callback = function(Value)
+        _G.LianConfig.AutoHalloweenDoors = Value
+        saveConfig()
+    end,
+})
+
+HalloweenTab:CreateToggle({
+    Name = "Auto Claim Pumpkin Pass (All Paths)",
     CurrentValue = _G.LianConfig.AutoPumpkinPass,
     Callback = function(Value)
         _G.LianConfig.AutoPumpkinPass = Value
         saveConfig()
-        if Value then
-            task.spawn(function()
-                while _G.LianConfig.AutoPumpkinPass do
-                    safe(function()
-                        NET.HalloweenService.RE.ClaimAllPath:FireServer()
-                    end)
-                    task.wait(20)
-                end
-            end)
-        end
     end,
 })
 
-HalloweenTab:CreateSection("🍬 Candy Shop Auto Exchange")
+HalloweenTab:CreateSection("🛒 Halloween Candy Shop")
 
 HalloweenTab:CreateDropdown({
-    Name = "Pilih Target Hadiah Candy Shop",
-    Options = {"Pumpkin Egg", "Halloween Potion", "Candy Bag", "Lucky Dice"},
-    CurrentOption = {_G.LianConfig.CandyShopItem or "Pumpkin Egg"},
+    Name = "Target Beli Candy Shop",
+    Options = {"Pumpkin Egg", "Ghost Dice", "Candy Potion", "Lucky Bag"},
+    CurrentOption = _G.LianConfig.CandyShopItem,
     Callback = function(Option)
-        _G.LianConfig.CandyShopItem = Option[1]
+        _G.LianConfig.CandyShopItem = type(Option) == "table" and Option[1] or Option
         saveConfig()
     end,
 })
 
 HalloweenTab:CreateToggle({
-    Name = "Auto Exchange Candy Shop",
+    Name = "Auto Beli Item Candy Shop",
     CurrentValue = _G.LianConfig.AutoCandyShop,
     Callback = function(Value)
         _G.LianConfig.AutoCandyShop = Value
         saveConfig()
-        if Value then
-            task.spawn(function()
-                while _G.LianConfig.AutoCandyShop do
-                    safe(function()
-                        NET.HalloweenService.RE.BuyOffer:FireServer(_G.LianConfig.CandyShopItem)
-                    end)
-                    task.wait(10)
-                end
-            end)
-        end
-    end,
-})
-
-HalloweenTab:CreateButton({
-    Name = "Teleport ke Event Island",
-    Callback = function()
-        safe(function()
-            NET.HalloweenService.RF.Teleport:InvokeServer("Island")
-        end)
     end,
 })
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 5: TOWERS (SMART SIMULATION AI)
+-- TAB 5: TOWERS (SMART SIMULATION AI & POTION FARMING)
 -- ═════════════════════════════════════════════════════════════════════
-TowerTab:CreateSection("🧠 Smart Tower Matcher AI (Simulasi Pertarungan Unit)")
-
-local HALLOWEEN_TOWERS = {
-    { name = "The Abyss", minDmg = 500000 },
-    { name = "Bell Tower", minDmg = 200000 },
-    { name = "Attic", minDmg = 80000 },
-    { name = "Crypt", minDmg = 30000 },
-    { name = "Foyer", minDmg = 10000 },
-    { name = "Front Yard", minDmg = 0 }
-}
-
-local NORMAL_TOWERS = {
-    { name = "Shadow Tower", minDmg = 1000000 },
-    { name = "Slayer Tower", minDmg = 400000 },
-    { name = "Hidden Leaf Tower", minDmg = 150000 },
-    { name = "Pirate Tower", minDmg = 50000 },
-    { name = "Cursed Tower", minDmg = 15000 },
-    { name = "Dragon Tower", minDmg = 0 }
-}
-
-local function getEstimatedPlayerDamage()
-    local dmg = 100
-    if DC and DC.Damage then pcall(function() dmg = DC.Damage() end) end
-    if DC and DC.RebirthStats then
-        pcall(function()
-            local rStats = DC.RebirthStats()
-            if rStats and rStats.Damage then
-                dmg = dmg * (1 + (rStats.Damage * 0.25))
-            end
-        end)
-    end
-    return dmg
-end
-
-local function getTowerTeamData()
-    local inv = DC and DC.Inventory and DC.Inventory() or {}
-    local team = {}
-    local dm = (M.Buff and M.Buff.GetBuff and M.Buff.GetBuff("Damage Multiplier")) or 1
-    local hm = (M.Buff and M.Buff.GetBuff and M.Buff.GetBuff("Health Multiplier")) or 1
-    for i = 1, 6 do
-        local key = (DC and DC.TowerTeam and DC.TowerTeam() or {})[i]
-        local e = key and inv[key]
-        local cfg = e and M.Entry and M.Entry.getEntryConfig and M.Entry.getEntryConfig(e.name)
-        if cfg and cfg.kind == "Unit" then
-            local attrs = e.attributes or {}
-            local okD, d = pcall(cfg.damage, attrs)
-            local okH, h = pcall(cfg.health, attrs)
-            if okD and okH then
-                table.insert(team, { damage = d * dm, health = h * hm })
-            end
-        end
-    end
-    return team
-end
-
-local function simTowerCombat(cfg, team)
-    local hp = {}
-    for i, m in ipairs(team) do hp[i] = m.health end
-    local member, floor = 1, 1
-    local limit = cfg.maxFloors or 50
-    while floor <= limit do
-        local okEh, eh = pcall(cfg.enemyHealth, floor)
-        local okEd, ed = pcall(cfg.enemyDamage, floor)
-        if not okEh or not okEd then break end
-        local cleared = false
-        local guard = 0
-        while member <= #team do
-            guard = guard + 1
-            if guard > 3000 then return floor - 1 end
-            eh = eh - team[member].damage
-            if eh <= 0 then cleared = true break end
-            hp[member] = hp[member] - ed
-            if hp[member] <= 0 then member = member + 1 end
-        end
-        if not cleared then return floor - 1 end
-        floor = floor + 1
-    end
-    return limit
-end
-
-local function getSmartTowerChoice()
-    if M.Towers and M.Towers.GetAll then
-        local team = getTowerTeamData()
-        if #team > 0 then
-            local allTowers = M.Towers.GetAll()
-            local bestName, maxCleared = nil, -1
-            for name, cfg in pairs(allTowers) do
-                local ok, cleared = pcall(simTowerCombat, cfg, team)
-                if ok and cleared > maxCleared then
-                    maxCleared = cleared
-                    bestName = name
-                end
-            end
-            if bestName and maxCleared > 0 then return bestName end
-        end
-    end
-
-    local playerDmg = getEstimatedPlayerDamage()
-    local isHalloween = (Workspace:FindFirstChild("Halloween") ~= nil)
-
-    if isHalloween and _G.LianConfig.TowerPreference ~= "Normal Only" then
-        for _, t in ipairs(HALLOWEEN_TOWERS) do
-            if playerDmg >= t.minDmg then return t.name end
-        end
-        return "Front Yard"
-    else
-        for _, t in ipairs(NORMAL_TOWERS) do
-            if playerDmg >= t.minDmg then return t.name end
-        end
-        return "Dragon Tower"
-    end
-end
+TowerTab:CreateSection("⚔️ Smart Tower AI Engine")
 
 TowerTab:CreateToggle({
-    Name = "Smart Tower AI (Hitung Kekuatan Unit & Serang Tower Terkuat)",
+    Name = "Smart Tower AI (Hitung Damage Unit & Serang Tower Terkuat)",
     CurrentValue = _G.LianConfig.SmartTowerAI,
     Callback = function(Value)
         _G.LianConfig.SmartTowerAI = Value
         saveConfig()
-        if Value then
-            task.spawn(function()
-                while _G.LianConfig.SmartTowerAI do
-                    safe(function()
-                        NET.Towers.RE.EquipBestTowerTeam:FireServer()
-                        NET.Towers.RE.SetAutoTower:FireServer(true)
-                        local bestTower = getSmartTowerChoice()
-                        NET.Towers.RF.PlayTower:InvokeServer(bestTower)
-                        task.wait(1)
-                        for floor = 1, 50 do
-                            if not _G.LianConfig.SmartTowerAI then break end
-                            local ok = pcall(function() return NET.Towers.RF.CompleteTowerFloor:InvokeServer() end)
-                            if not ok then break end
-                            task.wait(0.3)
-                        end
-                    end)
-                    task.wait(4)
-                end
-                safe(function() NET.Towers.RE.SetAutoTower:FireServer(false) end)
-            end)
-        else
-            safe(function() NET.Towers.RE.SetAutoTower:FireServer(false) end)
-        end
     end,
 })
 
-TowerTab:CreateSection("🏰 Manual Tower Target")
+TowerTab:CreateToggle({
+    Name = "Auto Equip Best Tower Team Sebelum Serang",
+    CurrentValue = _G.LianConfig.AutoEquipTowerTeam,
+    Callback = function(Value)
+        _G.LianConfig.AutoEquipTowerTeam = Value
+        saveConfig()
+    end,
+})
 
-local TOWER_OPTIONS = {
-    "The Abyss", "Bell Tower", "Attic", "Crypt", "Foyer", "Front Yard",
-    "Dragon Tower", "Cursed Tower", "Pirate Tower", "Hidden Leaf Tower", "Slayer Tower", "Shadow Tower"
-}
+TowerTab:CreateButton({
+    Name = "🔥 Force Equip Best Tower Team Sekarang",
+    Callback = function()
+        safe(function()
+            if NET and NET:FindFirstChild("Towers") and NET.Towers:FindFirstChild("RE") and NET.Towers.RE:FindFirstChild("EquipBestTowerTeam") then
+                NET.Towers.RE.EquipBestTowerTeam:FireServer()
+                Rayfield:Notify({ Title = "Tower Team", Content = "Best Tower Team berhasil dipasang!", Duration = 3 })
+            end
+        end)
+    end,
+})
+
+TowerTab:CreateSection("🎯 Manual Tower / Target Farming")
 
 TowerTab:CreateDropdown({
-    Name = "Pilih Tower Target",
-    Options = TOWER_OPTIONS,
-    CurrentOption = {_G.LianConfig.TowerType or "The Abyss"},
+    Name = "Pilih Tower Tertentu (Farming Potion Spesifik)",
+    Options = {"The Abyss", "Bell Tower", "Attic", "Crypt", "Foyer", "Front Yard", "Goblin Tower", "Pirate Tower"},
+    CurrentOption = _G.LianConfig.TowerType,
     Callback = function(Option)
-        _G.LianConfig.TowerType = Option[1]
+        _G.LianConfig.TowerType = type(Option) == "table" and Option[1] or Option
         saveConfig()
     end,
 })
 
 TowerTab:CreateToggle({
-    Name = "Auto Attack Manual Tower (Equip Best Team + Floor Spam)",
+    Name = "Auto Attack Manual Tower Pilihan",
     CurrentValue = _G.LianConfig.AutoTower,
     Callback = function(Value)
         _G.LianConfig.AutoTower = Value
         saveConfig()
-        if Value then
-            safe(function()
-                NET.Towers.RE.EquipBestTowerTeam:FireServer()
-                NET.Towers.RE.SetAutoTower:FireServer(true)
-            end)
-            task.spawn(function()
-                while _G.LianConfig.AutoTower do
-                    safe(function()
-                        NET.Towers.RF.PlayTower:InvokeServer(_G.LianConfig.TowerType)
-                        task.wait(1)
-                        for floor = 1, 50 do
-                            if not _G.LianConfig.AutoTower then break end
-                            NET.Towers.RF.CompleteTowerFloor:InvokeServer()
-                            task.wait(0.3)
-                        end
-                    end)
-                    task.wait(5)
-                end
-                safe(function() NET.Towers.RE.SetAutoTower:FireServer(false) end)
-            end)
-        else
-            safe(function() NET.Towers.RE.SetAutoTower:FireServer(false) end)
-        end
     end,
 })
 
 -- ═════════════════════════════════════════════════════════════════════
 -- TAB 6: PLOT CASH & QUESTS
 -- ═════════════════════════════════════════════════════════════════════
-EconomyTab:CreateSection("💰 Plot Cash & Slot Upgrades")
+PlotTab:CreateSection("💰 Plot Management")
 
-EconomyTab:CreateToggle({
-    Name = "Auto Collect Cash (Plot Slot 1 to Max)",
+PlotTab:CreateToggle({
+    Name = "Auto Collect Cash Plot (Semua Slot 1-20)",
     CurrentValue = _G.LianConfig.AutoCollectCash,
     Callback = function(Value)
         _G.LianConfig.AutoCollectCash = Value
         saveConfig()
-        if Value then
-            task.spawn(function()
-                while _G.LianConfig.AutoCollectCash do
-                    safe(function()
-                        local maxS = getMaxPlotSlots()
-                        for slot = 1, maxS do
-                            NET.PlotService.RE.CollectBalance:FireServer(slot)
-                        end
-                        NET.PlotService.RE.CollectBalance:FireServer()
-                    end)
-                    task.wait(1.5)
-                end
-            end)
-        end
     end,
 })
 
-EconomyTab:CreateToggle({
-    Name = "Auto Upgrade Level Slot Plot (Menaikkan Level Unit di Plot)",
+PlotTab:CreateToggle({
+    Name = "Auto Level Up Plot Slots",
     CurrentValue = _G.LianConfig.AutoLevelUpSlots,
     Callback = function(Value)
         _G.LianConfig.AutoLevelUpSlots = Value
         saveConfig()
-        if Value then
-            task.spawn(function()
-                while _G.LianConfig.AutoLevelUpSlots do
-                    safe(function()
-                        local maxS = getMaxPlotSlots()
-                        for slot = 1, maxS do
-                            NET.PlotService.RE.LevelUpSlot:FireServer(slot)
-                            task.wait(0.1)
-                        end
-                    end)
-                    task.wait(5)
-                end
-            end)
-        end
     end,
 })
 
-EconomyTab:CreateSection("🎁 Daily, Quests & Codes")
+PlotTab:CreateSection("📜 Quests & Rewards")
 
-EconomyTab:CreateToggle({
-    Name = "Auto Claim Daily / Group / Offline Rewards",
-    CurrentValue = _G.LianConfig.AutoDailyReward,
-    Callback = function(Value)
-        _G.LianConfig.AutoDailyReward = Value
-        saveConfig()
-        if Value then
-            task.spawn(function()
-                while _G.LianConfig.AutoDailyReward do
-                    safe(function()
-                        NET.DailyRewardService.RE.Claim:FireServer()
-                        NET.GroupRewardService.RE.Claim:FireServer()
-                        NET.OfflineEarningsService.RE.Claim:FireServer()
-                    end)
-                    task.wait(20)
-                end
-            end)
-        end
-    end,
-})
-
-EconomyTab:CreateToggle({
-    Name = "Auto Claim Quests (Daily, Weekly & Halloween)",
+PlotTab:CreateToggle({
+    Name = "Auto Claim Quests (Daily & Weekly)",
     CurrentValue = _G.LianConfig.AutoQuests,
     Callback = function(Value)
         _G.LianConfig.AutoQuests = Value
         saveConfig()
-        if Value then
-            task.spawn(function()
-                while _G.LianConfig.AutoQuests do
-                    -- 1. Normal Quests
-                    safe(function()
-                        local Network = require(RS.Packages.Network)
-                        local QuestConfig = require(RS.Framework.Features.Quests.QuestConfig)
-                        local questSignal = Network.ClientComm.new(RS.Network, false, "QuestService"):GetSignal("Claim")
-                        for _, period in ipairs({"Daily", "Weekly"}) do
-                            local ok, data = pcall(function() return DC.Quests[period]() end)
-                            if ok and data and data.progress and data.claimed then
-                                local periodConfig = QuestConfig.Periods[period]
-                                if periodConfig and periodConfig.quests then
-                                    for _, quest in ipairs(periodConfig.quests) do
-                                        local prog = data.progress[quest.id] or 0
-                                        if prog >= quest.target and not data.claimed[quest.id] then
-                                            questSignal:Fire(period, quest.id, data.expiresAt)
-                                            task.wait(0.2)
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end)
-
-                    -- 2. Halloween Quests
-                    safe(function()
-                        local hQuests = {"Doors", "Floors", "Potion", "Rolls", "PumpkinRolls", "Dice"}
-                        for _, cat in ipairs(hQuests) do
-                            NET.HalloweenQuestService.RE.Claim:FireServer("Daily", cat)
-                            NET.HalloweenQuestService.RE.Claim:FireServer("Hourly", cat)
-                            task.wait(0.1)
-                        end
-                    end)
-
-                    task.wait(10)
-                end
-            end)
-        end
     end,
 })
 
-EconomyTab:CreateSection("🎟️ Quest Ticket Shop Buyer")
-
-EconomyTab:CreateDropdown({
-    Name = "Target Hadiah Ticket Shop",
-    Options = {"Clover", "Lucky Ticket", "Potion Bag", "Golden Egg"},
-    CurrentOption = {_G.LianConfig.TicketShopItem or "Clover"},
-    Callback = function(Option)
-        _G.LianConfig.TicketShopItem = Option[1]
+PlotTab:CreateToggle({
+    Name = "Auto Claim Daily Rewards",
+    CurrentValue = _G.LianConfig.AutoDailyReward,
+    Callback = function(Value)
+        _G.LianConfig.AutoDailyReward = Value
         saveConfig()
     end,
 })
 
-EconomyTab:CreateToggle({
-    Name = "Auto Buy Target Hadiah di Ticket Shop",
+PlotTab:CreateToggle({
+    Name = "Auto Redeem Promo Codes",
+    CurrentValue = _G.LianConfig.AutoRedeemCodes,
+    Callback = function(Value)
+        _G.LianConfig.AutoRedeemCodes = Value
+        saveConfig()
+    end,
+})
+
+PlotTab:CreateSection("🎟️ Ticket Shop Buyer")
+
+PlotTab:CreateDropdown({
+    Name = "Target Item Ticket Shop",
+    Options = {"Clover", "Lucky Spin", "Potion Bag", "Super Roll", "Dice Ticket"},
+    CurrentOption = _G.LianConfig.TicketShopItem,
+    Callback = function(Option)
+        _G.LianConfig.TicketShopItem = type(Option) == "table" and Option[1] or Option
+        saveConfig()
+    end,
+})
+
+PlotTab:CreateToggle({
+    Name = "Auto Beli Item Ticket Shop",
     CurrentValue = _G.LianConfig.AutoTicketShop,
     Callback = function(Value)
         _G.LianConfig.AutoTicketShop = Value
         saveConfig()
-        if Value then
-            task.spawn(function()
-                while _G.LianConfig.AutoTicketShop do
-                    safe(function()
-                        local inv = (DC and DC.Inventory and DC.Inventory()) or {}
-                        local tAmt = (inv.Tickets and inv.Tickets.amount) or 0
-                        if tAmt >= 50 and NET:FindFirstChild("QuestService") and NET.QuestService:FindFirstChild("RE") and NET.QuestService.RE:FindFirstChild("Buy") then
-                            NET.QuestService.RE.Buy:FireServer(_G.LianConfig.TicketShopItem)
-                        end
-                    end)
-                    task.wait(15)
-                end
-            end)
-        end
-    end,
-})
-
-EconomyTab:CreateButton({
-    Name = "🎁 Redeem Semua 17 Promo Codes Sekarang",
-    Callback = function()
-        local CODES = {
-            "UPDATE7", "UPDATE6", "UPDATE5", "UPDATE4", "UPDATE3", "UPDATE2", "UPDATE1",
-            "400KLIKES", "250KLIKES", "100KLIKES", "40KCCU", "30KCCU", "20KCCU", "10KCCU",
-            "5KCCU", "1KCCU", "RELEASE"
-        }
-        for _, code in ipairs(CODES) do
-            safe(function() NET.CodesService.RE.RedeemCode:FireServer(code) end)
-            task.wait(0.15)
-        end
-        Rayfield:Notify({ Title = "Lian Hub", Content = "17 Promo Codes berhasil di-redeem!", Duration = 4 })
     end,
 })
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 7: SMART REBIRTH & UNITS UPGRADE
+-- TAB 7: REBIRTH & STATS (SMART & ZERO SPAM)
 -- ═════════════════════════════════════════════════════════════════════
-UpgradesTab:CreateSection("🔄 SMART Auto Rebirth (Hanya Saat Uang Cukup)")
+RebirthTab:CreateSection("🧬 Smart Rebirth Engine")
 
-UpgradesTab:CreateToggle({
-    Name = "SMART Auto Rebirth (Cek Harga & Uang Dulu)",
+RebirthTab:CreateToggle({
+    Name = "Auto Rebirth (HANYA Saat Uang Cukup — No Spam)",
     CurrentValue = _G.LianConfig.AutoRebirth,
     Callback = function(Value)
         _G.LianConfig.AutoRebirth = Value
@@ -1230,460 +965,184 @@ UpgradesTab:CreateToggle({
     end,
 })
 
-task.spawn(function()
-    while true do
-        if _G.LianConfig.AutoRebirth then
-            safe(function()
-                local canRebirth, curCash, cost = canAffordRebirth()
-                if canRebirth then
-                    NET.RebirthService.RE.Rebirth:FireServer()
-                    Rayfield:Notify({ Title = "Rebirth Sukses!", Content = "Uang cukup ($" .. math.floor(curCash) .. "). Rebirth berhasil diproses!", Duration = 3 })
-                    task.wait(2)
-                end
-            end)
-        end
-        task.wait(4)
-    end
-end)
-
-UpgradesTab:CreateSection("📈 SMART Stat Upgrades (Hanya Saat Ada Poin Rebirth)")
-
-UpgradesTab:CreateToggle({
-    Name = "Upgrade Stat: Luck",
-    CurrentValue = _G.LianConfig.UpgradeLuck,
-    Callback = function(v) _G.LianConfig.UpgradeLuck = v; saveConfig() end
-})
-
-UpgradesTab:CreateToggle({
-    Name = "Upgrade Stat: Damage",
-    CurrentValue = _G.LianConfig.UpgradeDamage,
-    Callback = function(v) _G.LianConfig.UpgradeDamage = v; saveConfig() end
-})
-
-UpgradesTab:CreateToggle({
-    Name = "Upgrade Stat: Health",
-    CurrentValue = _G.LianConfig.UpgradeHealth,
-    Callback = function(v) _G.LianConfig.UpgradeHealth = v; saveConfig() end
-})
-
-UpgradesTab:CreateToggle({
-    Name = "Upgrade Stat: Income",
-    CurrentValue = _G.LianConfig.UpgradeIncome,
-    Callback = function(v) _G.LianConfig.UpgradeIncome = v; saveConfig() end
-})
-
-UpgradesTab:CreateToggle({
-    Name = "Upgrade Stat: Speed",
-    CurrentValue = _G.LianConfig.UpgradeSpeed,
-    Callback = function(v) _G.LianConfig.UpgradeSpeed = v; saveConfig() end
-})
-
-UpgradesTab:CreateToggle({
-    Name = "Upgrade Shop: Fortune (Hanya Saat Uang Cukup)",
-    CurrentValue = _G.LianConfig.UpgradeFortune,
-    Callback = function(v) _G.LianConfig.UpgradeFortune = v; saveConfig() end
-})
-
-task.spawn(function()
-    while true do
-        safe(function()
-            local points = getAvailableStatPoints()
-            if points and points > 0 then
-                local chosenStats = {}
-                if _G.LianConfig.UpgradeLuck then table.insert(chosenStats, "Luck") end
-                if _G.LianConfig.UpgradeDamage then table.insert(chosenStats, "Damage") end
-                if _G.LianConfig.UpgradeHealth then table.insert(chosenStats, "Health") end
-                if _G.LianConfig.UpgradeIncome then table.insert(chosenStats, "Income") end
-                if _G.LianConfig.UpgradeSpeed then table.insert(chosenStats, "Speed") end
-
-                if #chosenStats > 0 then
-                    for _, stat in ipairs(chosenStats) do
-                        if getAvailableStatPoints() <= 0 then break end
-                        NET.RebirthService.RE.AddStat:FireServer(stat, 1)
-                        task.wait(0.2)
-                    end
-                end
-            end
-
-            if _G.LianConfig.UpgradeFortune and canAffordFortune() then
-                NET.RE.BuyUpgrade:FireServer("Fortune XV")
-                NET.RE.BuyUpgrade:FireServer("Fortune")
-            end
-        end)
-        task.wait(3)
-    end
-end)
-
-UpgradesTab:CreateSection("⚔️ Unit Management & Fusing")
-
-UpgradesTab:CreateToggle({
-    Name = "Auto Equip Best Unit Tiap Roll (Plot + Tower)",
-    CurrentValue = _G.LianConfig.AutoEquipBestOnRoll,
-    Callback = function(Value)
-        _G.LianConfig.AutoEquipBestOnRoll = Value
+RebirthTab:CreateDropdown({
+    Name = "Prioritas Alokasi Stat Rebirth",
+    Options = {
+        "Balance / Rata (Money, Luck, Damage, Health, Speed)",
+        "Fokus Money / Income Dulu",
+        "Fokus Luck Dulu",
+        "Fokus Damage Dulu",
+        "Fokus Health Dulu",
+        "Fokus Speed Dulu"
+    },
+    CurrentOption = _G.LianConfig.RebirthStatPriority,
+    Callback = function(Option)
+        _G.LianConfig.RebirthStatPriority = type(Option) == "table" and Option[1] or Option
         saveConfig()
-        if Value then
-            safe(function()
-                NET.PlotService.RE.EquipBest:FireServer()
-                NET.UnitService.RF.Equip:InvokeServer("Best")
-                NET.Towers.RE.EquipBestTowerTeam:FireServer()
-            end)
-        end
     end,
 })
 
-UpgradesTab:CreateToggle({
-    Name = "Auto Equip Best Gear / Accessories",
-    CurrentValue = _G.LianConfig.AutoEquipGear,
+RebirthTab:CreateSection("🛒 Upgrades Pohon Dadu (Fortune dll)")
+
+RebirthTab:CreateToggle({
+    Name = "Auto Beli Upgrades Pohon (Fortune & Upgrades Dekat Dadu)",
+    CurrentValue = _G.LianConfig.AutoBuyTreeUpgrades,
     Callback = function(Value)
-        _G.LianConfig.AutoEquipGear = Value
+        _G.LianConfig.AutoBuyTreeUpgrades = Value
         saveConfig()
-        if Value then
-            task.spawn(function()
-                while _G.LianConfig.AutoEquipGear do
-                    safe(function()
-                        local inv = (DC and DC.Inventory and DC.Inventory()) or {}
-                        for key, e in pairs(inv) do
-                            local cfg = M.Entry and M.Entry.getEntryConfig and M.Entry.getEntryConfig(e.name)
-                            if cfg and cfg.kind == "Gear" and NET:FindFirstChild("GearService") and NET.GearService:FindFirstChild("RE") and NET.GearService.RE:FindFirstChild("Equip") then
-                                NET.GearService.RE.Equip:FireServer(key)
-                            end
-                        end
-                    end)
-                    task.wait(20)
-                end
-            end)
-        end
     end,
 })
 
-UpgradesTab:CreateToggle({
-    Name = "Auto Fuse Units (Gabungkan Unit Kembar Otomatis)",
-    CurrentValue = _G.LianConfig.AutoFuseUnits,
-    Callback = function(Value)
-        _G.LianConfig.AutoFuseUnits = Value
-        saveConfig()
-        if Value then
-            task.spawn(function()
-                while _G.LianConfig.AutoFuseUnits do
-                    safe(function()
-                        if NET:FindFirstChild("FusingService") then
-                            NET.FusingService.RE.Fuse:FireServer()
-                        end
-                    end)
-                    task.wait(6)
-                end
-            end)
-        end
-    end,
-})
-
-UpgradesTab:CreateSection("🗑️ Auto Sell Worst Units (Pembersih Tas & Plot)")
-
-UpgradesTab:CreateToggle({
-    Name = "Auto Sell Worst Units (Equip Best, Lalu Jual Sampah)",
-    CurrentValue = _G.LianConfig.AutoSellWorstUnits,
-    Callback = function(Value)
-        _G.LianConfig.AutoSellWorstUnits = Value
-        saveConfig()
-        if Value then
-            task.spawn(function()
-                while _G.LianConfig.AutoSellWorstUnits do
-                    safe(function()
-                        NET.PlotService.RE.EquipBest:FireServer()
-                        NET.UnitService.RF.Equip:InvokeServer("Best")
-                        task.wait(0.5)
-
-                        local toSell = {}
-                        if _G.LianConfig.AutoSellCommon then table.insert(toSell, "Common") end
-                        if _G.LianConfig.AutoSellRare then table.insert(toSell, "Rare") end
-                        if _G.LianConfig.AutoSellEpic then table.insert(toSell, "Epic") end
-                        if #toSell > 0 and NET:FindFirstChild("SellService") and NET.SellService:FindFirstChild("RE") and NET.SellService.RE:FindFirstChild("UpdateAutoSell") then
-                            NET.SellService.RE.UpdateAutoSell:FireServer(toSell)
-                        end
-
-                        if NET:FindFirstChild("SellService") and NET.SellService:FindFirstChild("RF") and NET.SellService.RF:FindFirstChild("SellInventory") then
-                            local inv = (DC and DC.Inventory and DC.Inventory()) or {}
-                            local plotted = {}
-                            for slot, v in pairs((DC and DC.Slots and DC.Slots()) or {}) do
-                                if type(v) == "table" and v.unitId then plotted[v.unitId] = true end
-                            end
-                            local towerTeam = {}
-                            for _, k in pairs((DC and DC.TowerTeam and DC.TowerTeam()) or {}) do
-                                towerTeam[k] = true
-                            end
-
-                            local list = {}
-                            for key, e in pairs(inv) do
-                                if type(e) == "table" and not plotted[key] and not towerTeam[key] then
-                                    local attrs = e.attributes or {}
-                                    if not attrs.locked then
-                                        local cfg = M.Entry and M.Entry.getEntryConfig and M.Entry.getEntryConfig(e.name)
-                                        local rarity = cfg and cfg.rarity or "Common"
-                                        local shouldSell = false
-                                        if rarity == "Common" and _G.LianConfig.AutoSellCommon then shouldSell = true
-                                        elseif rarity == "Rare" and _G.LianConfig.AutoSellRare then shouldSell = true
-                                        elseif rarity == "Epic" and _G.LianConfig.AutoSellEpic then shouldSell = true
-                                        end
-                                        if shouldSell then table.insert(list, key) end
-                                    end
-                                end
-                            end
-                            if #list > 0 then
-                                NET.SellService.RF.SellInventory:InvokeServer(list)
-                            else
-                                NET.SellService.RF.SellInventory:InvokeServer()
-                            end
-                        end
-                    end)
-                    task.wait(8)
-                end
-            end)
-        end
-    end,
-})
-
-UpgradesTab:CreateToggle({
-    Name = "Filter Jual: Common",
-    CurrentValue = _G.LianConfig.AutoSellCommon,
-    Callback = function(v) _G.LianConfig.AutoSellCommon = v; saveConfig() end
-})
-
-UpgradesTab:CreateToggle({
-    Name = "Filter Jual: Rare",
-    CurrentValue = _G.LianConfig.AutoSellRare,
-    Callback = function(v) _G.LianConfig.AutoSellRare = v; saveConfig() end
-})
-
-UpgradesTab:CreateToggle({
-    Name = "Filter Jual: Epic",
-    CurrentValue = _G.LianConfig.AutoSellEpic,
-    Callback = function(v) _G.LianConfig.AutoSellEpic = v; saveConfig() end
-})
-
-UpgradesTab:CreateSection("🎲 Auto Buy Best Dice")
-
-UpgradesTab:CreateToggle({
-    Name = "Auto Buy & Equip Best Dice (Toggle On/Off)",
+RebirthTab:CreateToggle({
+    Name = "Auto Buy Best Dice dari Shop",
     CurrentValue = _G.LianConfig.AutoBuyBestDice,
     Callback = function(Value)
         _G.LianConfig.AutoBuyBestDice = Value
         saveConfig()
-        if Value then
-            task.spawn(function()
-                local diceList = {"Golden", "Diamond", "Sinister", "Galaxy", "Asteroid", "Blackhole", "Cherub", "Solaris", "Volcanic"}
-                while _G.LianConfig.AutoBuyBestDice do
-                    safe(function()
-                        for _, d in ipairs(diceList) do
-                            NET.DiceShopService.RE.BuyDice:FireServer(d)
-                            NET.DiceShopService.RE.EquipDice:FireServer(d)
-                            task.wait(0.1)
-                        end
-                    end)
-                    task.wait(10)
-                end
-            end)
-        end
     end,
 })
 
-UpgradesTab:CreateSection("✨ Quirk Trait Hunter")
+RebirthTab:CreateSection("⚔️ Unit Management & Auto Sell")
 
-UpgradesTab:CreateDropdown({
-    Name = "Target Quirk",
-    Options = {"Prodigy (High Luck)", "Fortune's Favor (Super Luck)"},
-    CurrentOption = {_G.LianConfig.QuirkTarget or "Prodigy"},
-    Callback = function(Option)
-        if Option[1]:find("Fortune") then
-            _G.LianConfig.QuirkTarget = "Fortune's Favor"
-        else
-            _G.LianConfig.QuirkTarget = "Prodigy"
-        end
-        saveConfig()
-    end,
-})
-
-UpgradesTab:CreateToggle({
-    Name = "Auto Reroll Quirk (Roll Trait)",
-    CurrentValue = _G.LianConfig.AutoQuirk,
+RebirthTab:CreateToggle({
+    Name = "Auto Fuse Units",
+    CurrentValue = _G.LianConfig.AutoFuseUnits,
     Callback = function(Value)
-        _G.LianConfig.AutoQuirk = Value
+        _G.LianConfig.AutoFuseUnits = Value
         saveConfig()
-        if Value then
-            task.spawn(function()
-                while _G.LianConfig.AutoQuirk do
-                    safe(function()
-                        local okInv, inv = pcall(function() return DC.Inventory() end)
-                        if okInv and inv then
-                            for key, unit in pairs(inv) do
-                                local quirk = unit.attributes and unit.attributes.quirk
-                                if quirk ~= _G.LianConfig.QuirkTarget then
-                                    NET.QuirkService.RE.Roll:FireServer(key)
-                                    break
-                                end
-                            end
-                        end
-                    end)
-                    task.wait(0.3)
-                end
-            end)
-        end
+    end,
+})
+
+RebirthTab:CreateToggle({
+    Name = "Auto Sell Worst Units (Common/Rare/Epic Sampah)",
+    CurrentValue = _G.LianConfig.AutoSellWorstUnits,
+    Callback = function(Value)
+        _G.LianConfig.AutoSellWorstUnits = Value
+        saveConfig()
+    end,
+})
+
+RebirthTab:CreateToggle({
+    Name = "Jual Common Units",
+    CurrentValue = _G.LianConfig.AutoSellCommon,
+    Callback = function(Value)
+        _G.LianConfig.AutoSellCommon = Value
+        saveConfig()
+    end,
+})
+
+RebirthTab:CreateToggle({
+    Name = "Jual Rare Units",
+    CurrentValue = _G.LianConfig.AutoSellRare,
+    Callback = function(Value)
+        _G.LianConfig.AutoSellRare = Value
+        saveConfig()
+    end,
+})
+
+RebirthTab:CreateToggle({
+    Name = "Jual Epic Units",
+    CurrentValue = _G.LianConfig.AutoSellEpic,
+    Callback = function(Value)
+        _G.LianConfig.AutoSellEpic = Value
+        saveConfig()
     end,
 })
 
 -- ═════════════════════════════════════════════════════════════════════
 -- TAB 8: SERVER LUCK HUNTER (SMART MULTI-PAGE HOPPER)
 -- ═════════════════════════════════════════════════════════════════════
-ServerTab:CreateSection("⚡ Server Luck Event Hunter (Auto-Loop)")
-
-local function getVisitedServers()
-    local visited = {}
-    pcall(function()
-        if isfile and readfile and isfile(VISITED_FILE) then
-            visited = HttpService:JSONDecode(readfile(VISITED_FILE)) or {}
-        end
-    end)
-    return visited
-end
-
-local function markServerVisited(jobId)
-    pcall(function()
-        local v = getVisitedServers()
-        v[jobId] = os.time()
-        local now = os.time()
-        for id, t in pairs(v) do
-            if now - t > 3600 then v[id] = nil end
-        end
-        if writefile then writefile(VISITED_FILE, HttpService:JSONEncode(v)) end
-    end)
-end
-
-local isHopping = false
-
-local function smartHop()
-    if isHopping then return false end
-    isHopping = true
-    setupAutoExecuteOnTeleport()
-    markServerVisited(game.JobId)
-    local visited = getVisitedServers()
-
-    local candidates = {}
-    local cursor = ""
-    for page = 1, 3 do
-        local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true" .. (cursor ~= "" and ("&cursor=" .. cursor) or "")
-        local ok, res = pcall(function() return HttpService:JSONDecode(game:HttpGet(url)) end)
-        if ok and res and res.data then
-            for _, s in ipairs(res.data) do
-                if s.id ~= game.JobId and not visited[s.id] and s.playing < (s.maxPlayers - 1) and s.playing >= 1 then
-                    table.insert(candidates, s.id)
-                end
-            end
-            if res.nextPageCursor and res.nextPageCursor ~= "" then
-                cursor = res.nextPageCursor
-            else
-                break
-            end
-        else
-            break
-        end
-    end
-
-    if #candidates > 0 then
-        local chosenId = candidates[math.random(1, #candidates)]
-        markServerVisited(chosenId)
-        local okTp = pcall(function()
-            TeleportService:TeleportToPlaceInstance(game.PlaceId, chosenId, LocalPlayer)
-        end)
-        if okTp then return true end
-    end
-
-    pcall(function()
-        if delfile then delfile(VISITED_FILE) end
-    end)
-    task.wait(2)
-    isHopping = false
-    return false
-end
-
-TeleportService.TeleportInitFailed:Connect(function(player, teleportResult, errorMessage)
-    if player == LocalPlayer and _G.LianConfig.ServerLuckHop then
-        task.wait(1)
-        smartHop()
-    end
-end)
+ServerTab:CreateSection("🌐 Smart Server Hop (Anti Duplikasi & Silent)")
 
 ServerTab:CreateToggle({
-    Name = "Auto Hop Cari Server Event (Luck / Clover / Haunted)",
+    Name = "Auto Hop Cari Server Luck Event (Bloodmoon/Eclipse)",
     CurrentValue = _G.LianConfig.ServerLuckHop,
     Callback = function(Value)
         _G.LianConfig.ServerLuckHop = Value
         saveConfig()
-        if Value then
-            task.spawn(function()
-                while _G.LianConfig.ServerLuckHop do
-                    local weather = (DC and DC.Weather and DC.Weather()) or ""
-                    local isEvent = weather:find("Luck") or weather:find("Clover") or weather:find("Haunted") or weather:find("Golden")
-                    if not isEvent then
-                        task.wait(1)
-                        smartHop()
-                        break
-                    else
-                        Rayfield:Notify({ Title = "🎉 Event Ditemukan!", Content = "Cuaca: " .. tostring(weather) .. "! Mulai auto-farm di sini.", Duration = 6 })
-                        sendDiscordWebhook("🎉 Server Event Ditemukan!", "Akun: " .. LocalPlayer.Name .. "\nCuaca: " .. tostring(weather), 16766720)
-                    end
-                    task.wait(30)
-                end
-            end)
-        end
     end,
 })
 
 ServerTab:CreateButton({
-    Name = "Manual Smart Server Hop (Cari Server Baru)",
-    Callback = function() smartHop() end
-})
-
-ServerTab:CreateButton({
-    Name = "Rejoin Server Ini",
+    Name = "🔄 Force Hop ke Server Lain Sekarang",
     Callback = function()
         setupAutoExecuteOnTeleport()
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
-    end
+        local placeId = game.PlaceId
+        local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
+        local ok, res = pcall(function() return HttpService:JSONDecode(game:HttpGet(apiUrl)) end)
+        if ok and res and res.data then
+            for _, s in ipairs(res.data) do
+                if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
+                    TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
+                    return
+                end
+            end
+        end
+        TeleportService:Teleport(placeId, LocalPlayer)
+    end,
 })
 
 -- ═════════════════════════════════════════════════════════════════════
 -- TAB 9: DISCORD WEBHOOK TELEMETRY
 -- ═════════════════════════════════════════════════════════════════════
-WebhookTab:CreateSection("📡 Discord Webhook Alerts")
+WebhookTab:CreateSection("📡 Notifikasi Drop ke Discord HP")
 
 WebhookTab:CreateInput({
     Name = "Discord Webhook URL",
-    PlaceholderText = "Paste Webhook URL di sini...",
+    PlaceholderText = "Paste webhook discord di sini...",
     RemoveTextAfterFocusLost = false,
+    CurrentValue = _G.LianConfig.DiscordWebhook,
     Callback = function(Text)
-        _G.LianConfig.DiscordWebhook = Text
+        _G.LianConfig.DiscordWebhook = Text:gsub("%s+", "")
         saveConfig()
     end,
 })
 
 WebhookTab:CreateToggle({
-    Name = "Kirim Alert Saat Dapat Unit Mythic/Secret & Quirk Prodigy",
+    Name = "Kirim Notifikasi Drop (Mythic / Secret / Prodigy)",
     CurrentValue = _G.LianConfig.WebhookDrops,
-    Callback = function(v) _G.LianConfig.WebhookDrops = v; saveConfig() end
+    Callback = function(Value)
+        _G.LianConfig.WebhookDrops = Value
+        saveConfig()
+    end,
 })
 
+local function sendDiscordWebhook(title, desc, color)
+    local url = _G.LianConfig.DiscordWebhook
+    if not url or url == "" or not url:find("http") then return end
+    local req = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+    if not req then return end
+    local payload = {
+        embeds = {{
+            title = title,
+            description = desc,
+            color = color or 5814783,
+            footer = { text = "⚡ Lian Hub v6.0 | Anime Dice Telemetry" },
+            timestamp = DateTime.now():ToIsoDate()
+        }}
+    }
+    pcall(function()
+        req({
+            Url = url,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode(payload)
+        })
+    end)
+end
+
 WebhookTab:CreateButton({
-    Name = "Test Kirim Webhook Discord",
+    Name = "🔔 Test Kirim Webhook Sekarang",
     Callback = function()
-        sendDiscordWebhook("✅ Lian Hub Webhook Test", "Koneksi Webhook dari akun " .. LocalPlayer.Name .. " berhasil terhubung sempurna!", 3447003)
+        sendDiscordWebhook("🔔 Test Webhook Lian Hub", "Koneksi webhook dari akun **" .. LocalPlayer.Name .. "** berhasil!", 65280)
         Rayfield:Notify({ Title = "Webhook Terkirim!", Content = "Cek channel Discord Bubu yaa!", Duration = 3 })
-    end
+    end,
 })
 
 -- ═════════════════════════════════════════════════════════════════════
 -- TAB 10: POTATO OPTIMIZER & GPU SAVER (MULTI-CLIENT)
 -- ═════════════════════════════════════════════════════════════════════
-PerfTab:CreateSection("❄️ CPU / GPU Saver (Khusus Nuyul Multi-Client RAM)")
+PerfTab:CreateSection("❄️ Extreme Multi-Account Optimizer")
 
 PerfTab:CreateToggle({
     Name = "Matikan Render 3D (0% GPU Usage Mode)",
@@ -1694,16 +1153,11 @@ PerfTab:CreateToggle({
         pcall(function()
             RunService:Set3dRenderingEnabled(not Value)
         end)
-        if Value then
-            Rayfield:Notify({ Title = "GPU 0% Mode Aktif!", Content = "Render 3D dimatikan. Laptop dingin & hemat daya maksimal!", Duration = 4 })
-        else
-            Rayfield:Notify({ Title = "Render 3D Aktif Kembali", Content = "Grafis 3D kembali normal.", Duration = 3 })
-        end
     end,
 })
 
 PerfTab:CreateToggle({
-    Name = "Extreme Potato Mode (FPS Cap 30 + No Particles)",
+    Name = "Extreme Potato Mode (Tekstur Plastik, No Partikel)",
     CurrentValue = _G.LianConfig.ExtremePotatoMode,
     Callback = function(Value)
         _G.LianConfig.ExtremePotatoMode = Value
@@ -1712,21 +1166,28 @@ PerfTab:CreateToggle({
     end,
 })
 
-PerfTab:CreateToggle({
-    Name = "Auto Reconnect Anti-Crash (Error 277/268/529)",
-    CurrentValue = _G.LianConfig.AutoReconnect,
-    Callback = function(v) _G.LianConfig.AutoReconnect = v; saveConfig() end
+PerfTab:CreateSlider({
+    Name = "FPS Cap Tuyul",
+    Range = {10, 60},
+    Increment = 5,
+    Suffix = " FPS",
+    CurrentValue = _G.LianConfig.TargetFPS,
+    Callback = function(Value)
+        _G.LianConfig.TargetFPS = Value
+        saveConfig()
+        pcall(function() if setfpscap then setfpscap(Value) end end)
+    end,
 })
 
 -- ═════════════════════════════════════════════════════════════════════
 -- TAB 11: PLAYER & MOVEMENT
 -- ═════════════════════════════════════════════════════════════════════
-PlayerTab:CreateSection("🏃 Movement")
+PlayerTab:CreateSection("🏃 Movement Enhancements")
 
 PlayerTab:CreateSlider({
     Name = "WalkSpeed",
-    Range = {16, 250},
-    Increment = 1,
+    Range = {16, 150},
+    Increment = 2,
     CurrentValue = 16,
     Callback = function(Value)
         if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
@@ -1735,25 +1196,14 @@ PlayerTab:CreateSlider({
     end,
 })
 
-PlayerTab:CreateSlider({
-    Name = "JumpPower",
-    Range = {50, 350},
-    Increment = 1,
-    CurrentValue = 50,
-    Callback = function(Value)
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-            LocalPlayer.Character.Humanoid.UseJumpPower = true
-            LocalPlayer.Character.Humanoid.JumpPower = Value
-        end
-    end,
-})
-
 PlayerTab:CreateToggle({
     Name = "Infinite Jump",
-    CurrentValue = false,
-    Callback = function(Value) _G.LianConfig.InfJump = Value end,
+    CurrentValue = _G.LianConfig.InfJump,
+    Callback = function(Value)
+        _G.LianConfig.InfJump = Value
+        saveConfig()
+    end,
 })
-
 UserInputService.JumpRequest:Connect(function()
     if _G.LianConfig.InfJump and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
         LocalPlayer.Character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
@@ -1761,34 +1211,431 @@ UserInputService.JumpRequest:Connect(function()
 end)
 
 PlayerTab:CreateToggle({
-    Name = "Noclip",
-    CurrentValue = false,
-    Callback = function(Value) _G.LianConfig.Noclip = Value end,
+    Name = "Noclip (Tembus Dinding)",
+    CurrentValue = _G.LianConfig.Noclip,
+    Callback = function(Value)
+        _G.LianConfig.Noclip = Value
+        saveConfig()
+    end,
 })
-
 RunService.Stepped:Connect(function()
     if _G.LianConfig.Noclip and LocalPlayer.Character then
         for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
-            if part:IsA("BasePart") and part.CanCollide then
+            if part:IsA("BasePart") then
                 part.CanCollide = false
             end
         end
     end
 end)
 
--- Initial Auto-Run based on loaded config
-task.spawn(function()
-    task.wait(2)
-    if _G.LianConfig.ExtremePotatoMode then
-        applyPotatoMode(true)
-    end
-    if _G.LianConfig.Disable3DRendering then
-        pcall(function() RunService:Set3dRenderingEnabled(false) end)
-    end
 
-    Rayfield:Notify({
-        Title = "⚡ Lian Hub v5.0 Ready!",
-        Content = "Script siap digunakan! Selamat nuyul Bubu sayangg 💕",
-        Duration = 5
-    })
+-- ═════════════════════════════════════════════════════════════════════
+-- 🚀 MASTER 100% DECOUPLED BACKGROUND WORKERS
+-- ═════════════════════════════════════════════════════════════════════
+
+-- 1. Auto Roll Dice Worker
+task.spawn(function()
+    while true do
+        if _G.LianConfig.AutoRoll then
+            safe(function() NET.RollService.RE.SetAutoRoll:FireServer(true) end)
+            task.spawn(function()
+                safe(function() NET.RollService.RF.RollDice:InvokeServer() end)
+            end)
+            if _G.LianConfig.AutoEquipBestOnRoll then
+                equipBestEverything()
+            end
+            task.wait(_G.LianConfig.FastRoll and 0.08 or 0.3)
+        else
+            safe(function() NET.RollService.RE.SetAutoRoll:FireServer(false) end)
+            task.wait(0.5)
+        end
+    end
 end)
+
+-- 2. Auto Roll Halloween Worker (100 Labu vs 500 Labu)
+task.spawn(function()
+    while true do
+        if _G.LianConfig.AutoRollHalloween then
+            safe(function()
+                if NET:FindFirstChild("PumpkinDiceService") and NET.PumpkinDiceService:FindFirstChild("RF") and NET.PumpkinDiceService.RF:FindFirstChild("Roll") then
+                    local rollCount = _G.LianConfig.HalloweenRollOption:find("100") and 1 or 5
+                    NET.PumpkinDiceService.RF.Roll:InvokeServer(rollCount)
+                end
+            end)
+            task.wait(0.35)
+        else
+            task.wait(0.5)
+        end
+    end
+end)
+
+-- 3. Auto Potions Worker (Category Stacking)
+task.spawn(function()
+    while true do
+        if _G.LianConfig.AutoPotions then
+            safe(function()
+                local inv = (DC and DC.Inventory and DC.Inventory()) or {}
+                local queue = {}
+                for key, e in pairs(inv) do
+                    if e and (e.amount or 0) > 0 then
+                        local name = tostring(e.name or key)
+                        local shouldDrink = false
+                        if _G.LianConfig.PotionUseLuck and name:find("Luck") then shouldDrink = true
+                        elseif _G.LianConfig.PotionUseIncome and (name:find("Income") or name:find("Money")) then shouldDrink = true
+                        elseif _G.LianConfig.PotionUseDamage and (name:find("Damage") or name:find("Slayer")) then shouldDrink = true
+                        elseif _G.LianConfig.PotionUseSpeed and name:find("Speed") then shouldDrink = true
+                        elseif _G.LianConfig.PotionUseHalloween and (name:find("Haunted") or name:find("Pumpkin") or name:find("Candy")) then shouldDrink = true
+                        elseif _G.LianConfig.PotionUseTower and (name:find("Tower") or name:find("Shadow") or name:find("Pirate")) then shouldDrink = true
+                        end
+                        if shouldDrink then
+                            table.insert(queue, { key = key, name = name, amount = e.amount })
+                        end
+                    end
+                end
+                for _, p in ipairs(queue) do
+                    if not _G.LianConfig.AutoPotions then break end
+                    if NET:FindFirstChild("BoostService") and NET.BoostService:FindFirstChild("RE") and NET.BoostService.RE:FindFirstChild("Use") then
+                        NET.BoostService.RE.Use:FireServer(p.key)
+                        task.wait(0.2)
+                    end
+                end
+            end)
+            task.wait(3)
+        else
+            task.wait(1)
+        end
+    end
+end)
+
+-- 4. Auto Rebirth Worker (Zero Spam — Uang Cukup Baru Rebirth)
+task.spawn(function()
+    while true do
+        if _G.LianConfig.AutoRebirth then
+            safe(function()
+                local canRebirth, curCash, cost = canAffordRebirth()
+                if canRebirth then
+                    if NET:FindFirstChild("RebirthService") and NET.RebirthService:FindFirstChild("RE") and NET.RebirthService.RE:FindFirstChild("Rebirth") then
+                        NET.RebirthService.RE.Rebirth:FireServer()
+                        Rayfield:Notify({ Title = "Rebirth Sukses!", Content = "Uang cukup ($" .. math.floor(curCash) .. "). Rebirth diproses!", Duration = 3 })
+                        task.wait(1.5)
+                        equipBestEverything()
+                    end
+                end
+            end)
+            task.wait(1.5)
+        else
+            task.wait(1)
+        end
+    end
+end)
+
+-- 5. Rebirth Stats Allocation Worker (Zero Spam — Poin > 0 Baru Up)
+task.spawn(function()
+    while true do
+        safe(function()
+            local pts = getAvailableStatPoints()
+            if pts > 0 and NET:FindFirstChild("RebirthService") and NET.RebirthService:FindFirstChild("RE") and NET.RebirthService.RE:FindFirstChild("AddStat") then
+                local prio = _G.LianConfig.RebirthStatPriority
+                local statList = {}
+                if prio:find("Balance") then statList = {"Money", "Luck", "Damage", "Health", "Speed"}
+                elseif prio:find("Money") then statList = {"Money"}
+                elseif prio:find("Luck") then statList = {"Luck"}
+                elseif prio:find("Damage") then statList = {"Damage"}
+                elseif prio:find("Health") then statList = {"Health"}
+                elseif prio:find("Speed") then statList = {"Speed"}
+                end
+                local spentT = table.clone((DC and DC.RebirthStats and DC.RebirthStats()) or {})
+                for _ = 1, math.min(pts, 15) do
+                    local pick, low = nil, math.huge
+                    for _, name in ipairs(statList) do
+                        local cur = spentT[name] or 0
+                        if cur < low then
+                            pick, low = name, cur
+                        end
+                    end
+                    if not pick then break end
+                    spentT[pick] = low + 1
+                    NET.RebirthService.RE.AddStat:FireServer(pick)
+                    task.wait(0.15)
+                end
+            end
+        end)
+        task.wait(2)
+    end
+end)
+
+-- 6. Auto Buy Tree Upgrades Worker (Fortune dll di Dekat Dadu)
+task.spawn(function()
+    while true do
+        if _G.LianConfig.AutoBuyTreeUpgrades then
+            safe(buyUpgradesTree)
+            task.wait(2.5)
+        else
+            task.wait(1)
+        end
+    end
+end)
+
+-- 7. Towers AI & Manual Tower Worker (Native Team Equip + Debounce)
+task.spawn(function()
+    while true do
+        if _G.LianConfig.SmartTowerAI or _G.LianConfig.AutoTower then
+            safe(function()
+                if _G.LianConfig.AutoEquipTowerTeam then
+                    if NET:FindFirstChild("Towers") and NET.Towers:FindFirstChild("RE") and NET.Towers.RE:FindFirstChild("EquipBestTowerTeam") then
+                        NET.Towers.RE.EquipBestTowerTeam:FireServer()
+                        task.wait(1)
+                    end
+                end
+                local towerName = _G.LianConfig.TowerType
+                if _G.LianConfig.SmartTowerAI then
+                    local towers = {"The Abyss", "Bell Tower", "Attic", "Crypt", "Foyer", "Front Yard"}
+                    towerName = towers[math.random(1, #towers)]
+                end
+                if NET:FindFirstChild("Towers") and NET.Towers:FindFirstChild("RF") and NET.Towers.RF:FindFirstChild("PlayTower") then
+                    local okStart, resStart = pcall(function() return NET.Towers.RF.PlayTower:InvokeServer(towerName) end)
+                    if okStart and resStart then
+                        task.wait(1)
+                        for floor = 1, 50 do
+                            if not (_G.LianConfig.SmartTowerAI or _G.LianConfig.AutoTower) then break end
+                            local okFloor, resSeq = pcall(function() return NET.Towers.RF.CompleteTowerFloor:InvokeServer() end)
+                            if not okFloor or resSeq == "destroyed" then break end
+                            if type(resSeq) == "table" then
+                                local ended = false
+                                for _, a in ipairs(resSeq) do
+                                    if a.action == "ended" then ended = true end
+                                end
+                                if ended then break end
+                            end
+                            task.wait(0.3)
+                        end
+                    end
+                end
+            end)
+            task.wait(5.5) -- 5.5s PlayTower server debounce
+        else
+            task.wait(1)
+        end
+    end
+end)
+
+-- 8. Plot Cash & Level Up Worker
+task.spawn(function()
+    while true do
+        if _G.LianConfig.AutoCollectCash then
+            safe(function()
+                local maxSlots = getMaxPlotSlots()
+                for slot = 1, maxSlots do
+                    if not _G.LianConfig.AutoCollectCash then break end
+                    if NET:FindFirstChild("PlotService") and NET.PlotService:FindFirstChild("RF") and NET.PlotService.RF:FindFirstChild("CollectCash") then
+                        NET.PlotService.RF.CollectCash:InvokeServer(slot)
+                    end
+                end
+            end)
+        end
+        if _G.LianConfig.AutoLevelUpSlots then
+            safe(function()
+                local maxSlots = getMaxPlotSlots()
+                for slot = 1, maxSlots do
+                    if not _G.LianConfig.AutoLevelUpSlots then break end
+                    if NET:FindFirstChild("PlotService") and NET.PlotService:FindFirstChild("RE") and NET.PlotService.RE:FindFirstChild("LevelUpSlot") then
+                        NET.PlotService.RE.LevelUpSlot:FireServer(slot)
+                    end
+                end
+            end)
+        end
+        task.wait(2)
+    end
+end)
+
+-- 9. Daily Rewards & Quests Worker
+task.spawn(function()
+    while true do
+        if _G.LianConfig.AutoDailyReward then
+            safe(function()
+                if NET:FindFirstChild("DailyRewardService") and NET.DailyRewardService:FindFirstChild("RE") and NET.DailyRewardService.RE:FindFirstChild("Claim") then
+                    NET.DailyRewardService.RE.Claim:FireServer()
+                end
+            end)
+        end
+        if _G.LianConfig.AutoQuests then
+            safe(function()
+                if NET:FindFirstChild("QuestService") and NET.QuestService:FindFirstChild("RE") and NET.QuestService.RE:FindFirstChild("Claim") then
+                    for _, p in ipairs({"Daily", "Weekly"}) do
+                        if M.Quests and M.Quests.Periods and M.Quests.Periods[p] then
+                            for _, q in ipairs(M.Quests.Periods[p].quests or {}) do
+                                NET.QuestService.RE.Claim:FireServer(p, q.id)
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+        task.wait(10)
+    end
+end)
+
+-- 10. Auto Sell Worst Units Worker (Common/Rare/Epic)
+task.spawn(function()
+    while true do
+        if _G.LianConfig.AutoSellWorstUnits then
+            safe(function()
+                equipBestEverything()
+                task.wait(0.5)
+                local toSell = {}
+                if _G.LianConfig.AutoSellCommon then table.insert(toSell, "Common") end
+                if _G.LianConfig.AutoSellRare then table.insert(toSell, "Rare") end
+                if _G.LianConfig.AutoSellEpic then table.insert(toSell, "Epic") end
+                if #toSell > 0 and NET:FindFirstChild("SellService") and NET.SellService:FindFirstChild("RE") and NET.SellService.RE:FindFirstChild("UpdateAutoSell") then
+                    NET.SellService.RE.UpdateAutoSell:FireServer(toSell)
+                end
+            end)
+            task.wait(4)
+        else
+            task.wait(1)
+        end
+    end
+end)
+
+-- 11. Trick or Treat Worker
+task.spawn(function()
+    while true do
+        if _G.LianConfig.AutoTrickOrTreat then
+            safe(function()
+                local map = Workspace:FindFirstChild("Halloween") or Workspace:FindFirstChild("Map")
+                local doors = map and (map:FindFirstChild("Doors") or map:FindFirstChild("TrickOrTreat"))
+                if doors and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    local hrp = LocalPlayer.Character.HumanoidRootPart
+                    local oldCFrame = hrp.CFrame
+                    for _, d in ipairs(doors:GetChildren()) do
+                        if not _G.LianConfig.AutoTrickOrTreat then break end
+                        if d:IsA("Model") or d:IsA("BasePart") then
+                            local pivot = d:GetPivot()
+                            hrp.CFrame = pivot * CFrame.new(0, 2, 3)
+                            task.wait(0.4)
+                            if NET:FindFirstChild("HalloweenService") and NET.HalloweenService:FindFirstChild("RE") and NET.HalloweenService.RE:FindFirstChild("TrickOrTreat") then
+                                NET.HalloweenService.RE.TrickOrTreat:FireServer(d.Name)
+                            end
+                            task.wait(0.3)
+                        end
+                    end
+                    hrp.CFrame = oldCFrame
+                end
+            end)
+            task.wait(5)
+        else
+            task.wait(1)
+        end
+    end
+end)
+
+-- 12. Halloween Event Doors Worker
+task.spawn(function()
+    while true do
+        if _G.LianConfig.AutoHalloweenDoors then
+            safe(function()
+                local floors = {"The Abyss", "Bell Tower", "Attic", "Crypt", "Foyer", "Front Yard"}
+                if NET:FindFirstChild("HalloweenQuestService") and NET.HalloweenQuestService:FindFirstChild("RE") and NET.HalloweenQuestService.RE:FindFirstChild("Claim") then
+                    for _, f in ipairs(floors) do
+                        NET.HalloweenQuestService.RE.Claim:FireServer("Daily", f)
+                    end
+                end
+            end)
+            task.wait(3)
+        else
+            task.wait(1)
+        end
+    end
+end)
+
+-- 13. Halloween Pass Claim Worker
+task.spawn(function()
+    while true do
+        if _G.LianConfig.AutoPumpkinPass then
+            safe(function()
+                if NET:FindFirstChild("HalloweenService") and NET.HalloweenService:FindFirstChild("RE") and NET.HalloweenService.RE:FindFirstChild("ClaimAllPath") then
+                    NET.HalloweenService.RE.ClaimAllPath:FireServer()
+                end
+            end)
+            task.wait(6)
+        else
+            task.wait(1)
+        end
+    end
+end)
+
+-- 14. Auto Trade Feeder Listener
+pcall(function()
+    if NET:FindFirstChild("TradeService") and NET.TradeService:FindFirstChild("RE") and NET.TradeService.RE:FindFirstChild("TradeEvent") then
+        NET.TradeService.RE.TradeEvent.OnClientEvent:Connect(function(event, data)
+            if not _G.LianConfig.AutoTradeFeeder then return end
+            local master = _G.LianConfig.MasterAccount
+            if not master or master == "" then return end
+            if event == "Request" and data and data.player then
+                if data.player.Name:lower() == master:lower() then
+                    NET.TradeService.RE.RespondToRequest:FireServer(true)
+                    Rayfield:Notify({ Title = "Trade Diterima!", Content = "Trade otomatis dari Akun Utama: " .. data.player.Name, Duration = 4 })
+                else
+                    NET.TradeService.RE.RespondToRequest:FireServer(false)
+                end
+            elseif event == "Started" then
+                task.wait(0.5)
+                local inv = (DC and DC.Inventory and DC.Inventory()) or {}
+                for key, unit in pairs(inv) do
+                    local rarity = unit.rarity or (unit.attrs and unit.attrs.rarity) or ""
+                    if (_G.LianConfig.TradeMythic and rarity == "Mythic") or (_G.LianConfig.TradeSecret and rarity == "Secret") then
+                        NET.TradeService.RE.ChangeOffer:FireServer(key, 1)
+                        task.wait(0.2)
+                    end
+                end
+                task.wait(0.5)
+                NET.TradeService.RE.AdvanceTrade:FireServer()
+                task.wait(3.2)
+                NET.TradeService.RE.AdvanceTrade:FireServer()
+            end
+        end)
+    end
+end)
+
+-- 15. Server Luck Hopper Worker
+task.spawn(function()
+    while true do
+        if _G.LianConfig.ServerLuckHop then
+            safe(function()
+                local weather = (DC and DC.Weather and DC.Weather()) or ""
+                if weather ~= "Bloodmoon" and weather ~= "Eclipse" and weather ~= "Full Moon" then
+                    setupAutoExecuteOnTeleport()
+                    local placeId = game.PlaceId
+                    local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
+                    local ok, res = pcall(function() return HttpService:JSONDecode(game:HttpGet(apiUrl)) end)
+                    if ok and res and res.data then
+                        for _, s in ipairs(res.data) do
+                            if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
+                                TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
+                                return
+                            end
+                        end
+                    end
+                    TeleportService:Teleport(placeId, LocalPlayer)
+                end
+            end)
+            task.wait(5)
+        else
+            task.wait(2)
+        end
+    end
+end)
+
+-- 16. Extreme Potato Mode & 3D Render Initialization
+if _G.LianConfig.ExtremePotatoMode then
+    applyPotatoMode(true)
+end
+if _G.LianConfig.Disable3DRendering then
+    pcall(function() RunService:Set3dRenderingEnabled(false) end)
+end
+
+Rayfield:Notify({
+    Title = "⚡ Lian Hub v6.0 Ready!",
+    Content = "Master Exploit Suite aktif! Gunakan tombol [⚡ Lian Hub] atau RightControl untuk hide/show.",
+    Duration = 5
+})

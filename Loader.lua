@@ -52,47 +52,73 @@ local function setupAutoExecuteOnTeleport()
     end
 end
 
--- 3. Network & Framework
-local NET = RS:WaitForChild("Network", 15)
+-- 3. Network & Framework (Non-blocking & Solara Safe)
+local NET = RS:FindFirstChild("Network") or RS:WaitForChild("Network", 4)
 
--- Drop thread identity to 2 around every require of game modules (bypass executor identity restriction)
+-- Drop thread identity safely around every require of game modules (bypass executor identity restriction)
 local function asGame(fn, ...)
     if type(setthreadidentity) ~= "function" or type(getthreadidentity) ~= "function" then
-        return fn(...)
+        local ok, res = pcall(fn, ...)
+        return ok and res or nil
     end
-    local prev = getthreadidentity()
-    setthreadidentity(2)
+    local prev
+    pcall(function() prev = getthreadidentity() end)
+    local okSet = pcall(setthreadidentity, 2)
     local packed = table.pack(pcall(fn, ...))
-    setthreadidentity(prev)
-    if not packed[1] then error(packed[2], 0) end
+    if okSet and prev then pcall(setthreadidentity, prev) end
+    if not packed[1] then return nil end
     return table.unpack(packed, 2, packed.n)
 end
 
 local M = {}
-pcall(function()
-    local F = RS:WaitForChild("Framework", 10):WaitForChild("Features", 10)
-    local function req(mod)
-        local ok, res = pcall(asGame, require, mod)
-        return ok and res or nil
-    end
-    M.Data = req(F.Data.DataController)
-    M.Buff = req(F.Buffs.BuffController)
-    M.Entry = req(F.Inventory.EntryRegistry)
-    M.Dice = req(F.Rolling.Dice)
-    M.Upgrades = req(F.Upgrades.Upgrades)
-    M.Tree = req(F.Upgrades.TreeStructure)
-    M.Rebirths = req(F.Rebirth.Rebirths)
-    M.RStats = req(F.Rebirth.RebirthStatsConfig)
-    M.PlotConfig = req(F.Plot.PlotConfig)
-    M.UnitUtil = req(F.Inventory.Kinds.Unit.UnitUtil)
-    M.Towers = req(F.Towers.Towers)
-    M.TowerRefs = req(F.Towers.TowerRefs)
+task.spawn(function()
+    pcall(function()
+        local F = RS:FindFirstChild("Framework") or RS:WaitForChild("Framework", 4)
+        if not F then return end
+        local Feat = F:FindFirstChild("Features") or F:WaitForChild("Features", 4)
+        if not Feat then return end
+        local function req(mod)
+            if not mod then return nil end
+            local ok, res = pcall(asGame, require, mod)
+            return ok and res or nil
+        end
+        if Feat:FindFirstChild("Data") then M.Data = req(Feat.Data:FindFirstChild("DataController")) end
+        if Feat:FindFirstChild("Buffs") then M.Buff = req(Feat.Buffs:FindFirstChild("BuffController")) end
+        if Feat:FindFirstChild("Inventory") then M.Entry = req(Feat.Inventory:FindFirstChild("EntryRegistry")) end
+        if Feat:FindFirstChild("Rolling") then M.Dice = req(Feat.Rolling:FindFirstChild("Dice")) end
+        if Feat:FindFirstChild("Upgrades") then
+            M.Upgrades = req(Feat.Upgrades:FindFirstChild("Upgrades"))
+            M.Tree = req(Feat.Upgrades:FindFirstChild("TreeStructure"))
+        end
+        if Feat:FindFirstChild("Rebirth") then
+            M.Rebirths = req(Feat.Rebirth:FindFirstChild("Rebirths"))
+            M.RStats = req(Feat.Rebirth:FindFirstChild("RebirthStatsConfig"))
+        end
+        if Feat:FindFirstChild("Plot") then M.PlotConfig = req(Feat.Plot:FindFirstChild("PlotConfig")) end
+        if Feat:FindFirstChild("Inventory") and Feat.Inventory:FindFirstChild("Kinds") and Feat.Inventory.Kinds:FindFirstChild("Unit") then
+            M.UnitUtil = req(Feat.Inventory.Kinds.Unit:FindFirstChild("UnitUtil"))
+        end
+        if Feat:FindFirstChild("Towers") then
+            M.Towers = req(Feat.Towers:FindFirstChild("Towers"))
+            M.TowerRefs = req(Feat.Towers:FindFirstChild("TowerRefs"))
+        end
+    end)
 end)
 
-local DC = M.Data
-if not DC then
-    pcall(function() DC = require(RS.Framework.Features.Data.DataController) end)
+local function getDC()
+    if M.Data then return M.Data end
+    pcall(function()
+        M.Data = require(RS.Framework.Features.Data.DataController)
+    end)
+    return M.Data
 end
+local DC = setmetatable({}, {
+    __index = function(_, k)
+        local real = getDC()
+        if real then return real[k] end
+        return nil
+    end
+})
 
 local function safe(fn, ...)
     local ok, res = pcall(fn, ...)
@@ -396,20 +422,52 @@ GuiService.ErrorMessageChanged:Connect(function(msg)
     end
 end)
 
--- 7. Load UI (Rayfield — Pure Keyless)
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+-- 7. Load UI (Rayfield — Pure Keyless, Solara & Multi-Executor Safe)
+local Rayfield
+local okRay, rayLib = pcall(function()
+    return loadstring(game:HttpGet('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua'))()
+end)
+if okRay and rayLib then
+    Rayfield = rayLib
+else
+    local okBackup, backupLib = pcall(function()
+        return loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+    end)
+    if okBackup and backupLib then
+        Rayfield = backupLib
+    end
+end
 
-local Window = Rayfield:CreateWindow({
-    Name = "⚡ Lian Hub v5.0 | Anime Dice Exploit Suite",
-    Icon = 0,
-    LoadingTitle = "Lian Hub Injecting...",
-    LoadingSubtitle = "by iannn (@brilliantgibrann16)",
-    Theme = "Ocean",
-    DisableRayfieldPrompts = true,
-    DisableBuildWarnings = true,
-    ConfigurationSaving = { Enabled = false },
-    KeySystem = false -- 🔥 ZERO KEY SYSTEM / ZERO ADS
-})
+if not Rayfield then
+    error("[Lian Hub] Gagal memuat Rayfield dari GitHub Raw dan Sirius! Periksa koneksi internet executor.", 0)
+end
+
+local Window
+local okWin, winRes = pcall(function()
+    return Rayfield:CreateWindow({
+        Name = "⚡ Lian Hub v5.0 | Anime Dice Exploit Suite",
+        Icon = 0,
+        LoadingTitle = "Lian Hub Injecting...",
+        LoadingSubtitle = "by iannn (@brilliantgibrann16)",
+        Theme = "Ocean",
+        DisableRayfieldPrompts = true,
+        DisableBuildWarnings = true,
+        ConfigurationSaving = { Enabled = false },
+        KeySystem = false -- 🔥 ZERO KEY SYSTEM / ZERO ADS
+    })
+end)
+if okWin and winRes then
+    Window = winRes
+else
+    warn("[Lian Hub] CreateWindow failed with full config, retrying minimal config:", winRes)
+    Window = Rayfield:CreateWindow({
+        Name = "⚡ Lian Hub v5.0 | Anime Dice",
+        LoadingTitle = "Lian Hub",
+        LoadingSubtitle = "by iannn",
+        ConfigurationSaving = { Enabled = false },
+        KeySystem = false
+    })
+end
 
 -- TABS
 local FarmTab = Window:CreateTab("Auto Farm", 4483362458)

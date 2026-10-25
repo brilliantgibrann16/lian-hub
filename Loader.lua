@@ -42,13 +42,34 @@ local GuiService = game:GetService("GuiService")
 
 local LocalPlayer = Players.LocalPlayer
 
--- 1. Anti-AFK
+-- 1. Anti-AFK (AUTO — no toggle, runs from script start)
 LocalPlayer.Idled:Connect(function()
     pcall(function()
         VirtualUser:CaptureController()
         VirtualUser:ClickButton2(Vector2.new(0, 0))
     end)
     task.wait(1)
+end)
+
+-- Permanent Anti-AFK heartbeat (auto, no toggle)
+task.spawn(function()
+    while true do
+        pcall(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new(math.random(0, 100), math.random(0, 100)))
+        end)
+        -- Also wiggle character slightly to prevent idle kick
+        pcall(function()
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                local hum = LocalPlayer.Character.Humanoid
+                local oldWS = hum.WalkSpeed
+                hum.WalkSpeed = oldWS + 0.01
+                task.wait(0.05)
+                hum.WalkSpeed = oldWS
+            end
+        end)
+        task.wait(60)
+    end
 end)
 
 -- 2. Teleport Auto-Execute Queue

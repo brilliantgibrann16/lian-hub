@@ -232,12 +232,18 @@ local function checkGameUpdates()
     check("PlayerGui.Root.HUD", root and root:FindFirstChild("HUD") ~= nil)
     check("PlayerGui.Root.Menus.Rebirth", root and root:FindFirstChild("Menus") and root.Menus:FindFirstChild("Rebirth") ~= nil)
 
-    -- DataController
-    local dc = getDC()
+    -- DataController (inlined to avoid upvalue nil issue)
+    local dc = nil
+    pcall(function()
+        if RS:FindFirstChild("Framework") and RS.Framework:FindFirstChild("Features") and RS.Framework.Features:FindFirstChild("Data") then
+            dc = asGame(require, RS.Framework.Features.Data.DataController) or require(RS.Framework.Features.Data.DataController)
+        end
+    end)
     check("DataController", dc ~= nil)
     if dc then
         for _, field in ipairs({"Money","Cash","Coins","Inventory","Slots","Rebirth","RebirthStats","Upgrades","Weather"}) do
-            check("DC."..field, dc[field] ~= nil)
+            local okField, valField = pcall(function() return dc[field] ~= nil end)
+            check("DC."..field, okField and valField or false)
         end
     end
 

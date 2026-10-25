@@ -171,6 +171,18 @@ local function checkGameUpdates()
     local function check(name, ok)
         table.insert(results, (ok and "✅ " or "❌ ") .. name)
     end
+    local function safeCheck(name, fn)
+        local ok, val = pcall(fn)
+        if not ok then
+            table.insert(results, "❌ " .. name .. " (ERROR: " .. tostring(val) .. ")")
+            return
+        end
+        table.insert(results, (val and "✅ " or "❌ ") .. name)
+    end
+
+    -- Wrap all checks in pcall to catch any runtime error
+    local function runChecks()
+
 
     -- Framework
     local fw = RS:FindFirstChild("Framework")
@@ -227,6 +239,14 @@ local function checkGameUpdates()
         for _, field in ipairs({"Money","Cash","Coins","Inventory","Slots","Rebirth","RebirthStats","Upgrades","Weather"}) do
             check("DC."..field, dc[field] ~= nil)
         end
+    end
+
+    end -- runChecks
+
+    local okRun, errRun = pcall(runChecks)
+    if not okRun then
+        table.insert(results, "❌ INTERNAL ERROR: " .. tostring(errRun))
+        warn("[LianHub] CheckUpdates internal error: " .. tostring(errRun))
     end
 
     -- Print report
@@ -329,7 +349,7 @@ _G.LianConfig = {
     PotionUseTower = true,
     AutoSpin = false,
     AutoTrickOrTreat = false,
-    AutoHalloweenDoors = false,
+    AutoHalloweenQuestClaim = false,  -- renamed from AutoHalloweenDoors
     AutoPumpkinPass = false,
     AutoCandyShop = false,
     CandyShopItem = "Pumpkin Egg",
@@ -369,6 +389,14 @@ _G.LianConfig = {
     InfJump = false,
     Noclip = false
 }
+
+-- ponytail: backward-compat migration for renamed config key
+pcall(function()
+    if _G.LianConfig and _G.LianConfig.AutoHalloweenDoors ~= nil then
+        _G.LianConfig.AutoHalloweenQuestClaim = _G.LianConfig.AutoHalloweenDoors
+        _G.LianConfig.AutoHalloweenDoors = nil
+    end
+end)
 
 local function saveConfig()
     pcall(function()
@@ -508,10 +536,20 @@ local function buyUpgradesTree()
     local dc = getDC()
     local owned = (dc and dc.Upgrades and dc.Upgrades()) or {}
     local cands = {}
+    local hasGetParent = M.Tree.GetParent ~= nil
     for name, u in pairs(M.Upgrades) do
         if name ~= "Start" and not owned[name] then
-            local parent = M.Tree.GetParent and M.Tree.GetParent(name)
-            if parent == nil or parent == "Start" or owned[parent] then
+            local allow = false
+            if not hasGetParent then
+                -- Cannot verify parent dependency: skip to avoid wrong purchases
+                allow = false
+            else
+                local parent = M.Tree.GetParent(name)
+                if parent == nil or parent == "Start" or owned[parent] then
+                    allow = true
+                end
+            end
+            if allow then
                 table.insert(cands, { name = name, price = u.price or 0 })
             end
         end
@@ -960,10 +998,10 @@ HalloweenTab:CreateToggle({
 })
 
 HalloweenTab:CreateToggle({
-    Name = "Auto Claim Halloween Event Quests",
-    CurrentValue = _G.LianConfig.AutoHalloweenDoors,
+    Name = "Auto Claim Halloween Event Quests (6 Floors)",
+    CurrentValue = _G.LianConfig.AutoHalloweenQuestClaim,
     Callback = function(Value)
-        _G.LianConfig.AutoHalloweenDoors = Value
+        _G.LianConfig.AutoHalloweenQuestClaim = Value
         saveConfig()
     end,
 })
@@ -1058,12 +1096,17 @@ PlotTab:CreateSection("💰 Plot Management")
 PlotTab:CreateButton({
     Name = "🔍 Check Game Updates (Diagnose Broken Features)",
     Callback = function()
-        local res = _G.LianHubCheckUpdates()
+        local ok, res = pcall(_G.LianHubCheckUpdates)
+        if not ok then
+            warn("[LianHub] CheckUpdates error: " .. tostring(res))
+            Rayfield:Notify({ Title = "Game Update Check", Content = "Error: " .. tostring(res), Duration = 6 })
+            return
+        end
         local broken = 0
-        for _, r in ipairs(res) do if r:find("❌") then broken = broken + 1 end end
+        for _, r in ipairs(res or {}) do if type(r) == "string" and r:find("❌") then broken = broken + 1 end end
         Rayfield:Notify({
             Title = "Game Update Check",
-            Content = broken .. " broken out of " .. #res .. " checks. See F9 console for details.",
+            Content = broken .. " broken out of " .. #(res or {}) .. " checks. See F9 console for details.",
             Duration = 6
         })
     end,
@@ -1699,7 +1742,7 @@ end)
 -- 12. Halloween Event Quests Worker
 task.spawn(function()
     while true do
-        if _G.LianConfig.AutoHalloweenDoors then
+        if _G.LianConfig.AutoHalloweenQuestClaim then
             safe(function()
                 local floors = {"The Abyss", "Bell Tower", "Attic", "Crypt", "Foyer", "Front Yard"}
                 for _, f in ipairs(floors) do

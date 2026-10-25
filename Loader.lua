@@ -141,6 +141,93 @@ local function safe(fn, ...)
     return ok and res
 end
 
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- LIAN HUB GAME UPDATE CHECKER (run via Lian Hub UI or console)
+-- ═══════════════════════════════════════════════════════════════════════════
+local function checkGameUpdates()
+    local results = {}
+    local function check(name, ok)
+        table.insert(results, (ok and "✅ " or "❌ ") .. name)
+    end
+
+    -- Framework
+    local fw = RS:FindFirstChild("Framework")
+    check("Framework module", fw ~= nil)
+    if fw then
+        local feat = fw:FindFirstChild("Features")
+        check("Framework.Features", feat ~= nil)
+        if feat then
+            for _, modName in ipairs({"Data","Buffs","Inventory","Rolling","Upgrades","Rebirth","Plot","Towers","Quests"}) do
+                check("Feature."..modName, feat:FindFirstChild(modName) ~= nil)
+            end
+        end
+    end
+
+    -- Network remotes
+    local net = RS:FindFirstChild("Network")
+    check("Network folder", net ~= nil)
+    if net then
+        local services = {
+            {"RollService","RE","SetAutoRoll"}, {"RollService","RF","RollDice"},
+            {"PumpkinDiceService","RF","Roll"}, {"PlotService","RE","CollectBalance"},
+            {"PlotService","RE","EquipBest"}, {"SellService","RF","SellInventory"},
+            {"RebirthService","RE","Rebirth"}, {"RebirthService","RE","AddStat"},
+            {"Towers","RF","PlayTower"}, {"Towers","RF","CompleteTowerFloor"},
+            {"TrickOrTreatService","RE","Knocked"}, {"TrickOrTreatService","RE","Landed"},
+            {"HalloweenService","RE","ClaimAllPath"}, {"HalloweenQuestService","RE","Claim"},
+            {"BoostService","RE","Use"}, {"SpinService","RE","Use"},
+            {"DailyRewardService","RE","Claim"}, {"OfflineEarningsService","RE","Claim"},
+            {"CodesService","RE","RedeemCode"}, {"QuirkService","RE","Roll"},
+            {"TradeService","RE","RequestTrade"}, {"TradeService","RE","TradeEvent"},
+        }
+        for _, s in ipairs(services) do
+            local svc = net:FindFirstChild(s[1])
+            local sub = svc and svc:FindFirstChild(s[2])
+            local remote = sub and sub:FindFirstChild(s[3])
+            check(s[1].."."..s[2].."."..s[3], remote ~= nil)
+        end
+    end
+
+    -- Workspace
+    check("Workspace.Plots", Workspace:FindFirstChild("Plots") ~= nil or (Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Plots")) ~= nil)
+    check("Workspace.Halloween", Workspace:FindFirstChild("Halloween") ~= nil)
+
+    -- PlayerGui
+    local root = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Root")
+    check("PlayerGui.Root", root ~= nil)
+    check("PlayerGui.Root.HUD", root and root:FindFirstChild("HUD") ~= nil)
+    check("PlayerGui.Root.Menus.Rebirth", root and root:FindFirstChild("Menus") and root.Menus:FindFirstChild("Rebirth") ~= nil)
+
+    -- DataController
+    local dc = getDC()
+    check("DataController", dc ~= nil)
+    if dc then
+        for _, field in ipairs({"Money","Cash","Coins","Inventory","Slots","Rebirth","RebirthStats","Upgrades","Weather"}) do
+            check("DC."..field, dc[field] ~= nil)
+        end
+    end
+
+    -- Print report
+    print("\n═══════════════════════════════════════════════════════════════════════════")
+    print("🔍 LIAN HUB GAME UPDATE CHECKER REPORT")
+    print("═══════════════════════════════════════════════════════════════════════════")
+    for _, r in ipairs(results) do print(r) end
+    local broken = 0
+    for _, r in ipairs(results) do if r:find("❌") then broken = broken + 1 end end
+    print("\n📊 Total checks: "..#results.." | Broken: "..broken)
+    if broken > 0 then
+        print("⚠️ Game may have updated! Some remotes/modules are missing.")
+    else
+        print("✅ All systems nominal. Game structure unchanged.")
+    end
+    print("═══════════════════════════════════════════════════════════════════════════\n")
+    return results
+end
+
+-- Expose globally
+_G.LianHubCheckUpdates = checkGameUpdates
+
 -- 5. Game Framework Modules Loader
 local M = {}
 local function initFramework()
@@ -221,6 +308,7 @@ _G.LianConfig = {
     PotionUseTower = true,
     AutoSpin = false,
     AutoTrickOrTreat = false,
+    AutoHalloweenDoors = false,
     AutoPumpkinPass = false,
     AutoCandyShop = false,
     CandyShopItem = "Pumpkin Egg",
@@ -945,6 +1033,20 @@ TowerTab:CreateToggle({
 -- TAB 6: PLOT CASH & QUESTS
 -- ═════════════════════════════════════════════════════════════════════
 PlotTab:CreateSection("💰 Plot Management")
+
+PlotTab:CreateButton({
+    Name = "🔍 Check Game Updates (Diagnose Broken Features)",
+    Callback = function()
+        local res = _G.LianHubCheckUpdates()
+        local broken = 0
+        for _, r in ipairs(res) do if r:find("❌") then broken = broken + 1 end end
+        Rayfield:Notify({
+            Title = "Game Update Check",
+            Content = broken .. " broken out of " .. #res .. " checks. See F9 console for details.",
+            Duration = 6
+        })
+    end,
+})
 
 PlotTab:CreateToggle({
     Name = "Auto Collect Cash Plot (Semua Slot 1-20)",

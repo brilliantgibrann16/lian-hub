@@ -863,9 +863,13 @@ GuiService.ErrorMessageChanged:Connect(function(msg)
         if msg and (msg:find("disconnect") or msg:find("lost") or msg:find("error") or msg:find("277") or msg:find("268") or msg:find("529")) then
             isReconnecting = true
             setupAutoExecuteOnTeleport()
+            -- Schedule reset BEFORE teleport so a thrown Teleport cannot lock the watcher
+            task.spawn(function()
+                task.wait(10)
+                isReconnecting = false
+            end)
             task.wait(5)
             TeleportService:Teleport(game.PlaceId, LocalPlayer)
-            isReconnecting = false
         end
     end
 end)
@@ -925,7 +929,11 @@ pcall(function()
         pcall(function() parentGui = game:GetService("CoreGui") end)
     end
     if not parentGui then
-        pcall(function() parentGui = LocalPlayer:WaitForChild("PlayerGui", 5) end)
+        -- FindFirstChild (non-yielding) first; only WaitForChild outside pcall as last resort
+        parentGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if not parentGui then
+            parentGui = LocalPlayer:WaitForChild("PlayerGui", 5)
+        end
     end
     if not parentGui then
         warn("[Lian Hub] No GUI parent available. UI cannot be created.")
@@ -1737,11 +1745,12 @@ ESPSettingsTab:CreateSection("🔄 Rejoin & Server")
         Callback = function(Value)
             if not Value then return end
         setupAutoExecuteOnTeleport()
-        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        -- Schedule auto-reset BEFORE teleport so a thrown Teleport cannot leave the toggle stuck ON
         task.spawn(function()
             task.wait(0.5)
             _tg:Set(false)
         end)
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
     end,
 })
 

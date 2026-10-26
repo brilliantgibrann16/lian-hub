@@ -479,7 +479,8 @@ pcall(function()
     if isfile and isfile(CONFIG_FILE) and readfile then
         local raw = HttpService:JSONDecode(readfile(CONFIG_FILE))
         if type(raw) == "table" and raw.AutoHalloweenDoors ~= nil then
-            if _G.LianConfig.AutoHalloweenQuestClaim == nil or _G.LianConfig.AutoHalloweenQuestClaim == false then
+            -- Only migrate if AutoHalloweenQuestClaim is NOT explicitly present in saved config
+            if raw.AutoHalloweenQuestClaim == nil then
                 _G.LianConfig.AutoHalloweenQuestClaim = raw.AutoHalloweenDoors
             end
         end
@@ -511,8 +512,14 @@ local function loadConfig()
 end
 loadConfig()
 
--- Apply saved visual settings on load (after config loaded)
+-- Apply saved visual/movement settings on load (after config loaded)
 pcall(function()
+    if _G.LianConfig.WalkSpeedValue and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.WalkSpeed = _G.LianConfig.WalkSpeedValue
+    end
+    if _G.LianConfig.JumpPowerValue and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.JumpPower = _G.LianConfig.JumpPowerValue
+    end
     if _G.LianConfig.Fullbright then
         local Lighting = game:GetService("Lighting")
         Lighting.Brightness = 2
@@ -1862,8 +1869,10 @@ PlayerTab:CreateSlider({
     Name = "WalkSpeed",
     Range = {16, 150},
     Increment = 2,
-    CurrentValue = 16,
+    CurrentValue = _G.LianConfig.WalkSpeedValue or 16,
     Callback = function(Value)
+        _G.LianConfig.WalkSpeedValue = Value
+        saveConfig()
         if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
             LocalPlayer.Character.Humanoid.WalkSpeed = Value
         end
@@ -1949,6 +1958,43 @@ task.spawn(function()
         else
             task.wait(0.5)
         end
+    end
+end)
+
+-- Auto Buy Dice + Auto Equip Best Dice Worker
+task.spawn(function()
+    while true do
+        if _G.LianConfig.AutoRoll and R.BuyDice then
+            safe(function()
+                -- Buy the selected dice type
+                invoke(R.BuyDice)
+                task.wait(0.5)
+                if R.EquipDice then
+                    invoke(R.EquipDice)
+                end
+            end)
+        end
+        task.wait(2.0)
+    end
+end)
+
+-- Auto Quirk Reroll Worker
+task.spawn(function()
+    while true do
+        if _G.LianConfig.AutoQuirk then
+            safe(function()
+                if R.QuirkRoll then
+                    invoke(R.QuirkRoll)
+                    task.wait(0.5)
+                    -- Check if target quirk obtained (best-effort)
+                    -- If QuirkProtect available, protect the target
+                    if R.QuirkProtect and _G.LianConfig.QuirkTarget then
+                        invoke(R.QuirkProtect, true)
+                    end
+                end
+            end)
+        end
+        task.wait(1.0)
     end
 end)
 

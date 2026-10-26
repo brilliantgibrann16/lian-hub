@@ -1284,9 +1284,11 @@ TowerTab:CreateToggle({
     end,
 })
 
-TowerTab:CreateButton({
+TowerTab:CreateToggle({
     Name = "🔥 Force Equip Best Tower Team Sekarang",
-    Callback = function()
+    CurrentValue = false,
+    Callback = function(Value)
+        if not Value then return end
         fire(R.BestTeam)
         Rayfield:Notify({ Title = "Tower Team", Content = "Best Tower Team berhasil dipasang!", Duration = 3 })
     end,
@@ -1318,21 +1320,23 @@ TowerTab:CreateToggle({
 -- ═════════════════════════════════════════════════════════════════════
 PlotTab:CreateSection("💰 Plot Management")
 
-PlotTab:CreateButton({
+PlotTab:CreateToggle({
     Name = "🔍 Check Game Updates (Diagnose Broken Features)",
-    Callback = function()
+    CurrentValue = false,
+    Callback = function(Value)
+        if not Value then return end
         local ok, res = pcall(_G.LianHubCheckUpdates)
         if not ok then
-            warn("[LianHub] CheckUpdates error: " .. tostring(res))
-            Rayfield:Notify({ Title = "Game Update Check", Content = "Error: " .. tostring(res), Duration = 6 })
-            return
+        warn("[LianHub] CheckUpdates error: " .. tostring(res))
+        Rayfield:Notify({ Title = "Game Update Check", Content = "Error: " .. tostring(res), Duration = 6 })
+        return
         end
         local broken = 0
         for _, r in ipairs(res or {}) do if type(r) == "string" and r:find("❌") then broken = broken + 1 end end
         Rayfield:Notify({
-            Title = "Game Update Check",
-            Content = broken .. " broken out of " .. #(res or {}) .. " checks. See F9 console for details.",
-            Duration = 6
+        Title = "Game Update Check",
+        Content = broken .. " broken out of " .. #(res or {}) .. " checks. See F9 console for details.",
+        Duration = 6
         })
     end,
 })
@@ -1490,91 +1494,103 @@ GradesTab:CreateToggle({
 -- ═════════════════════════════════════════════════════════════════════
 TeleportTab:CreateSection("📍 Teleport Destinations")
 
-TeleportTab:CreateButton({
+TeleportTab:CreateToggle({
     Name = "🏠 Teleport ke Plot Sendiri",
-    Callback = function()
+    CurrentValue = false,
+    Callback = function(Value)
+        if not Value then return end
         pcall(function()
-            local plot = findMyPlot()
-            if plot then
-                local spawn = plot:FindFirstChild("Spawn") or plot:FindFirstChildWhichIsA("SpawnLocation")
-                if spawn then
-                    LocalPlayer.Character.HumanoidRootPart.CFrame = spawn.CFrame + Vector3.new(0,3,0)
-                else
-                    LocalPlayer.Character.HumanoidRootPart.CFrame = plot:GetPivot() + Vector3.new(0,3,0)
-                end
-            else
-                Rayfield:Notify({ Title = "Teleport", Content = "Plot tidak ditemukan!", Duration = 3 })
-            end
+        local plot = findMyPlot()
+        if plot then
+        local spawn = plot:FindFirstChild("Spawn") or plot:FindFirstChildWhichIsA("SpawnLocation")
+        if spawn then
+        LocalPlayer.Character.HumanoidRootPart.CFrame = spawn.CFrame + Vector3.new(0,3,0)
+        else
+        LocalPlayer.Character.HumanoidRootPart.CFrame = plot:GetPivot() + Vector3.new(0,3,0)
+        end
+        else
+        Rayfield:Notify({ Title = "Teleport", Content = "Plot tidak ditemukan!", Duration = 3 })
+        end
         end)
     end,
 })
 
-TeleportTab:CreateButton({
+TeleportTab:CreateToggle({
     Name = "🎲 Teleport ke Dice Shop",
-    Callback = function()
+    CurrentValue = false,
+    Callback = function(Value)
+        if not Value then return end
         pcall(function()
-            local shop = workspace:FindFirstChild("DiceShop") or workspace:FindFirstChild("Shop") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("DiceShop"))
-            if shop then
-                LocalPlayer.Character.HumanoidRootPart.CFrame = shop:GetPivot() + Vector3.new(0,3,0)
-            else
-                Rayfield:Notify({ Title = "Teleport", Content = "Dice Shop tidak ditemukan!", Duration = 3 })
-            end
+        local shop = workspace:FindFirstChild("DiceShop") or workspace:FindFirstChild("Shop") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("DiceShop"))
+        if shop then
+        LocalPlayer.Character.HumanoidRootPart.CFrame = shop:GetPivot() + Vector3.new(0,3,0)
+        else
+        Rayfield:Notify({ Title = "Teleport", Content = "Dice Shop tidak ditemukan!", Duration = 3 })
+        end
         end)
     end,
 })
 
-TeleportTab:CreateButton({
+TeleportTab:CreateToggle({
     Name = "🔄 Teleport ke Rebirth Station",
-    Callback = function()
+    CurrentValue = false,
+    Callback = function(Value)
+        if not Value then return end
         pcall(function()
-            local rebirth = workspace:FindFirstChild("Rebirth") or workspace:FindFirstChild("RebirthStation") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Rebirth"))
-            if rebirth then
-                LocalPlayer.Character.HumanoidRootPart.CFrame = rebirth:GetPivot() + Vector3.new(0,3,0)
-            else
-                Rayfield:Notify({ Title = "Teleport", Content = "Rebirth Station tidak ditemukan!", Duration = 3 })
-            end
+        local rebirth = workspace:FindFirstChild("Rebirth") or workspace:FindFirstChild("RebirthStation") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Rebirth"))
+        if rebirth then
+        LocalPlayer.Character.HumanoidRootPart.CFrame = rebirth:GetPivot() + Vector3.new(0,3,0)
+        else
+        Rayfield:Notify({ Title = "Teleport", Content = "Rebirth Station tidak ditemukan!", Duration = 3 })
+        end
         end)
     end,
 })
 
-TeleportTab:CreateButton({
+TeleportTab:CreateToggle({
     Name = "🧬 Teleport ke Fusing Station",
-    Callback = function()
+    CurrentValue = false,
+    Callback = function(Value)
+        if not Value then return end
         pcall(function()
-            local fuse = workspace:FindFirstChild("Fusing") or workspace:FindFirstChild("Fuse") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Fusing"))
-            if fuse then
-                LocalPlayer.Character.HumanoidRootPart.CFrame = fuse:GetPivot() + Vector3.new(0,3,0)
-            else
-                Rayfield:Notify({ Title = "Teleport", Content = "Fusing Station tidak ditemukan!", Duration = 3 })
-            end
+        local fuse = workspace:FindFirstChild("Fusing") or workspace:FindFirstChild("Fuse") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Fusing"))
+        if fuse then
+        LocalPlayer.Character.HumanoidRootPart.CFrame = fuse:GetPivot() + Vector3.new(0,3,0)
+        else
+        Rayfield:Notify({ Title = "Teleport", Content = "Fusing Station tidak ditemukan!", Duration = 3 })
+        end
         end)
     end,
 })
 
-TeleportTab:CreateButton({
+TeleportTab:CreateToggle({
     Name = "📋 Teleport ke Quest Board",
-    Callback = function()
+    CurrentValue = false,
+    Callback = function(Value)
+        if not Value then return end
         pcall(function()
-            local q = workspace:FindFirstChild("Quests") or workspace:FindFirstChild("QuestBoard") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Quests"))
-            if q then
-                LocalPlayer.Character.HumanoidRootPart.CFrame = q:GetPivot() + Vector3.new(0,3,0)
-            else
-                Rayfield:Notify({ Title = "Teleport", Content = "Quest Board tidak ditemukan!", Duration = 3 })
-            end
+        local q = workspace:FindFirstChild("Quests") or workspace:FindFirstChild("QuestBoard") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Quests"))
+        if q then
+        LocalPlayer.Character.HumanoidRootPart.CFrame = q:GetPivot() + Vector3.new(0,3,0)
+        else
+        Rayfield:Notify({ Title = "Teleport", Content = "Quest Board tidak ditemukan!", Duration = 3 })
+        end
         end)
     end,
 })
 
-TeleportTab:CreateButton({
+TeleportTab:CreateToggle({
     Name = "🎒 Teleport ke Backpack / Inventory",
-    Callback = function()
+    CurrentValue = false,
+    Callback = function(Value)
+        if not Value then return end
         pcall(function()
-            local bp = workspace:FindFirstChild("Backpack") or workspace:FindFirstChild("Inventory") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Backpack"))
-            if bp then
-                LocalPlayer.Character.HumanoidRootPart.CFrame = bp:GetPivot() + Vector3.new(0,3,0)
-            else
-                Rayfield:Notify({ Title = "Teleport", Content = "Backpack tidak ditemukan!", Duration = 3 })
-            end
+        local bp = workspace:FindFirstChild("Backpack") or workspace:FindFirstChild("Inventory") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Backpack"))
+        if bp then
+        LocalPlayer.Character.HumanoidRootPart.CFrame = bp:GetPivot() + Vector3.new(0,3,0)
+        else
+        Rayfield:Notify({ Title = "Teleport", Content = "Backpack tidak ditemukan!", Duration = 3 })
+        end
         end)
     end,
 })
@@ -1588,45 +1604,49 @@ TeleportTab:CreateInput({
         _G.LianConfig.TeleportTarget = Text:gsub("%s+", "")
     end,
 })
-TeleportTab:CreateButton({
+TeleportTab:CreateToggle({
     Name = "➡️ Teleport ke Player",
-    Callback = function()
+    CurrentValue = false,
+    Callback = function(Value)
+        if not Value then return end
         pcall(function()
-            local target = _G.LianConfig.TeleportTarget
-            if not target or target == "" then
-                Rayfield:Notify({ Title = "Teleport", Content = "Masukkan username dulu!", Duration = 3 })
-                return
-            end
-            for _, p in pairs(game:GetService("Players"):GetPlayers()) do
-                if p.Name:lower() == target:lower() and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                    LocalPlayer.Character.HumanoidRootPart.CFrame = p.Character.HumanoidRootPart.CFrame + Vector3.new(0,3,0)
-                    Rayfield:Notify({ Title = "Teleport", Content = "Teleported ke " .. p.Name, Duration = 3 })
-                    return
-                end
-            end
-            Rayfield:Notify({ Title = "Teleport", Content = "Player tidak ditemukan!", Duration = 3 })
+        local target = _G.LianConfig.TeleportTarget
+        if not target or target == "" then
+        Rayfield:Notify({ Title = "Teleport", Content = "Masukkan username dulu!", Duration = 3 })
+        return
+        end
+        for _, p in pairs(game:GetService("Players"):GetPlayers()) do
+        if p.Name:lower() == target:lower() and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+        LocalPlayer.Character.HumanoidRootPart.CFrame = p.Character.HumanoidRootPart.CFrame + Vector3.new(0,3,0)
+        Rayfield:Notify({ Title = "Teleport", Content = "Teleported ke " .. p.Name, Duration = 3 })
+        return
+        end
+        end
+        Rayfield:Notify({ Title = "Teleport", Content = "Player tidak ditemukan!", Duration = 3 })
         end)
     end,
 })
 
-TeleportTab:CreateButton({
+TeleportTab:CreateToggle({
     Name = "🎲 Teleport ke Random Player",
-    Callback = function()
+    CurrentValue = false,
+    Callback = function(Value)
+        if not Value then return end
         pcall(function()
-            local players = game:GetService("Players"):GetPlayers()
-            local others = {}
-            for _, p in pairs(players) do
-                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                    table.insert(others, p)
-                end
-            end
-            if #others > 0 then
-                local target = others[math.random(1, #others)]
-                LocalPlayer.Character.HumanoidRootPart.CFrame = target.Character.HumanoidRootPart.CFrame + Vector3.new(0,3,0)
-                Rayfield:Notify({ Title = "Teleport", Content = "Teleported ke " .. target.Name, Duration = 3 })
-            else
-                Rayfield:Notify({ Title = "Teleport", Content = "Tidak ada player lain!", Duration = 3 })
-            end
+        local players = game:GetService("Players"):GetPlayers()
+        local others = {}
+        for _, p in pairs(players) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+        table.insert(others, p)
+        end
+        end
+        if #others > 0 then
+        local target = others[math.random(1, #others)]
+        LocalPlayer.Character.HumanoidRootPart.CFrame = target.Character.HumanoidRootPart.CFrame + Vector3.new(0,3,0)
+        Rayfield:Notify({ Title = "Teleport", Content = "Teleported ke " .. target.Name, Duration = 3 })
+        else
+        Rayfield:Notify({ Title = "Teleport", Content = "Tidak ada player lain!", Duration = 3 })
+        end
         end)
     end,
 })
@@ -1697,9 +1717,11 @@ ESPSettingsTab:CreateToggle({
 })
 
 ESPSettingsTab:CreateSection("🔄 Rejoin & Server")
-ESPSettingsTab:CreateButton({
+ESPSettingsTab:CreateToggle({
     Name = "🔄 Rejoin Server Sekarang",
-    Callback = function()
+    CurrentValue = false,
+    Callback = function(Value)
+        if not Value then return end
         setupAutoExecuteOnTeleport()
         TeleportService:Teleport(game.PlaceId, LocalPlayer)
     end,
@@ -1819,9 +1841,11 @@ RebirthTab:CreateToggle({
     end,
 })
 
-RebirthTab:CreateButton({
+RebirthTab:CreateToggle({
     Name = "⚡ Equip Best ke Plot & Jual Semua di Luar Plot Sekarang",
-    Callback = function()
+    CurrentValue = false,
+    Callback = function(Value)
+        if not Value then return end
         equipBestPlotAndSellOutside()
     end,
 })
@@ -1840,20 +1864,22 @@ ServerTab:CreateToggle({
     end,
 })
 
-ServerTab:CreateButton({
+ServerTab:CreateToggle({
     Name = "🔄 Force Hop ke Server Lain Sekarang",
-    Callback = function()
+    CurrentValue = false,
+    Callback = function(Value)
+        if not Value then return end
         setupAutoExecuteOnTeleport()
         local placeId = game.PlaceId
         local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
         local ok, res = pcall(function() return HttpService:JSONDecode(game:HttpGet(apiUrl)) end)
         if ok and res and res.data then
-            for _, s in ipairs(res.data) do
-                if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
-                    TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
-                    return
-                end
-            end
+        for _, s in ipairs(res.data) do
+        if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
+        TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
+        return
+        end
+        end
         end
         TeleportService:Teleport(placeId, LocalPlayer)
     end,
@@ -1899,9 +1925,11 @@ local function sendDiscordWebhook(title, desc, color)
     end)
 end
 
-WebhookTab:CreateButton({
+WebhookTab:CreateToggle({
     Name = "🔔 Test Kirim Webhook Sekarang",
-    Callback = function()
+    CurrentValue = false,
+    Callback = function(Value)
+        if not Value then return end
         sendDiscordWebhook("🔔 Test Webhook Lian Hub", "Koneksi webhook dari akun **" .. LocalPlayer.Name .. "** berhasil!", 65280)
         Rayfield:Notify({ Title = "Webhook Terkirim!", Content = "Cek channel Discord Bubu yaa!", Duration = 3 })
     end,

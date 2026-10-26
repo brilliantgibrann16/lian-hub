@@ -77,6 +77,34 @@ task.spawn(function()
     end
 end)
 
+-- Apply ESP to existing players' characters on load (not just on respawn)
+if _G.LianConfig.PlayerESP then
+    for _, existingPlr in pairs(game:GetService("Players"):GetPlayers()) do
+        if existingPlr ~= LocalPlayer and existingPlr.Character then
+            local head = existingPlr.Character:FindFirstChild("Head")
+            if head and not head:FindFirstChild("LianESP") then
+                pcall(function()
+                    local billboard = Instance.new("BillboardGui")
+                    billboard.Name = "LianESP"
+                    billboard.Size = UDim2.new(0, 100, 0, 40)
+                    billboard.StudsOffset = Vector3.new(0, 2, 0)
+                    billboard.AlwaysOnTop = true
+                    billboard.Parent = head
+                    local label = Instance.new("TextLabel")
+                    label.Size = UDim2.new(1, 0, 1, 0)
+                    label.BackgroundTransparency = 1
+                    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    label.TextStrokeTransparency = 0
+                    label.Font = Enum.Font.GothamBold
+                    label.TextSize = 14
+                    label.Text = existingPlr.Name
+                    label.Parent = billboard
+                end)
+            end
+        end
+    end
+end
+
 -- Connect CharacterAdded for all existing players (ESP on respawn)
 for _, existingPlr in pairs(game:GetService("Players"):GetPlayers()) do
     if existingPlr ~= LocalPlayer then
@@ -132,6 +160,27 @@ game:GetService("Players").PlayerAdded:Connect(function(p)
             end
         end
     end)
+end)
+
+-- Apply Fullbright on load (not just on respawn)
+if _G.LianConfig.Fullbright then
+    pcall(function()
+        local Lighting = game:GetService("Lighting")
+        Lighting.Brightness = 2
+        Lighting.ClockTime = 14
+        Lighting.FogEnd = 100000
+        Lighting.GlobalShadows = false
+        Lighting.OutdoorAmbient = Color3.fromRGB(255,255,255)
+    end)
+end
+
+-- Apply WalkSpeed/JumpPower on load
+pcall(function()
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("Humanoid") then
+        char.Humanoid.WalkSpeed = _G.LianConfig.WalkSpeedValue or 16
+        char.Humanoid.JumpPower = _G.LianConfig.JumpPowerValue or 50
+    end
 end)
 
 -- Reapply visual/movement settings on respawn

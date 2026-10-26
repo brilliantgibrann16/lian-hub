@@ -425,9 +425,7 @@ _G.LianConfig = {
     RebirthStatPriority = "Balance / Rata (Money, Luck, Damage, Health, Speed)",
     AutoBuyTreeUpgrades = false,
     AutoBuyBestDice = false,
-    AutoFuseUnits = false,
     AutoEquipBestPlotAndSellRest = true,
-    AutoEquipGear = false,
     AutoQuirk = false,
     QuirkTarget = "Prodigy",
     ServerLuckHop = false,
@@ -456,11 +454,8 @@ _G.LianConfig = {
     TradeRequests = true,
     Fullbright = false,
     PlayerESP = false,
-    TeleportToPlot = false,
-    RejoinServer = false,
     AutoSellShiny = false,
     AutoSellHaunted = false,
-    AutoClaimGroupChest = true,
     AutoClaimDailyReward = true,
     WalkSpeedValue = 16,
     JumpPowerValue = 50
@@ -1889,9 +1884,6 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoRoll then
-            if _G.LianConfig.AutoEquipBestPlotAndSellRest then
-                safe(equipBestPlotAndSellOutside)
-            end
             fire(R.SetAutoRoll, true)
             task.spawn(function()
                 invoke(R.Roll)
@@ -1899,6 +1891,32 @@ task.spawn(function()
             task.wait(_G.LianConfig.FastRoll and 0.08 or 0.3)
         else
             fire(R.SetAutoRoll, false)
+            task.wait(0.5)
+        end
+    end
+end)
+
+-- Auto Unit Grades Worker (aligned with groper99/animedice)
+task.spawn(function()
+    while true do
+        if _G.LianConfig.AutoUnitGrades then
+            safe(function()
+                -- Try common remote patterns for unit grading
+                local gradeRemote = getRemote("UnitService", "RF", "RollGrade") or getRemote("GradeService", "RF", "Roll") or getRemote("UnitService", "RE", "RollGrade")
+                if gradeRemote then
+                    if gradeRemote:IsA("RemoteFunction") then
+                        gradeRemote:InvokeServer()
+                    elseif gradeRemote:IsA("RemoteEvent") then
+                        gradeRemote:FireServer()
+                    end
+                    if _G.LianConfig.RollGradeOnce then
+                        _G.LianConfig.AutoUnitGrades = false
+                        saveConfig()
+                    end
+                end
+            end)
+            task.wait(1.0)
+        else
             task.wait(0.5)
         end
     end

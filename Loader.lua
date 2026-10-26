@@ -425,6 +425,7 @@ local DC = setmetatable({}, {
 -- 6. Persistent Configuration
 local CONFIG_FILE = "LianHub_AnimeDice_Config.json"
 
+local _prevConfig = _G.LianConfig
 _G.LianConfig = {
     AutoRoll = false,
     AutoBuyDice = false,
@@ -484,6 +485,14 @@ _G.LianConfig = {
     WalkSpeedValue = 16,
     JumpPowerValue = 50
 }
+-- Merge previous in-memory state (preserve across re-inject)
+if _prevConfig then
+    for k, v in pairs(_prevConfig) do
+        if _G.LianConfig[k] ~= nil then
+            _G.LianConfig[k] = v
+        end
+    end
+end
 
 -- ponytail: backward-compat migration for renamed config key (must run on loaded JSON before nil-reject loop)
 pcall(function()
@@ -782,9 +791,8 @@ local function equipBestPlotAndSellOutside()
         end
 
         if #sellList > 0 and R.Sell then
-            local ok, money, numSold = pcall(function()
-                return R.Sell:InvokeServer(sellList)
-            end)
+            local money, numSold = R.Sell:InvokeServer(sellList)
+            local ok = money ~= nil
             if ok then
                 pcall(function()
                     Rayfield:Notify({
@@ -846,8 +854,9 @@ print("[Lian Hub] Script starting... executor: " .. (identifyexecutor and identi
 
 -- 9. Load Rayfield UI
 local Rayfield
+local rawRay = game:HttpGet('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua')
 local okRay, rayLib = pcall(function()
-    return loadstring(game:HttpGet('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua'))()
+    return loadstring(rawRay)()
 end)
 if okRay and rayLib then
     Rayfield = rayLib
@@ -1725,16 +1734,14 @@ ESPSettingsTab:CreateToggle({
         _G.LianConfig.TradeRequests = Value
         saveConfig()
         -- Try to find and toggle trade request remote
-        pcall(function()
-            local tradeRemote = getRemote("TradeService", "RE", "SetTradeRequestsEnabled")
-            if tradeRemote then
-                if tradeRemote:IsA("RemoteEvent") then
-                    tradeRemote:FireServer(Value)
-                elseif tradeRemote:IsA("RemoteFunction") then
-                    tradeRemote:InvokeServer(Value)
-                end
+        local tradeRemote = getRemote("TradeService", "RE", "SetTradeRequestsEnabled")
+        if tradeRemote then
+            if tradeRemote:IsA("RemoteEvent") then
+                tradeRemote:FireServer(Value)
+            elseif tradeRemote:IsA("RemoteFunction") then
+                tradeRemote:InvokeServer(Value)
             end
-        end)
+        end
     end,
 })
 
@@ -1847,7 +1854,7 @@ RebirthTab:CreateToggle({
         CurrentValue = false,
         Callback = function(Value)
             if not Value then return end
-        pcall(equipBestPlotAndSellOutside)
+        equipBestPlotAndSellOutside()
         task.spawn(function()
             task.wait(0.5)
             pcall(function() _tg:Set(false) end)
@@ -2107,10 +2114,10 @@ task.spawn(function()
         if _G.LianConfig.AutoBuyDice and R.BuyDice then
             if os.clock() - lastBuyTime >= 5 then
                 lastBuyTime = os.clock()
-                invoke(R.BuyDice)
+                fire(R.BuyDice)
                 task.wait(0.5)
                 if R.EquipDice then
-                    invoke(R.EquipDice)
+                    fire(R.EquipDice)
                 end
             end
         end
@@ -2258,7 +2265,7 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoBuyTreeUpgrades then
-            pcall(buyUpgradesTree)
+            buyUpgradesTree()
             task.wait(2.5)
         else
             task.wait(1)
@@ -2357,7 +2364,7 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoEquipBestPlotAndSellRest then
-            pcall(equipBestPlotAndSellOutside)
+            equipBestPlotAndSellOutside()
             task.wait(3.5)
         else
             task.wait(1)

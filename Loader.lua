@@ -90,9 +90,35 @@ end)
 -- Guard: ensure _G.LianConfig exists before any on-load reference
 _G.LianConfig = _G.LianConfig or {}
 
--- Connect CharacterAdded for all existing players (ESP on respawn)
+-- Apply ESP to existing players' current characters + respawn
 for _, existingPlr in pairs(game:GetService("Players"):GetPlayers()) do
     if existingPlr ~= LocalPlayer then
+        -- Apply to current character if exists
+        if existingPlr.Character then
+            task.spawn(function()
+                task.wait(1)
+                if _G.LianConfig.PlayerESP then
+                    local head = existingPlr.Character:FindFirstChild("Head")
+                    if head and not head:FindFirstChild("LianESP") then
+                        local billboard = Instance.new("BillboardGui")
+                        billboard.Name = "LianESP"
+                        billboard.Size = UDim2.new(0, 100, 0, 40)
+                        billboard.StudsOffset = Vector3.new(0, 2, 0)
+                        billboard.AlwaysOnTop = true
+                        billboard.Parent = head
+                        local label = Instance.new("TextLabel")
+                        label.Size = UDim2.new(1, 0, 1, 0)
+                        label.BackgroundTransparency = 1
+                        label.TextColor3 = Color3.fromRGB(255, 255, 255)
+                        label.TextStrokeTransparency = 0
+                        label.Font = Enum.Font.GothamBold
+                        label.TextSize = 14
+                        label.Text = existingPlr.Name
+                        label.Parent = billboard
+                    end
+                end
+            end)
+        end
         existingPlr.CharacterAdded:Connect(function(char)
             task.wait(1)
             if _G.LianConfig.PlayerESP then
@@ -193,7 +219,7 @@ local function asGame(fn, ...)
 end
 
 -- 4. Verified Remote Registry
-local NET = RS:FindFirstChild("Network") or RS:WaitForChild("Network", 20)
+local NET = RS:FindFirstChild("Network") or RS:WaitForChild("Network", 1)
 
 local R = {}
 local function getRemote(svc, kind, name)
@@ -2087,16 +2113,16 @@ task.spawn(function()
             local gradeRemote = R.QuirkRoll or getRemote("GradeService", "RE", "Roll")
             if gradeRemote then
                 gradeRemote:FireServer()
-                -- Protect gating: only protect when a high grade is actually obtained.
-                -- TODO: read current grade from DataController before protecting to avoid locking bad grades.
-                -- Currently fires SetGradeProtected(true) after every roll when ProtectHighGrades is on.
-                if _G.LianConfig.ProtectHighGrades then
-                    local protectRemote = R.QuirkProtect or getRemote("GradeService", "RE", "SetGradeProtected")
-                    if protectRemote then
-                        task.wait(0.3) -- wait for server to assign grade
-                        protectRemote:FireServer(true)
-                    end
-                end
+                -- Protect gating: DISABLED until grade read is implemented.
+                -- Firing SetGradeProtected(true) after every roll can lock a bad grade.
+                -- TODO: read current grade from DataController before protecting.
+                -- if _G.LianConfig.ProtectHighGrades then
+                --     local protectRemote = R.QuirkProtect or getRemote("GradeService", "RE", "SetGradeProtected")
+                --     if protectRemote then
+                --         task.wait(0.3) -- wait for server to assign grade
+                --         protectRemote:FireServer(true)
+                --     end
+                -- end
                 if _G.LianConfig.RollGradeOnce then
                     _G.LianConfig.AutoUnitGrades = false
                     saveConfig()
@@ -2135,15 +2161,16 @@ task.spawn(function()
         if _G.LianConfig.AutoQuirk then
             if R.QuirkRoll then
                 fire(R.QuirkRoll)
-                -- Protect gating: only protect if target quirk obtained (behavior unverified)
+                -- Protect gating: DISABLED until quirk read is implemented.
+                -- Firing SetGradeProtected(true) after every roll can lock a bad quirk.
                 -- TODO: read current quirk from DataController before protecting.
-                if _G.LianConfig.ProtectHighGrades then
-                    local protectRemote = R.QuirkProtect or getRemote("GradeService", "RE", "SetGradeProtected")
-                    if protectRemote then
-                        task.wait(0.3) -- wait for server to assign quirk
-                        protectRemote:FireServer(true)
-                    end
-                end
+                -- if _G.LianConfig.ProtectHighGrades then
+                --     local protectRemote = R.QuirkProtect or getRemote("GradeService", "RE", "SetGradeProtected")
+                --     if protectRemote then
+                --         task.wait(0.3) -- wait for server to assign quirk
+                --         protectRemote:FireServer(true)
+                --     end
+                -- end
                 task.wait(0.5)
             end
         end

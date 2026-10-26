@@ -291,6 +291,7 @@ local function checkGameUpdates()
             {"RollService","RE","SetAutoRoll"}, {"RollService","RF","RollDice"},
             {"PumpkinDiceService","RF","Roll"}, {"PlotService","RE","CollectBalance"},
             {"PlotService","RE","EquipBest"}, {"PlotService","RE","LevelUpSlot"},
+            {"UpgradeService","RE","BuyUpgrade"},
             {"DiceShopService","RE","BuyDice"}, {"DiceShopService","RE","EquipDice"},
             {"SellService","RF","SellInventory"},
             {"RebirthService","RE","Rebirth"}, {"RebirthService","RE","AddStat"},
@@ -1892,9 +1893,9 @@ ServerTab:CreateToggle({
         setupAutoExecuteOnTeleport()
         local placeId = game.PlaceId
         local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
-        local raw = game:HttpGet(apiUrl)
+        local ok0, raw = pcall(function() return game:HttpGet(apiUrl) end)
         local ok, res = false, nil
-        if raw then
+        if ok0 and raw then
             ok, res = pcall(function() return HttpService:JSONDecode(raw) end)
         end
         local hopped = false

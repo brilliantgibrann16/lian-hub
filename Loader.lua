@@ -61,27 +61,6 @@ task.spawn(function()
             VirtualUser:CaptureController()
             VirtualUser:ClickButton2(Vector2.new(math.random(0, 100), math.random(0, 100)))
         end)
-        -- Also wiggle character slightly to prevent idle kick (guard: skip if custom speed set or non-normal state)
-        -- task.wait is OUTSIDE pcall: yielding inside pcall breaks on Solara/Level-3
-        local oldWS = nil
-        local hum = nil
-        pcall(function()
-            if LocalPlayer.Character then
-                local h = LocalPlayer.Character:FindFirstChild("Humanoid")
-                if h and h.Health > 0 then
-                    local st = h:GetState()
-                    if st ~= Enum.HumanoidStateType.Dead and st ~= Enum.HumanoidStateType.Jumping and st ~= Enum.HumanoidStateType.Freefall then
-                        hum = h
-                        oldWS = h.WalkSpeed
-                        h.WalkSpeed = oldWS + 0.01
-                    end
-                end
-            end
-        end)
-        if hum and oldWS then
-            task.wait(0.05)
-            pcall(function() hum.WalkSpeed = oldWS end)
-        end
         task.wait(60)
     end
 end)
@@ -238,7 +217,7 @@ R.Collect = getRemote("PlotService", "RE", "CollectBalance")
 R.EquipBest = getRemote("PlotService", "RE", "EquipBest")
 R.LevelSlot = getRemote("PlotService", "RE", "LevelUpSlot")
 R.Sell = getRemote("SellService", "RF", "SellInventory")
-R.BuyUpgrade = getRemote(nil, "RE", "BuyUpgrade")
+R.BuyUpgrade = getRemote(nil, "RE", "BuyUpgrade") or getRemote("UpgradeService", "RE", "BuyUpgrade")
 R.BuyDice = getRemote("DiceShopService", "RE", "BuyDice")
 R.EquipDice = getRemote("DiceShopService", "RE", "EquipDice")
 R.Rebirth = getRemote("RebirthService", "RE", "Rebirth")
@@ -555,7 +534,7 @@ local function loadConfig()
             end
         end
     end)
-    _G.LianConfig.ServerLuckHop = false
+    _G.LianConfig.ServerLuckHop = _G.LianConfig.ServerLuckHop or false
 end
 loadConfig()
 

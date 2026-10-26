@@ -240,6 +240,17 @@ local function safe(fn, ...)
     return ok and res
 end
 
+-- Safe yield wrapper: task.spawn inside pcall to avoid yield-in-pcall errors
+-- on executors where pcall forbids yielding (Solara/Level-3).
+-- Usage: replace safe(function() task.wait(1) ... end) with safeYield(function() ... end)
+local function safeYield(fn, ...)
+    local args = {...}
+    local ok, res = pcall(function()
+        return task.spawn(fn, unpack(args))
+    end)
+    return ok and res
+end
+
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- LIAN HUB GAME UPDATE CHECKER (run via Lian Hub UI or console)

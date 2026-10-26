@@ -457,7 +457,7 @@ _G.LianConfig = {
     AutoAllocStats = true,
     RebirthStatPriority = "Balance / Rata (Money, Luck, Damage, Health, Speed)",
     AutoBuyTreeUpgrades = false,
-    AutoEquipBestPlotAndSellRest = true,
+    AutoEquipBestPlotAndSellRest = false,
     AutoQuirk = false,
     QuirkTarget = "Prodigy",
     ServerLuckHop = false,
@@ -1932,14 +1932,14 @@ ServerTab:CreateToggle({
         local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
         local ok, res = pcall(function() return HttpService:JSONDecode(game:HttpGet(apiUrl)) end)
         if ok and res and res.data then
-        for _, s in ipairs(res.data) do
-        if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
-        TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
-        return
+            for _, s in ipairs(res.data) do
+                if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
+                    pcall(function() TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer) end)
+                    break
+                end
+            end
         end
-        end
-        end
-        TeleportService:Teleport(placeId, LocalPlayer)
+        pcall(function() TeleportService:Teleport(placeId, LocalPlayer) end)
         task.spawn(function()
             task.wait(0.5)
             pcall(function() _tg:Set(false) end)

@@ -1890,27 +1890,29 @@ ServerTab:CreateToggle({
             task.wait(0.5)
             pcall(function() _tg:Set(false) end)
         end)
-        setupAutoExecuteOnTeleport()
-        local placeId = game.PlaceId
-        local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
-        local ok0, raw = pcall(function() return game:HttpGet(apiUrl) end)
-        local ok, res = false, nil
-        if ok0 and raw then
-            ok, res = pcall(function() return HttpService:JSONDecode(raw) end)
-        end
-        local hopped = false
-        if ok and res and res.data then
-            for _, s in ipairs(res.data) do
-                if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
-                    TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
-                    hopped = true
-                    break
+        task.spawn(function()
+            setupAutoExecuteOnTeleport()
+            local placeId = game.PlaceId
+            local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
+            local raw = game:HttpGet(apiUrl)
+            local ok, res = false, nil
+            if raw then
+                ok, res = pcall(function() return HttpService:JSONDecode(raw) end)
+            end
+            local hopped = false
+            if ok and res and res.data then
+                for _, s in ipairs(res.data) do
+                    if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
+                        TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
+                        hopped = true
+                        break
+                    end
                 end
             end
-        end
-        if not hopped then
-            TeleportService:Teleport(placeId, LocalPlayer)
-        end
+            if not hopped then
+                TeleportService:Teleport(placeId, LocalPlayer)
+            end
+        end)
     end,
 })
 
@@ -2047,15 +2049,31 @@ PlayerTab:CreateToggle({
     Callback = function(Value)
         _G.LianConfig.Noclip = Value
         saveConfig()
+        if not Value and LocalPlayer.Character then
+            for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+                if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                    part.CanCollide = true
+                end
+            end
+        end
     end,
 })
+local wasNoclip = false
 RunService.Stepped:Connect(function()
     if LocalPlayer.Character then
         local noclipOn = _G.LianConfig.Noclip
         if noclipOn then
+            wasNoclip = true
             for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
                 if part:IsA("BasePart") then
                     part.CanCollide = false
+                end
+            end
+        elseif wasNoclip then
+            wasNoclip = false
+            for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+                if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                    part.CanCollide = true
                 end
             end
         end
@@ -2078,7 +2096,9 @@ task.spawn(function()
                 fire(R.SetAutoRoll, true)
                 autoRollState = true
             end
-            invoke(R.Roll)
+            task.spawn(function()
+                invoke(R.Roll)
+            end)
             task.wait(_G.LianConfig.FastRoll and 0.08 or 0.3)
         else
             if autoRollState then
@@ -2098,7 +2118,9 @@ task.spawn(function()
         if _G.LianConfig.AutoUnitGrades then
             local gradeRemote = cachedGradeRemote
             if gradeRemote then
-                gradeRemote:FireServer()
+                task.spawn(function()
+                    gradeRemote:FireServer()
+                end)
                 -- Protect gating: DISABLED until grade read is implemented.
                 -- Firing SetGradeProtected(true) after every roll can lock a bad grade.
                 -- TODO: read current grade from DataController before protecting.
@@ -2497,29 +2519,24 @@ task.spawn(function()
             if weather ~= "Bloodmoon" and weather ~= "Eclipse" and weather ~= "Full Moon" then
                 -- Isolate so a failed hop attempt does not kill the worker loop
                 task.spawn(function()
-                    local ok, err = pcall(function()
-                        setupAutoExecuteOnTeleport()
-                        local placeId = game.PlaceId
-                        local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
-                        local raw = game:HttpGet(apiUrl)
-                        if not raw then return end
-                        local ok2, res = pcall(function() return HttpService:JSONDecode(raw) end)
-                        local hopped = false
-                        if ok2 and res and res.data then
-                            for _, s in ipairs(res.data) do
-                                if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
-                                    TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
-                                    hopped = true
-                                    break
-                                end
+                    setupAutoExecuteOnTeleport()
+                    local placeId = game.PlaceId
+                    local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
+                    local raw = game:HttpGet(apiUrl)
+                    if not raw then return end
+                    local ok2, res = pcall(function() return HttpService:JSONDecode(raw) end)
+                    local hopped = false
+                    if ok2 and res and res.data then
+                        for _, s in ipairs(res.data) do
+                            if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
+                                TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
+                                hopped = true
+                                break
                             end
                         end
-                        if not hopped then
-                            TeleportService:Teleport(placeId, LocalPlayer)
-                        end
-                    end)
-                    if not ok then
-                        warn("[LianHub] Server Luck Hop error: " .. tostring(err))
+                    end
+                    if not hopped then
+                        TeleportService:Teleport(placeId, LocalPlayer)
                     end
                 end)
             end

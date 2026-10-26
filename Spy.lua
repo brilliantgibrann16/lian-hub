@@ -191,9 +191,14 @@ local function updateUI(latest)
         StatusBadge.Text = "Tertangkap: " .. latest:sub(1, 60) .. "..."
     end
     TextBox.Text = table.concat(liveLogs, "\n")
-    pcall(function()
-        if setclipboard then setclipboard(getFullLog()) end
-        if writefile then writefile("LianSpy_LiveDump.txt", getFullLog()) end
+    -- Non-blocking I/O (don't freeze on every remote)
+    task.spawn(function()
+        pcall(function()
+            if setclipboard then setclipboard(getFullLog()) end
+        end)
+        pcall(function()
+            if writefile then writefile("LianSpy_LiveDump.txt", getFullLog()) end
+        end)
     end)
 end
 
@@ -231,7 +236,10 @@ if type(hookmetamethod) == "function" then
     if (method == "FireServer" or method == "InvokeServer") and (self:IsA("RemoteEvent") or self:IsA("RemoteFunction")) then
         local name = self.Name
         -- Abaikan noise
-        if name ~= "SetPlayerBlockList" and name ~= "UpdateMouseData" and not self:IsDescendantOf(LocalPlayer.Character) then
+        if name ~= "SetPlayerBlockList" and name ~= "UpdateMouseData" then
+            local isCharDesc = false
+            pcall(function() isCharDesc = self:IsDescendantOf(LocalPlayer.Character) end)
+            if isCharDesc then return oldNamecall(self, ...) end
             local strArgs = {}
             for i, a in ipairs(args) do
                 local t = typeof(a)

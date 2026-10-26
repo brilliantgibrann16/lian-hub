@@ -78,6 +78,7 @@ task.spawn(function()
 end)
 
 -- Apply ESP to existing players' characters on load (not just on respawn)
+_G.LianConfig = _G.LianConfig or {}
 if _G.LianConfig.PlayerESP then
     for _, existingPlr in pairs(game:GetService("Players"):GetPlayers()) do
         if existingPlr ~= LocalPlayer and existingPlr.Character then
@@ -163,6 +164,7 @@ game:GetService("Players").PlayerAdded:Connect(function(p)
 end)
 
 -- Apply Fullbright on load (not just on respawn)
+_G.LianConfig = _G.LianConfig or {}
 if _G.LianConfig.Fullbright then
     pcall(function()
         local Lighting = game:GetService("Lighting")
@@ -175,6 +177,7 @@ if _G.LianConfig.Fullbright then
 end
 
 -- Apply WalkSpeed/JumpPower on load
+_G.LianConfig = _G.LianConfig or {}
 pcall(function()
     local char = LocalPlayer.Character
     if char and char:FindFirstChild("Humanoid") then
@@ -265,8 +268,8 @@ R.HalloweenPath = getRemote("HalloweenService", "RE", "ClaimAllPath")
 R.HalloweenQuest = getRemote("HalloweenQuestService", "RE", "Claim")
 R.TrickKnock = getRemote("TrickOrTreatService", "RE", "Knocked")
 R.TrickLand = getRemote("TrickOrTreatService", "RE", "Landed")
-R.QuirkRoll = getRemote("GradeService", "RE", "Roll")
-R.QuirkProtect = getRemote("GradeService", "RE", "SetGradeProtected")
+R.QuirkRoll = getRemote("QuirkService", "RE", "Roll") or getRemote("GradeService", "RE", "Roll")
+R.QuirkProtect = getRemote("QuirkService", "RE", "SetQuirkProtected") or getRemote("GradeService", "RE", "SetGradeProtected")
 R.TradeReq = getRemote("TradeService", "RE", "RequestTrade")
 R.TradeResp = getRemote("TradeService", "RE", "RespondToRequest")
 R.TradeOffer = getRemote("TradeService", "RE", "ChangeOffer")
@@ -2027,6 +2030,8 @@ task.spawn(function()
                 if gradeRemote then
                     gradeRemote:FireServer()
                     -- Protect high grades if enabled
+                    -- TODO: verify rolled grade matches target before protecting.
+                    -- Currently protects unconditionally after roll (may lock bad grade).
                     if _G.LianConfig.ProtectHighGrades then
                         local protectRemote = getRemote("GradeService", "RE", "SetGradeProtected")
                         if protectRemote then
@@ -2077,6 +2082,7 @@ task.spawn(function()
                     fire(R.QuirkRoll)
                     task.wait(0.5)
                     -- SetGradeProtected to protect the rolled grade
+                    -- TODO: verify rolled quirk matches target before protecting.
                     if _G.LianConfig.ProtectHighGrades and R.QuirkProtect then
                         fire(R.QuirkProtect, true)
                     end

@@ -450,7 +450,6 @@ _G.LianConfig = {
     RollGradeOnce = false,
     ProtectShiny = true,
     ProtectHaunted = true,
-    AutoLockFavorites = false,
     TradeRequests = true,
     Fullbright = false,
     PlayerESP = false,
@@ -460,11 +459,15 @@ _G.LianConfig = {
     JumpPowerValue = 50
 }
 
--- ponytail: backward-compat migration for renamed config key
+-- ponytail: backward-compat migration for renamed config key (must run on loaded JSON before nil-reject loop)
 pcall(function()
-    if _G.LianConfig and _G.LianConfig.AutoHalloweenDoors ~= nil then
-        _G.LianConfig.AutoHalloweenQuestClaim = _G.LianConfig.AutoHalloweenDoors
-        _G.LianConfig.AutoHalloweenDoors = nil
+    if isfile and isfile(CONFIG_FILE) and readfile then
+        local raw = HttpService:JSONDecode(readfile(CONFIG_FILE))
+        if type(raw) == "table" and raw.AutoHalloweenDoors ~= nil then
+            if _G.LianConfig.AutoHalloweenQuestClaim == nil or _G.LianConfig.AutoHalloweenQuestClaim == false then
+                _G.LianConfig.AutoHalloweenQuestClaim = raw.AutoHalloweenDoors
+            end
+        end
     end
 end)
 
@@ -477,6 +480,17 @@ local function saveConfig()
 end
 
 local function loadConfig()
+-- Apply saved visual settings on load
+pcall(function()
+    if _G.LianConfig.Fullbright then
+        local Lighting = game:GetService("Lighting")
+        Lighting.Brightness = 2
+        Lighting.ClockTime = 14
+        Lighting.FogEnd = 100000
+        Lighting.GlobalShadows = false
+        Lighting.OutdoorAmbient = Color3.fromRGB(255,255,255)
+    end
+end)
     pcall(function()
         if isfile and isfile(CONFIG_FILE) and readfile then
             local data = HttpService:JSONDecode(readfile(CONFIG_FILE))
@@ -696,6 +710,14 @@ local function equipBestPlotAndSellOutside()
                     local isHaunted = item.Haunted == true or item.haunted == true or tostring(item.Trait or ""):lower():find("haunted")
                     if isShiny and _G.LianConfig.ProtectShiny and not _G.LianConfig.AutoSellShiny then skip = true end
                     if isHaunted and _G.LianConfig.ProtectHaunted and not _G.LianConfig.AutoSellHaunted then skip = true end
+                    -- Protect high grades
+                    if _G.LianConfig.ProtectHighGrades then
+                        local grade = tonumber(item.Grade) or tonumber(item.grade) or 0
+                        local gradeTarget = _G.LianConfig.UnitGradeTarget or "Celestial"
+                        local gradeOrder = {Rare=1, Epic=2, Legendary=3, Mythic=4, Secret=5, Celestial=6}
+                        local targetLevel = gradeOrder[gradeTarget] or 6
+                        if grade >= targetLevel then skip = true end
+                    end
                 end
                 if not skip then
                     table.insert(sellList, key)
@@ -1350,14 +1372,6 @@ GradesTab:CreateToggle({
         saveConfig()
     end,
 })
-GradesTab:CreateToggle({
-    Name = "Auto Lock / Favorite Units",
-    CurrentValue = _G.LianConfig.AutoLockFavorites,
-    Callback = function(Value)
-        _G.LianConfig.AutoLockFavorites = Value
-        saveConfig()
-    end,
-})
 
 -- ═════════════════════════════════════════════════════════════════════
 -- TAB 6c: TELEPORT (Aligned with groper99/animedice)
@@ -1912,6 +1926,8 @@ task.spawn(function()
                         _G.LianConfig.AutoUnitGrades = false
                         saveConfig()
                     end
+                else
+                    warn("[LianHub] AutoUnitGrades: no grade remote resolved — check game update")
                 end
             end)
             task.wait(1.0)

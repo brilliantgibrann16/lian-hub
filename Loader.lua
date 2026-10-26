@@ -856,29 +856,11 @@ local okRay, rayLib = pcall(function()
 end)
 if okRay and rayLib then
     Rayfield = rayLib
-else
-    local okBackup, backupLib = pcall(function()
-        return loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-    end)
-    if okBackup and backupLib then
-        Rayfield = backupLib
-    end
 end
 
 if not Rayfield then
-    warn("[Lian Hub] Gagal memuat library Rayfield. Periksa koneksi internet.")
-    warn("[Lian Hub] Trying alternative Rayfield URL...")
-    -- Last resort: try direct sirius.menu
-    local okLast, lastLib = pcall(function()
-        return loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-    end)
-    if okLast and lastLib then
-        Rayfield = lastLib
-        warn("[Lian Hub] Rayfield loaded from fallback URL.")
-    else
-        warn("[Lian Hub] ALL Rayfield URLs failed. UI will not load.")
-        -- Don't error() — let script continue for debugging
-    end
+    warn("[Lian Hub] Rayfield tidak dapat dimuat. Pastikan koneksi internet aktif.")
+    return
 end
 
 local Window
@@ -1480,12 +1462,14 @@ TeleportTab:CreateSection("📍 Teleport Destinations")
             if not Value then return end
         pcall(function()
         local plot = findMyPlot()
+        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not hrp then Rayfield:Notify({Title="Teleport", Content="Karakter belum siap", Duration=3}) return end
         if plot then
         local spawn = plot:FindFirstChild("Spawn") or plot:FindFirstChildWhichIsA("SpawnLocation")
         if spawn then
-        LocalPlayer.Character.HumanoidRootPart.CFrame = spawn.CFrame + Vector3.new(0,3,0)
+        hrp.CFrame = spawn.CFrame + Vector3.new(0,3,0)
         else
-        LocalPlayer.Character.HumanoidRootPart.CFrame = plot:GetPivot() + Vector3.new(0,3,0)
+        hrp.CFrame = plot:GetPivot() + Vector3.new(0,3,0)
         end
         else
         Rayfield:Notify({ Title = "Teleport", Content = "Plot tidak ditemukan!", Duration = 3 })
@@ -1646,7 +1630,9 @@ TeleportTab:CreateInput({
         end
         for _, p in pairs(game:GetService("Players"):GetPlayers()) do
         if p.Name:lower() == target:lower() and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-        LocalPlayer.Character.HumanoidRootPart.CFrame = p.Character.HumanoidRootPart.CFrame + Vector3.new(0,3,0)
+        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not hrp then Rayfield:Notify({Title="Teleport", Content="Karakter belum siap", Duration=3}) return end
+        hrp.CFrame = p.Character.HumanoidRootPart.CFrame + Vector3.new(0,3,0)
         Rayfield:Notify({ Title = "Teleport", Content = "Teleported ke " .. p.Name, Duration = 3 })
         return
         end
@@ -1676,7 +1662,9 @@ TeleportTab:CreateInput({
         end
         if #others > 0 then
         local target = others[math.random(1, #others)]
-        LocalPlayer.Character.HumanoidRootPart.CFrame = target.Character.HumanoidRootPart.CFrame + Vector3.new(0,3,0)
+        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not hrp then Rayfield:Notify({Title="Teleport", Content="Karakter belum siap", Duration=3}) return end
+        hrp.CFrame = target.Character.HumanoidRootPart.CFrame + Vector3.new(0,3,0)
         Rayfield:Notify({ Title = "Teleport", Content = "Teleported ke " .. target.Name, Duration = 3 })
         else
         Rayfield:Notify({ Title = "Teleport", Content = "Tidak ada player lain!", Duration = 3 })

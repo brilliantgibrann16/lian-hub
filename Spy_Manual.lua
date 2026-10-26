@@ -286,17 +286,18 @@ createBtn("Test Grades", UDim2.new(0, 460, 0, 405), UDim2.new(0, 140, 0, 28), Co
     end
 end)
 
--- Copy button
+-- Copy button (non-blocking)
 createBtn("Copy Log", UDim2.new(0, 10, 0, 440), UDim2.new(0, 140, 0, 28), Color3.fromRGB(0, 200, 100), function()
     local fullLog = table.concat(logs, "\n")
-    if setclipboard then
-        setclipboard(fullLog)
-        addLine("Copied to clipboard!")
-    else
-        addLine("setclipboard not available")
-    end
-    pcall(function()
-        if writefile then writefile("LianSpy_ManualDump.txt", fullLog) end
+    addLine("Copying... (check clipboard or LianSpy_ManualDump.txt)")
+    task.spawn(function()
+        local ok1 = pcall(function()
+            if setclipboard then setclipboard(fullLog) end
+        end)
+        local ok2 = pcall(function()
+            if writefile then writefile("LianSpy_ManualDump.txt", fullLog) end
+        end)
+        addLine("Copy done. clipboard=" .. tostring(ok1) .. " file=" .. tostring(ok2))
     end)
 end)
 

@@ -6,7 +6,10 @@
     ═════════════════════════════════════════════════════════════════════════
 --]]
 
-repeat task.wait(0.2) until game:IsLoaded()
+-- Solara-compatible: timeout-based load check
+local _loadT = os.clock()
+while not game:IsLoaded() and os.clock() - _loadT < 15 do task.wait(0.2) end
+if not game:IsLoaded() then warn("[LianSpy] game not fully loaded after 15s, proceeding anyway") end
 
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
@@ -77,10 +80,15 @@ end)
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "LianSpyV3"
 ScreenGui.ResetOnSpawn = false
-pcall(function()
-    ScreenGui.Parent = (type(gethui) == "function" and gethui()) or game.CoreGui
-end)
-if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+local _guiParent = nil
+if type(gethui) == "function" then pcall(function() _guiParent = gethui() end) end
+if not _guiParent then pcall(function() _guiParent = game.CoreGui end) end
+if not _guiParent then pcall(function() _guiParent = LocalPlayer:WaitForChild("PlayerGui", 5) end) end
+if _guiParent then
+    ScreenGui.Parent = _guiParent
+else
+    warn("[LianSpy] No GUI parent available!")
+end
 
 local Frame = Instance.new("Frame")
 Frame.Size = UDim2.new(0, 580, 0, 420)

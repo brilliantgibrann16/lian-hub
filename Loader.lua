@@ -26,7 +26,10 @@
     ═════════════════════════════════════════════════════════════════════════
 ]]--
 
-repeat task.wait(0.2) until game:IsLoaded()
+-- Solara-compatible: timeout-based load check (game:IsLoaded may hang on some executors)
+local _loadT = os.clock()
+while not game:IsLoaded() and os.clock() - _loadT < 15 do task.wait(0.2) end
+if not game:IsLoaded() then warn("[Lian Hub] game not fully loaded after 15s, proceeding anyway") end
 
 -- Services
 local Players = game:GetService("Players")
@@ -839,6 +842,8 @@ GuiService.ErrorMessageChanged:Connect(function(msg)
     end
 end)
 
+print("[Lian Hub] Script starting... executor: " .. (identifyexecutor and identifyexecutor() or "unknown"))
+
 -- 9. Load Rayfield UI
 local Rayfield
 local okRay, rayLib = pcall(function()
@@ -856,7 +861,19 @@ else
 end
 
 if not Rayfield then
-    error("[Lian Hub] Gagal memuat library Rayfield. Periksa koneksi internet.", 0)
+    warn("[Lian Hub] Gagal memuat library Rayfield. Periksa koneksi internet.")
+    warn("[Lian Hub] Trying alternative Rayfield URL...")
+    -- Last resort: try direct sirius.menu
+    local okLast, lastLib = pcall(function()
+        return loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+    end)
+    if okLast and lastLib then
+        Rayfield = lastLib
+        warn("[Lian Hub] Rayfield loaded from fallback URL.")
+    else
+        warn("[Lian Hub] ALL Rayfield URLs failed. UI will not load.")
+        -- Don't error() — let script continue for debugging
+    end
 end
 
 local Window = Rayfield:CreateWindow({
@@ -873,7 +890,19 @@ local Window = Rayfield:CreateWindow({
 
 -- Floating Draggable Toggle Button
 pcall(function()
-    local parentGui = (gethui and gethui()) or game:GetService("CoreGui")
+    local parentGui = nil
+    if type(gethui) == "function" then
+        pcall(function() parentGui = gethui() end)
+    end
+    if not parentGui then
+        pcall(function() parentGui = game:GetService("CoreGui") end)
+    end
+    if not parentGui then
+        pcall(function() parentGui = LocalPlayer:WaitForChild("PlayerGui", 5) end)
+    end
+    if not parentGui then
+        warn("[Lian Hub] No GUI parent available. UI cannot be created.")
+    end
     local oldBtn = parentGui:FindFirstChild("LianHubFloatingBtn")
     if oldBtn then oldBtn:Destroy() end
 

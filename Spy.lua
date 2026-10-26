@@ -223,7 +223,8 @@ end)
 
 -- 4. ULTRA-DETAILED NAME-CALL & INVOKE HOOK
 local oldNamecall
-oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+if type(hookmetamethod) == "function" then
+    oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
     local method = getnamecallmethod()
     local args = {...}
     
@@ -253,5 +254,8 @@ oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
     
     return oldNamecall(self, ...)
 end)
+else
+    warn("[LianSpy] hookmetamethod not available — remote capture disabled. UI still works for manual inspection.")
+end
 
 print("[LianSpy v3] Live Action Sniffer is ready! Click actions in-game now.")

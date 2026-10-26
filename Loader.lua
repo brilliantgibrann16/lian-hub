@@ -250,14 +250,7 @@ local function invoke(remote, ...)
     return nil
 end
 
-local function safe(fn, ...)
-    local ok, res = pcall(fn, ...)
-    return ok and res
-end
-
--- NOTE: task.wait inside safe() (pcall) may fail on Solara/Level-3 executors
--- where pcall forbids yielding. If a worker silently dies, move task.wait
--- OUTSIDE the safe() call: safe(function() ... end); task.wait(n)
+-- (safe() helper removed: unused; pcall-yield constraints documented above)
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -476,7 +469,7 @@ _G.LianConfig = {
     TeleportTarget = "",
     -- Aligned with groper99/animedice reference features
     AutoUnitGrades = false,
-    ProtectHighGrades = true,
+    ProtectHighGrades = false,
     RollGradeOnce = false,
     ProtectShiny = true,
     ProtectHaunted = true,
@@ -1893,8 +1886,8 @@ ServerTab:CreateToggle({
         if raw then
             ok, res = pcall(function() return HttpService:JSONDecode(raw) end)
         end
+        local hopped = false
         if ok and res and res.data then
-            local hopped = false
             for _, s in ipairs(res.data) do
                 if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
                     TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
@@ -1902,9 +1895,9 @@ ServerTab:CreateToggle({
                     break
                 end
             end
-            if not hopped then
-                TeleportService:Teleport(placeId, LocalPlayer)
-            end
+        end
+        if not hopped then
+            TeleportService:Teleport(placeId, LocalPlayer)
         end
         task.spawn(function()
             task.wait(0.5)
@@ -2053,7 +2046,7 @@ RunService.Stepped:Connect(function()
     if LocalPlayer.Character then
         for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
             if part:IsA("BasePart") then
-                part.CanCollide = _G.LianConfig.Noclip and false or true
+                part.CanCollide = not _G.LianConfig.Noclip
             end
         end
     end
@@ -2240,7 +2233,7 @@ task.spawn(function()
             pcall(function()
                 local pts = getAvailableStatPoints()
                 if pts > 0 then
-                    local prio = _G.LianConfig.RebirthStatPriority
+                    local prio = _G.LianConfig.RebirthStatPriority or ""
                     local statList = {}
                     if prio:find("Balance") then statList = {"Money", "Luck", "Damage", "Health", "Speed"}
                     elseif prio:find("Money") then statList = {"Money"}
@@ -2497,8 +2490,7 @@ task.spawn(function()
                         if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
                             TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
                             hopped = true
-                            task.wait(5)
-                            -- Exit worker loop after successful hop (re-inject restarts workers)
+                            break
                         end
                     end
                 end

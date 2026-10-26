@@ -2108,9 +2108,10 @@ end)
 
 -- Auto Unit Grades Worker (aligned with groper99/animedice; behavior unverified — reference obfuscated)
 task.spawn(function()
+    local cachedGradeRemote = R.QuirkRoll or getRemote("GradeService", "RE", "Roll")
     while true do
         if _G.LianConfig.AutoUnitGrades then
-            local gradeRemote = R.QuirkRoll or getRemote("GradeService", "RE", "Roll")
+            local gradeRemote = cachedGradeRemote
             if gradeRemote then
                 gradeRemote:FireServer()
                 -- Protect gating: DISABLED until grade read is implemented.

@@ -25,8 +25,8 @@ local function addLog(str)
 end
 
 local function addLiveLog(str)
-    table.insert(liveLogs, 1, str) -- Taruh paling atas
-    if #liveLogs > 50 then table.remove(liveLogs) end
+    table.insert(liveLogs, str) -- Append (O(1)); reverse at flush
+    if #liveLogs > 50 then table.remove(liveLogs, 1) end
 end
 
 -- 1. DUMP DAFTAR CONFIG FRAMEWORK (DICE, POTIONS, TOWERS, WEATHER, HALLOWEEN)
@@ -201,7 +201,12 @@ local lastFlush = 0
 local function flushLog()
     if os.clock() - lastFlush < 0.5 then return end
     lastFlush = os.clock()
-    TextBox.Text = table.concat(liveLogs, "\n")
+    -- Reverse copy so newest appears first
+    local reversed = {}
+    for i = #liveLogs, 1, -1 do
+        reversed[#reversed + 1] = liveLogs[i]
+    end
+    TextBox.Text = table.concat(reversed, "\n")
 end
 
 CopyBtn.MouseButton1Click:Connect(function()
@@ -223,13 +228,16 @@ end)
 -- Tombol Percobaan Roll Mandiri
 TestRollBtn.MouseButton1Click:Connect(function()
     TestRollBtn.Text = "Testing..."
-    local ok1, err1 = pcall(function()
-        local net = RS:FindFirstChild("Network")
-        local rs = net and net:FindFirstChild("RollService")
-        local re = rs and rs:FindFirstChild("RE")
-        local sa = re and re:FindFirstChild("SetAutoRoll")
-        if sa then sa:FireServer(true) end
-    end)
+    local net1 = RS:FindFirstChild("Network")
+    local rs1 = net1 and net1:FindFirstChild("RollService")
+    local re1 = rs1 and rs1:FindFirstChild("RE")
+    local sa = re1 and re1:FindFirstChild("SetAutoRoll")
+    local ok1, err1 = true, nil
+    if sa then
+        sa:FireServer(true)
+    else
+        ok1, err1 = false, "SetAutoRoll not found"
+    end
     local net = RS:FindFirstChild("Network")
     local rs = net and net:FindFirstChild("RollService")
     local rf = rs and rs:FindFirstChild("RF")

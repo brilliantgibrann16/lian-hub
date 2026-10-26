@@ -864,9 +864,7 @@ GuiService.ErrorMessageChanged:Connect(function(msg)
             isReconnecting = true
             setupAutoExecuteOnTeleport()
             task.wait(5)
-            pcall(function()
-                TeleportService:Teleport(game.PlaceId, LocalPlayer)
-            end)
+            TeleportService:Teleport(game.PlaceId, LocalPlayer)
             isReconnecting = false
         end
     end
@@ -1739,12 +1737,10 @@ ESPSettingsTab:CreateSection("🔄 Rejoin & Server")
         Callback = function(Value)
             if not Value then return end
         setupAutoExecuteOnTeleport()
-        pcall(function()
-            TeleportService:Teleport(game.PlaceId, LocalPlayer)
-        end)
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
         task.spawn(function()
             task.wait(0.5)
-            pcall(function() _tg:Set(false) end)
+            _tg:Set(false)
         end)
     end,
 })

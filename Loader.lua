@@ -1872,7 +1872,7 @@ RebirthTab:CreateToggle({
         CurrentValue = false,
         Callback = function(Value)
             if not Value then return end
-        equipBestPlotAndSellOutside()
+        task.spawn(function() equipBestPlotAndSellOutside() end)
         task.spawn(function()
             task.wait(0.5)
             pcall(function() _tg:Set(false) end)
@@ -2295,7 +2295,7 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoBuyTreeUpgrades then
-            buyUpgradesTree()
+            task.spawn(function() buyUpgradesTree() end)
             task.wait(2.5)
         else
             task.wait(1)
@@ -2390,7 +2390,7 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoEquipBestPlotAndSellRest then
-            equipBestPlotAndSellOutside()
+            task.spawn(function() equipBestPlotAndSellOutside() end)
             task.wait(3.5)
         else
             task.wait(1)

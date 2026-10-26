@@ -1918,6 +1918,11 @@ ServerTab:CreateToggle({
         CurrentValue = false,
         Callback = function(Value)
             if not Value then return end
+        -- Schedule reset BEFORE risky calls so a throw cannot leave toggle stuck ON
+        task.spawn(function()
+            task.wait(0.5)
+            pcall(function() _tg:Set(false) end)
+        end)
         setupAutoExecuteOnTeleport()
         local placeId = game.PlaceId
         local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
@@ -1939,10 +1944,6 @@ ServerTab:CreateToggle({
         if not hopped then
             TeleportService:Teleport(placeId, LocalPlayer)
         end
-        task.spawn(function()
-            task.wait(0.5)
-            pcall(function() _tg:Set(false) end)
-        end)
     end,
 })
 
@@ -2530,26 +2531,29 @@ task.spawn(function()
             if weather ~= "Bloodmoon" and weather ~= "Eclipse" and weather ~= "Full Moon" then
                 -- Isolate so a failed hop attempt does not kill the worker loop
                 task.spawn(function()
-                    setupAutoExecuteOnTeleport()
-                    local placeId = game.PlaceId
-                    local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
-                    local raw = game:HttpGet(apiUrl)
-                    local ok, res = false, nil
-                    if raw then
-                        ok, res = pcall(function() return HttpService:JSONDecode(raw) end)
-                    end
-                    local hopped = false
-                    if ok and res and res.data then
-                        for _, s in ipairs(res.data) do
-                            if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
-                                TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
-                                hopped = true
-                                break
+                    local ok, err = pcall(function()
+                        setupAutoExecuteOnTeleport()
+                        local placeId = game.PlaceId
+                        local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
+                        local raw = game:HttpGet(apiUrl)
+                        if not raw then return end
+                        local ok2, res = pcall(function() return HttpService:JSONDecode(raw) end)
+                        local hopped = false
+                        if ok2 and res and res.data then
+                            for _, s in ipairs(res.data) do
+                                if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
+                                    TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
+                                    hopped = true
+                                    break
+                                end
                             end
                         end
-                    end
-                    if not hopped then
-                        TeleportService:Teleport(placeId, LocalPlayer)
+                        if not hopped then
+                            TeleportService:Teleport(placeId, LocalPlayer)
+                        end
+                    end)
+                    if not ok then
+                        warn("[LianHub] Server Luck Hop error: " .. tostring(err))
                     end
                 end)
             end

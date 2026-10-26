@@ -2091,14 +2091,14 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoUnitGrades then
-            local gradeRemote = getRemote("GradeService", "RE", "Roll")
+            local gradeRemote = R.QuirkRoll or getRemote("GradeService", "RE", "Roll")
             if gradeRemote then
-                pcall(function() gradeRemote:FireServer() end)
+                gradeRemote:FireServer()
                 -- Protect gating: only protect when a high grade is actually obtained.
                 -- TODO: read current grade from DataController before protecting to avoid locking bad grades.
                 -- Currently fires SetGradeProtected(true) after every roll when ProtectHighGrades is on.
                 if _G.LianConfig.ProtectHighGrades then
-                    local protectRemote = getRemote("GradeService", "RE", "SetGradeProtected")
+                    local protectRemote = R.QuirkProtect or getRemote("GradeService", "RE", "SetGradeProtected")
                     if protectRemote then
                         task.wait(0.3) -- wait for server to assign grade
                         protectRemote:FireServer(true)
@@ -2145,10 +2145,10 @@ task.spawn(function()
                 -- Protect gating: only protect if target quirk obtained (behavior unverified)
                 -- TODO: read current quirk from DataController before protecting.
                 if _G.LianConfig.ProtectHighGrades then
-                    local protectRemote = getRemote("GradeService", "RE", "SetGradeProtected")
+                    local protectRemote = R.QuirkProtect or getRemote("GradeService", "RE", "SetGradeProtected")
                     if protectRemote then
                         task.wait(0.3) -- wait for server to assign quirk
-                        pcall(function() protectRemote:FireServer(true) end)
+                        protectRemote:FireServer(true)
                     end
                 end
                 task.wait(0.5)
@@ -2329,22 +2329,18 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoCollectCash then
-            safe(function()
-                local maxSlots = getMaxPlotSlots()
-                for slot = 1, maxSlots do
-                    if not _G.LianConfig.AutoCollectCash then break end
-                    fire(R.Collect, slot)
-                end
-            end)
+            local maxSlots = getMaxPlotSlots()
+            for slot = 1, maxSlots do
+                if not _G.LianConfig.AutoCollectCash then break end
+                fire(R.Collect, slot)
+            end
         end
         if _G.LianConfig.AutoLevelUpSlots then
-            safe(function()
-                local maxSlots = getMaxPlotSlots()
-                for slot = 1, maxSlots do
-                    if not _G.LianConfig.AutoLevelUpSlots then break end
-                    fire(R.LevelSlot, slot)
-                end
-            end)
+            local maxSlots = getMaxPlotSlots()
+            for slot = 1, maxSlots do
+                if not _G.LianConfig.AutoLevelUpSlots then break end
+                fire(R.LevelSlot, slot)
+            end
         end
         task.wait(2)
     end
@@ -2354,13 +2350,13 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoDailyReward then
-            safe(function() fire(R.Daily) end)
+            fire(R.Daily)
         end
         if _G.LianConfig.AutoClaimOffline then
-            safe(function() fire(R.Offline) end)
+            fire(R.Offline)
         end
         if _G.LianConfig.AutoLuckySpin then
-            safe(function() fire(R.Spin) end)
+            fire(R.Spin)
         end
         if _G.LianConfig.AutoRedeemCodes then
             local codes = {"RELEASE", "HALLOWEEN", "LUCK", "UPDATE", "SUB2DEV", "ANIME", "DICE", "PUMPKIN"}
@@ -2421,12 +2417,10 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoHalloweenQuestClaim then
-            safe(function()
-                local floors = {"The Abyss", "Bell Tower", "Attic", "Crypt", "Foyer", "Front Yard"}
-                for _, f in ipairs(floors) do
-                    fire(R.HalloweenQuest, "Daily", f)
-                end
-            end)
+            local floors = {"The Abyss", "Bell Tower", "Attic", "Crypt", "Foyer", "Front Yard"}
+            for _, f in ipairs(floors) do
+                fire(R.HalloweenQuest, "Daily", f)
+            end
             task.wait(3)
         else
             task.wait(1)
@@ -2438,7 +2432,7 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoPumpkinPass then
-            safe(function() fire(R.HalloweenPath) end)
+            fire(R.HalloweenPath)
             task.wait(6)
         else
             task.wait(1)
@@ -2504,7 +2498,7 @@ task.spawn(function()
                             TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
                             hopped = true
                             task.wait(5)
-                            return
+                            -- Exit worker loop after successful hop (re-inject restarts workers)
                         end
                     end
                 end

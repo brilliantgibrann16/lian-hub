@@ -62,17 +62,26 @@ task.spawn(function()
             VirtualUser:ClickButton2(Vector2.new(math.random(0, 100), math.random(0, 100)))
         end)
         -- Also wiggle character slightly to prevent idle kick (guard: skip if custom speed set or non-normal state)
+        -- task.wait is OUTSIDE pcall: yielding inside pcall breaks on Solara/Level-3
+        local oldWS = nil
+        local hum = nil
         pcall(function()
-            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-                local hum = LocalPlayer.Character.Humanoid
-                if hum.Health > 0 and hum:GetState() ~= Enum.HumanoidStateType.Dead and hum:GetState() ~= Enum.HumanoidStateType.Jumping and hum:GetState() ~= Enum.HumanoidStateType.Freefall then
-                    local oldWS = hum.WalkSpeed
-                    hum.WalkSpeed = oldWS + 0.01
-                    task.wait(0.05)
-                    hum.WalkSpeed = oldWS
+            if LocalPlayer.Character then
+                local h = LocalPlayer.Character:FindFirstChild("Humanoid")
+                if h and h.Health > 0 then
+                    local st = h:GetState()
+                    if st ~= Enum.HumanoidStateType.Dead and st ~= Enum.HumanoidStateType.Jumping and st ~= Enum.HumanoidStateType.Freefall then
+                        hum = h
+                        oldWS = h.WalkSpeed
+                        h.WalkSpeed = oldWS + 0.01
+                    end
                 end
             end
         end)
+        if hum and oldWS then
+            task.wait(0.05)
+            pcall(function() hum.WalkSpeed = oldWS end)
+        end
         task.wait(60)
     end
 end)
@@ -1034,6 +1043,15 @@ FarmTab:CreateToggle({
     end,
 })
 
+FarmTab:CreateToggle({
+    Name = "Auto Buy Dice (Beli dice terbaik otomatis)",
+    CurrentValue = _G.LianConfig.AutoBuyDice,
+    Callback = function(Value)
+        _G.LianConfig.AutoBuyDice = Value
+        saveConfig()
+    end,
+})
+
 
 
 -- ═════════════════════════════════════════════════════════════════════
@@ -1073,6 +1091,15 @@ PotionsTab:CreateToggle({
     CurrentValue = _G.LianConfig.PotionUseDamage,
     Callback = function(Value)
         _G.LianConfig.PotionUseDamage = Value
+        saveConfig()
+    end,
+})
+
+PotionsTab:CreateToggle({
+    Name = "Minum Speed Potions",
+    CurrentValue = _G.LianConfig.PotionUseSpeed,
+    Callback = function(Value)
+        _G.LianConfig.PotionUseSpeed = Value
         saveConfig()
     end,
 })
@@ -1784,6 +1811,15 @@ RebirthTab:CreateToggle({
     CurrentValue = _G.LianConfig.AutoRebirth,
     Callback = function(Value)
         _G.LianConfig.AutoRebirth = Value
+        saveConfig()
+    end,
+})
+
+RebirthTab:CreateToggle({
+    Name = "Auto Alloc Rebirth Stats (Alokasi stat otomatis)",
+    CurrentValue = _G.LianConfig.AutoAllocStats,
+    Callback = function(Value)
+        _G.LianConfig.AutoAllocStats = Value
         saveConfig()
     end,
 })

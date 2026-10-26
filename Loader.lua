@@ -1755,6 +1755,15 @@ ESPSettingsTab:CreateSection("🔄 Rejoin & Server")
 })
 
 ESPSettingsTab:CreateToggle({
+    Name = "🔄 Auto Reconnect (Saat Disconnect)",
+    CurrentValue = _G.LianConfig.AutoReconnect,
+    Callback = function(Value)
+        _G.LianConfig.AutoReconnect = Value
+        saveConfig()
+    end,
+})
+
+ESPSettingsTab:CreateToggle({
     Name = "Trade Requests (On/Off)",
     CurrentValue = _G.LianConfig.TradeRequests,
     Callback = function(Value)
@@ -2075,9 +2084,12 @@ PlayerTab:CreateToggle({
 })
 RunService.Stepped:Connect(function()
     if LocalPlayer.Character then
-        for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = not _G.LianConfig.Noclip
+        local noclipOn = _G.LianConfig.Noclip
+        if noclipOn then
+            for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
             end
         end
     end
@@ -2114,6 +2126,7 @@ end)
 -- Auto Unit Grades Worker (aligned with groper99/animedice; behavior unverified — reference obfuscated)
 task.spawn(function()
     local cachedGradeRemote = R.QuirkRoll or getRemote("GradeService", "RE", "Roll")
+    local warnedGrade = false
     while true do
         if _G.LianConfig.AutoUnitGrades then
             local gradeRemote = cachedGradeRemote
@@ -2133,7 +2146,8 @@ task.spawn(function()
                     _G.LianConfig.AutoUnitGrades = false
                     saveConfig()
                 end
-            else
+            elseif not warnedGrade then
+                warnedGrade = true
                 warn("[LianHub] AutoUnitGrades: no grade remote resolved — check game update")
             end
             task.wait(1.0)
@@ -2397,9 +2411,14 @@ end)
 
 -- 10. Auto Equip Best Plot & Sell Rest Worker
 task.spawn(function()
+    local selling = false
     while true do
-        if _G.LianConfig.AutoEquipBestPlotAndSellRest then
-            task.spawn(function() equipBestPlotAndSellOutside() end)
+        if _G.LianConfig.AutoEquipBestPlotAndSellRest and not selling then
+            selling = true
+            task.spawn(function()
+                equipBestPlotAndSellOutside()
+                selling = false
+            end)
             task.wait(3.5)
         else
             task.wait(1)
@@ -2509,27 +2528,30 @@ task.spawn(function()
             local dc = getDC()
             local weather = (dc and dc.Weather and dc.Weather()) or ""
             if weather ~= "Bloodmoon" and weather ~= "Eclipse" and weather ~= "Full Moon" then
-                setupAutoExecuteOnTeleport()
-                local placeId = game.PlaceId
-                local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
-                local raw = game:HttpGet(apiUrl)
-                local ok, res = false, nil
-                if raw then
-                    ok, res = pcall(function() return HttpService:JSONDecode(raw) end)
-                end
-                local hopped = false
-                if ok and res and res.data then
-                    for _, s in ipairs(res.data) do
-                        if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
-                            TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
-                            hopped = true
-                            break
+                -- Isolate so a failed hop attempt does not kill the worker loop
+                task.spawn(function()
+                    setupAutoExecuteOnTeleport()
+                    local placeId = game.PlaceId
+                    local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
+                    local raw = game:HttpGet(apiUrl)
+                    local ok, res = false, nil
+                    if raw then
+                        ok, res = pcall(function() return HttpService:JSONDecode(raw) end)
+                    end
+                    local hopped = false
+                    if ok and res and res.data then
+                        for _, s in ipairs(res.data) do
+                            if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
+                                TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
+                                hopped = true
+                                break
+                            end
                         end
                     end
-                end
-                if not hopped then
-                    TeleportService:Teleport(placeId, LocalPlayer)
-                end
+                    if not hopped then
+                        TeleportService:Teleport(placeId, LocalPlayer)
+                    end
+                end)
             end
             task.wait(5)
         else

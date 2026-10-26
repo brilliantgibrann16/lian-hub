@@ -101,9 +101,17 @@ local function createBtn(name, pos, size, color, callback)
     c.CornerRadius = UDim.new(0, 4)
     btn.MouseButton1Click:Connect(function()
         btn.Text = "Scanning..."
-        callback()
-        btn.Text = name
-        flushLog()
+        task.spawn(function()
+            callback()
+            btn.Text = name
+            flushLog()
+        end)
+        -- Safety: reset button text if callback hangs or errors
+        task.delay(30, function()
+            if btn.Text == "Scanning..." then
+                btn.Text = name
+            end
+        end)
     end)
     return btn
 end

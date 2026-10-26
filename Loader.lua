@@ -456,7 +456,6 @@ _G.LianConfig = {
     PlayerESP = false,
     AutoSellShiny = false,
     AutoSellHaunted = false,
-    AutoClaimDailyReward = true,
     WalkSpeedValue = 16,
     JumpPowerValue = 50
 }

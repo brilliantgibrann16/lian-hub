@@ -393,7 +393,28 @@ _G.LianConfig = {
     ExtremePotatoMode = false,
     TargetFPS = 30,
     InfJump = false,
-    Noclip = false
+    Noclip = false,
+    TeleportTarget = "",
+    -- Aligned with groper99/animedice reference features
+    AutoUnitGrades = false,
+    UnitGradeTarget = "Celestial",
+    UnitGradePick = "Best Unit",
+    ProtectHighGrades = true,
+    RollGradeOnce = false,
+    ProtectShiny = true,
+    ProtectHaunted = true,
+    AutoLockFavorites = false,
+    TradeRequests = true,
+    Fullbright = false,
+    PlayerESP = false,
+    TeleportToPlot = false,
+    RejoinServer = false,
+    AutoSellShiny = false,
+    AutoSellHaunted = false,
+    AutoClaimGroupChest = true,
+    AutoClaimDailyReward = true,
+    WalkSpeedValue = 16,
+    JumpPowerValue = 50
 }
 
 -- ponytail: backward-compat migration for renamed config key
@@ -780,6 +801,9 @@ local ServerTab = Window:CreateTab("Server Luck Hunter", 4483362458)
 local WebhookTab = Window:CreateTab("Discord Webhook", 4483362458)
 local PerfTab = Window:CreateTab("Potato & Botting", 4483362458)
 local PlayerTab = Window:CreateTab("Movement", 4483362458)
+local TeleportTab = Window:CreateTab("Teleport", 4483362458)
+local GradesTab = Window:CreateTab("Unit Grades", 4483362458)
+local ESPSettingsTab = Window:CreateTab("ESP & Visuals", 4483362458)
 
 -- ═════════════════════════════════════════════════════════════════════
 -- TAB 1: AUTO FARM (ROLL ENGINE)
@@ -1201,6 +1225,348 @@ PlotTab:CreateToggle({
     Callback = function(Value)
         _G.LianConfig.AutoTicketShop = Value
         saveConfig()
+    end,
+})
+
+-- ═════════════════════════════════════════════════════════════════════
+-- TAB 6b: UNIT GRADES (Aligned with groper99/animedice)
+-- ═════════════════════════════════════════════════════════════════════
+GradesTab:CreateSection("🧬 Auto Roll Unit Grades")
+
+GradesTab:CreateToggle({
+    Name = "Auto Roll Unit Grades (Sampai Target Rarity)",
+    CurrentValue = _G.LianConfig.AutoUnitGrades,
+    Callback = function(Value)
+        _G.LianConfig.AutoUnitGrades = Value
+        saveConfig()
+    end,
+})
+
+GradesTab:CreateDropdown({
+    Name = "Target Rarity Grade",
+    Options = {"Rare", "Epic", "Legendary", "Mythic", "Secret", "Celestial"},
+    CurrentOption = _G.LianConfig.UnitGradeTarget,
+    Callback = function(Option)
+        _G.LianConfig.UnitGradeTarget = type(Option) == "table" and Option[1] or Option
+        saveConfig()
+    end,
+})
+
+GradesTab:CreateDropdown({
+    Name = "Pick Unit (Grade Target)",
+    Options = {"Best Unit", "Equipped Unit", "Any Unit"},
+    CurrentOption = _G.LianConfig.UnitGradePick,
+    Callback = function(Option)
+        _G.LianConfig.UnitGradePick = type(Option) == "table" and Option[1] or Option
+        saveConfig()
+    end,
+})
+
+GradesTab:CreateToggle({
+    Name = "Auto Protect High Grades (Jangan Jual)",
+    CurrentValue = _G.LianConfig.ProtectHighGrades,
+    Callback = function(Value)
+        _G.LianConfig.ProtectHighGrades = Value
+        saveConfig()
+    end,
+})
+
+GradesTab:CreateToggle({
+    Name = "Roll Grade Once (Sekali Roll Lalu Stop)",
+    CurrentValue = _G.LianConfig.RollGradeOnce,
+    Callback = function(Value)
+        _G.LianConfig.RollGradeOnce = Value
+        saveConfig()
+    end,
+})
+
+GradesTab:CreateSection("🔒 Protect Units (Shiny & Haunted)")
+GradesTab:CreateToggle({
+    Name = "Protect Shiny Units (Jangan Auto-Sell)",
+    CurrentValue = _G.LianConfig.ProtectShiny,
+    Callback = function(Value)
+        _G.LianConfig.ProtectShiny = Value
+        saveConfig()
+    end,
+})
+GradesTab:CreateToggle({
+    Name = "Protect Haunted Units (Jangan Auto-Sell)",
+    CurrentValue = _G.LianConfig.ProtectHaunted,
+    Callback = function(Value)
+        _G.LianConfig.ProtectHaunted = Value
+        saveConfig()
+    end,
+})
+GradesTab:CreateToggle({
+    Name = "Auto Lock / Favorite Units",
+    CurrentValue = _G.LianConfig.AutoLockFavorites,
+    Callback = function(Value)
+        _G.LianConfig.AutoLockFavorites = Value
+        saveConfig()
+    end,
+})
+
+-- ═════════════════════════════════════════════════════════════════════
+-- TAB 6c: TELEPORT (Aligned with groper99/animedice)
+-- ═════════════════════════════════════════════════════════════════════
+TeleportTab:CreateSection("📍 Teleport Destinations")
+
+TeleportTab:CreateButton({
+    Name = "🏠 Teleport ke Plot Sendiri",
+    Callback = function()
+        pcall(function()
+            local plot = workspace:FindFirstChild("Plots") and workspace.Plots:FindFirstChild(LocalPlayer.Name)
+            if plot and plot:FindFirstChild("Spawn") then
+                LocalPlayer.Character.HumanoidRootPart.CFrame = plot.Spawn.CFrame + Vector3.new(0,3,0)
+            else
+                Rayfield:Notify({ Title = "Teleport", Content = "Plot tidak ditemukan!", Duration = 3 })
+            end
+        end)
+    end,
+})
+
+TeleportTab:CreateButton({
+    Name = "🎲 Teleport ke Dice Shop",
+    Callback = function()
+        pcall(function()
+            local shop = workspace:FindFirstChild("DiceShop") or workspace:FindFirstChild("Shop")
+            if shop then
+                LocalPlayer.Character.HumanoidRootPart.CFrame = shop:GetPivot() + Vector3.new(0,3,0)
+            else
+                Rayfield:Notify({ Title = "Teleport", Content = "Dice Shop tidak ditemukan!", Duration = 3 })
+            end
+        end)
+    end,
+})
+
+TeleportTab:CreateButton({
+    Name = "🔄 Teleport ke Rebirth Station",
+    Callback = function()
+        pcall(function()
+            local rebirth = workspace:FindFirstChild("Rebirth") or workspace:FindFirstChild("RebirthStation")
+            if rebirth then
+                LocalPlayer.Character.HumanoidRootPart.CFrame = rebirth:GetPivot() + Vector3.new(0,3,0)
+            else
+                Rayfield:Notify({ Title = "Teleport", Content = "Rebirth Station tidak ditemukan!", Duration = 3 })
+            end
+        end)
+    end,
+})
+
+TeleportTab:CreateButton({
+    Name = "🧬 Teleport ke Fusing Station",
+    Callback = function()
+        pcall(function()
+            local fuse = workspace:FindFirstChild("Fusing") or workspace:FindFirstChild("Fuse")
+            if fuse then
+                LocalPlayer.Character.HumanoidRootPart.CFrame = fuse:GetPivot() + Vector3.new(0,3,0)
+            else
+                Rayfield:Notify({ Title = "Teleport", Content = "Fusing Station tidak ditemukan!", Duration = 3 })
+            end
+        end)
+    end,
+})
+
+TeleportTab:CreateButton({
+    Name = "📋 Teleport ke Quest Board",
+    Callback = function()
+        pcall(function()
+            local q = workspace:FindFirstChild("Quests") or workspace:FindFirstChild("QuestBoard")
+            if q then
+                LocalPlayer.Character.HumanoidRootPart.CFrame = q:GetPivot() + Vector3.new(0,3,0)
+            else
+                Rayfield:Notify({ Title = "Teleport", Content = "Quest Board tidak ditemukan!", Duration = 3 })
+            end
+        end)
+    end,
+})
+
+TeleportTab:CreateButton({
+    Name = "🎒 Teleport ke Backpack / Inventory",
+    Callback = function()
+        pcall(function()
+            local bp = workspace:FindFirstChild("Backpack") or workspace:FindFirstChild("Inventory")
+            if bp then
+                LocalPlayer.Character.HumanoidRootPart.CFrame = bp:GetPivot() + Vector3.new(0,3,0)
+            else
+                Rayfield:Notify({ Title = "Teleport", Content = "Backpack tidak ditemukan!", Duration = 3 })
+            end
+        end)
+    end,
+})
+
+TeleportTab:CreateSection("👥 Teleport ke Player")
+TeleportTab:CreateInput({
+    Name = "Username Target",
+    PlaceholderText = "Masukkan username player...",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Text)
+        _G.LianConfig.TeleportTarget = Text:gsub("%s+", "")
+    end,
+})
+TeleportTab:CreateButton({
+    Name = "➡️ Teleport ke Player",
+    Callback = function()
+        pcall(function()
+            local target = _G.LianConfig.TeleportTarget
+            if not target or target == "" then
+                Rayfield:Notify({ Title = "Teleport", Content = "Masukkan username dulu!", Duration = 3 })
+                return
+            end
+            for _, p in pairs(game:GetService("Players"):GetPlayers()) do
+                if p.Name:lower() == target:lower() and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    LocalPlayer.Character.HumanoidRootPart.CFrame = p.Character.HumanoidRootPart.CFrame + Vector3.new(0,3,0)
+                    Rayfield:Notify({ Title = "Teleport", Content = "Teleported ke " .. p.Name, Duration = 3 })
+                    return
+                end
+            end
+            Rayfield:Notify({ Title = "Teleport", Content = "Player tidak ditemukan!", Duration = 3 })
+        end)
+    end,
+})
+
+TeleportTab:CreateButton({
+    Name = "🎲 Teleport ke Random Player",
+    Callback = function()
+        pcall(function()
+            local players = game:GetService("Players"):GetPlayers()
+            local others = {}
+            for _, p in pairs(players) do
+                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    table.insert(others, p)
+                end
+            end
+            if #others > 0 then
+                local target = others[math.random(1, #others)]
+                LocalPlayer.Character.HumanoidRootPart.CFrame = target.Character.HumanoidRootPart.CFrame + Vector3.new(0,3,0)
+                Rayfield:Notify({ Title = "Teleport", Content = "Teleported ke " .. target.Name, Duration = 3 })
+            else
+                Rayfield:Notify({ Title = "Teleport", Content = "Tidak ada player lain!", Duration = 3 })
+            end
+        end)
+    end,
+})
+
+-- ═════════════════════════════════════════════════════════════════════
+-- TAB 6d: ESP & VISUALS (Aligned with groper99/animedice)
+-- ═════════════════════════════════════════════════════════════════════
+ESPSettingsTab:CreateSection("👁️ Player ESP")
+
+ESPSettingsTab:CreateToggle({
+    Name = "Player Name ESP",
+    CurrentValue = _G.LianConfig.PlayerESP,
+    Callback = function(Value)
+        _G.LianConfig.PlayerESP = Value
+        saveConfig()
+        -- Toggle ESP
+        for _, p in pairs(game:GetService("Players"):GetPlayers()) do
+            if p ~= LocalPlayer and p.Character then
+                local head = p.Character:FindFirstChild("Head")
+                if head then
+                    local esp = head:FindFirstChild("LianESP")
+                    if Value and not esp then
+                        local billboard = Instance.new("BillboardGui")
+                        billboard.Name = "LianESP"
+                        billboard.Size = UDim2.new(0, 100, 0, 40)
+                        billboard.StudsOffset = Vector3.new(0, 2, 0)
+                        billboard.AlwaysOnTop = true
+                        billboard.Parent = head
+                        local label = Instance.new("TextLabel")
+                        label.Size = UDim2.new(1, 0, 1, 0)
+                        label.BackgroundTransparency = 1
+                        label.TextColor3 = Color3.fromRGB(255, 255, 255)
+                        label.TextStrokeTransparency = 0
+                        label.Font = Enum.Font.GothamBold
+                        label.TextSize = 14
+                        label.Text = p.Name
+                        label.Parent = billboard
+                    elseif not Value and esp then
+                        esp:Destroy()
+                    end
+                end
+            end
+        end
+    end,
+})
+
+ESPSettingsTab:CreateSection("💡 Fullbright")
+ESPSettingsTab:CreateToggle({
+    Name = "Fullbright (Max Brightness)",
+    CurrentValue = _G.LianConfig.Fullbright,
+    Callback = function(Value)
+        _G.LianConfig.Fullbright = Value
+        saveConfig()
+        pcall(function()
+            local Lighting = game:GetService("Lighting")
+            if Value then
+                Lighting.Brightness = 2
+                Lighting.ClockTime = 14
+                Lighting.FogEnd = 100000
+                Lighting.GlobalShadows = false
+                Lighting.OutdoorAmbient = Color3.fromRGB(255,255,255)
+            else
+                Lighting.Brightness = 1
+                Lighting.GlobalShadows = true
+            end
+        end)
+    end,
+})
+
+ESPSettingsTab:CreateSection("🔄 Rejoin & Server")
+ESPSettingsTab:CreateButton({
+    Name = "🔄 Rejoin Server Sekarang",
+    Callback = function()
+        setupAutoExecuteOnTeleport()
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    end,
+})
+
+ESPSettingsTab:CreateToggle({
+    Name = "Trade Requests (On/Off)",
+    CurrentValue = _G.LianConfig.TradeRequests,
+    Callback = function(Value)
+        _G.LianConfig.TradeRequests = Value
+        saveConfig()
+        -- Try to find and toggle trade request remote
+        pcall(function()
+            local tradeRemote = getRemote("TradeService", "RE", "ToggleRequests") or getRemote("TradeService", "RF", "ToggleRequests")
+            if tradeRemote then
+                if tradeRemote:IsA("RemoteEvent") then
+                    tradeRemote:FireServer(Value)
+                elseif tradeRemote:IsA("RemoteFunction") then
+                    tradeRemote:InvokeServer(Value)
+                end
+            end
+        end)
+    end,
+})
+
+ESPSettingsTab:CreateSection("⚡ Performance")
+ESPSettingsTab:CreateToggle({
+    Name = "WalkSpeed (16-150)",
+    CurrentValue = _G.LianConfig.WalkSpeedValue > 16,
+    Callback = function(Value)
+        _G.LianConfig.WalkSpeedValue = Value and 150 or 16
+        saveConfig()
+        pcall(function()
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                LocalPlayer.Character.Humanoid.WalkSpeed = _G.LianConfig.WalkSpeedValue
+            end
+        end)
+    end,
+})
+
+ESPSettingsTab:CreateToggle({
+    Name = "JumpPower (50-250)",
+    CurrentValue = _G.LianConfig.JumpPowerValue > 50,
+    Callback = function(Value)
+        _G.LianConfig.JumpPowerValue = Value and 250 or 50
+        saveConfig()
+        pcall(function()
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                LocalPlayer.Character.Humanoid.JumpPower = _G.LianConfig.JumpPowerValue
+            end
+        end)
     end,
 })
 

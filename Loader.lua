@@ -790,9 +790,8 @@ end
 
 -- Ruthless Plot Optimizer: Equip best to plot, immediately sell all rest outside plot!
 local function equipBestPlotAndSellOutside()
-    safe(function()
-        fire(R.EquipBest)
-        task.wait(1.0)
+    fire(R.EquipBest)
+    task.wait(1.0)
 
         local dc = getDC()
         local inv = (dc and dc.Inventory and dc.Inventory()) or {}
@@ -834,14 +833,15 @@ local function equipBestPlotAndSellOutside()
                 return R.Sell:InvokeServer(sellList)
             end)
             if ok then
-                Rayfield:Notify({
-                    Title = "🧹 Auto-Sell Sukses!",
-                    Content = #sellList .. " unit di luar plot berhasil dijual!",
-                    Duration = 2.5
-                })
+                pcall(function()
+                    Rayfield:Notify({
+                        Title = "🧹 Auto-Sell Sukses!",
+                        Content = #sellList .. " unit di luar plot berhasil dijual!",
+                        Duration = 2.5
+                    })
+                end)
             end
         end
-    end)
 end
 
 local function applyPotatoMode(enable)
@@ -2100,29 +2100,16 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoUnitGrades then
-            safe(function()
-                -- Try common remote patterns for unit grading
-                -- TODO: UnitGradePick ("Best Unit"/"Equipped Unit"/"Any Unit") not yet wired — needs remote signature discovery
-                local gradeRemote = getRemote("GradeService", "RE", "Roll")
-                if gradeRemote then
-                    gradeRemote:FireServer()
-                    -- Protect high grades if enabled
-                    -- TODO: verify rolled grade matches target before protecting.
-                    -- Currently protects unconditionally after roll (may lock bad grade).
-                    if _G.LianConfig.ProtectHighGrades then
-                        local protectRemote = getRemote("GradeService", "RE", "SetGradeProtected")
-                        if protectRemote then
-                            protectRemote:FireServer(true)
-                        end
-                    end
-                    if _G.LianConfig.RollGradeOnce then
-                        _G.LianConfig.AutoUnitGrades = false
-                        saveConfig()
-                    end
-                else
-                    warn("[LianHub] AutoUnitGrades: no grade remote resolved — check game update")
+            local gradeRemote = getRemote("GradeService", "RE", "Roll")
+            if gradeRemote then
+                pcall(function() gradeRemote:FireServer() end)
+                if _G.LianConfig.RollGradeOnce then
+                    _G.LianConfig.AutoUnitGrades = false
+                    saveConfig()
                 end
-            end)
+            else
+                warn("[LianHub] AutoUnitGrades: no grade remote resolved — check game update")
+            end
             task.wait(1.0)
         else
             task.wait(0.5)
@@ -2135,16 +2122,14 @@ task.spawn(function()
     local lastBuyTime = 0
     while true do
         if _G.LianConfig.AutoBuyDice and R.BuyDice then
-            safe(function()
-                -- Throttle: max once per 5 seconds
-                if os.clock() - lastBuyTime < 5 then return end
+            if os.clock() - lastBuyTime >= 5 then
                 lastBuyTime = os.clock()
                 invoke(R.BuyDice)
                 task.wait(0.5)
                 if R.EquipDice then
                     invoke(R.EquipDice)
                 end
-            end)
+            end
         end
         task.wait(2.0)
     end
@@ -2154,17 +2139,10 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoQuirk then
-            safe(function()
-                if R.QuirkRoll then
-                    fire(R.QuirkRoll)
-                    task.wait(0.5)
-                    -- SetGradeProtected to protect the rolled grade
-                    -- TODO: verify rolled quirk matches target before protecting.
-                    if _G.LianConfig.ProtectHighGrades and R.QuirkProtect then
-                        fire(R.QuirkProtect, true)
-                    end
-                end
-            end)
+            if R.QuirkRoll then
+                fire(R.QuirkRoll)
+                task.wait(0.5)
+            end
         end
         task.wait(1.0)
     end
@@ -2189,10 +2167,10 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoPotions then
-            safe(function()
+            local queue = {}
+            pcall(function()
                 local dc = getDC()
                 local inv = (dc and dc.Inventory and dc.Inventory()) or {}
-                local queue = {}
                 for key, e in pairs(inv) do
                     if e and (e.amount or 0) > 0 then
                         local name = tostring(e.name or key)
@@ -2209,12 +2187,12 @@ task.spawn(function()
                         end
                     end
                 end
-                for _, p in ipairs(queue) do
-                    if not _G.LianConfig.AutoPotions then break end
-                    fire(R.Boost, p.key)
-                    task.wait(0.2)
-                end
             end)
+            for _, p in ipairs(queue) do
+                if not _G.LianConfig.AutoPotions then break end
+                fire(R.Boost, p.key)
+                task.wait(0.2)
+            end
             task.wait(3)
         else
             task.wait(1)
@@ -2226,17 +2204,18 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoRebirth then
-            safe(function()
-                local canRebirth, curCash, cost = canAffordRebirth()
-                if canRebirth then
-                    fire(R.Rebirth)
-                    pcall(function()
-                        Rayfield:Notify({ Title = "Rebirth Sukses!", Content = "Uang cukup ($" .. math.floor(curCash) .. "). Rebirth diproses!", Duration = 3 })
-                    end)
-                    task.wait(1.5)
-                    fire(R.EquipBest)
-                end
+            local canRebirth, curCash = false, 0
+            pcall(function()
+                canRebirth, curCash = canAffordRebirth()
             end)
+            if canRebirth then
+                fire(R.Rebirth)
+                pcall(function()
+                    Rayfield:Notify({ Title = "Rebirth Sukses!", Content = "Uang cukup ($" .. math.floor(curCash) .. "). Rebirth diproses!", Duration = 3 })
+                end)
+                task.wait(1.5)
+                fire(R.EquipBest)
+            end
             task.wait(1.5)
         else
             task.wait(1)
@@ -2247,36 +2226,40 @@ end)
 -- 5. Rebirth Stats Allocation Worker (Zero Spam — Poin > 0 Baru Up)
 task.spawn(function()
     while true do
-        if _G.LianConfig.AutoAllocStats then
-        safe(function()
-            local pts = getAvailableStatPoints()
-            if pts > 0 and R.AddStat then
-                local prio = _G.LianConfig.RebirthStatPriority
-                local statList = {}
-                if prio:find("Balance") then statList = {"Money", "Luck", "Damage", "Health", "Speed"}
-                elseif prio:find("Money") then statList = {"Money"}
-                elseif prio:find("Luck") then statList = {"Luck"}
-                elseif prio:find("Damage") then statList = {"Damage"}
-                elseif prio:find("Health") then statList = {"Health"}
-                elseif prio:find("Speed") then statList = {"Speed"}
-                end
-                local dc = getDC()
-                local spentT = table.clone((dc and dc.RebirthStats and dc.RebirthStats()) or {})
-                for _ = 1, math.min(pts, 15) do
-                    local pick, low = nil, math.huge
-                    for _, name in ipairs(statList) do
-                        local cur = spentT[name] or 0
-                        if cur < low then
-                            pick, low = name, cur
-                        end
+        if _G.LianConfig.AutoAllocStats and R.AddStat then
+            local toAdd = {}
+            pcall(function()
+                local pts = getAvailableStatPoints()
+                if pts > 0 then
+                    local prio = _G.LianConfig.RebirthStatPriority
+                    local statList = {}
+                    if prio:find("Balance") then statList = {"Money", "Luck", "Damage", "Health", "Speed"}
+                    elseif prio:find("Money") then statList = {"Money"}
+                    elseif prio:find("Luck") then statList = {"Luck"}
+                    elseif prio:find("Damage") then statList = {"Damage"}
+                    elseif prio:find("Health") then statList = {"Health"}
+                    elseif prio:find("Speed") then statList = {"Speed"}
                     end
-                    if not pick then break end
-                    spentT[pick] = low + 1
-                    fire(R.AddStat, pick)
-                    task.wait(0.15)
+                    local dc = getDC()
+                    local spentT = table.clone((dc and dc.RebirthStats and dc.RebirthStats()) or {})
+                    for _ = 1, math.min(pts, 15) do
+                        local pick, low = nil, math.huge
+                        for _, name in ipairs(statList) do
+                            local cur = spentT[name] or 0
+                            if cur < low then
+                                pick, low = name, cur
+                            end
+                        end
+                        if not pick then break end
+                        spentT[pick] = low + 1
+                        table.insert(toAdd, pick)
+                    end
                 end
+            end)
+            for _, statName in ipairs(toAdd) do
+                fire(R.AddStat, statName)
+                task.wait(0.15)
             end
-        end)
         end
         task.wait(2)
     end
@@ -2286,7 +2269,7 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoBuyTreeUpgrades then
-            safe(buyUpgradesTree)
+            buyUpgradesTree()
             task.wait(2.5)
         else
             task.wait(1)
@@ -2298,36 +2281,34 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.SmartTowerAI or _G.LianConfig.AutoTower then
-            safe(function()
-                if _G.LianConfig.AutoEquipTowerTeam then
-                    fire(R.BestTeam)
+            if _G.LianConfig.AutoEquipTowerTeam then
+                fire(R.BestTeam)
+                task.wait(1)
+            end
+            local towerName = _G.LianConfig.TowerType
+            if _G.LianConfig.SmartTowerAI then
+                local towers = {"The Abyss", "Bell Tower", "Attic", "Crypt", "Foyer", "Front Yard"}
+                towerName = towers[math.random(1, #towers)]
+            end
+            if R.PlayTower then
+                local resStart = invoke(R.PlayTower, towerName)
+                if resStart then
                     task.wait(1)
-                end
-                local towerName = _G.LianConfig.TowerType
-                if _G.LianConfig.SmartTowerAI then
-                    local towers = {"The Abyss", "Bell Tower", "Attic", "Crypt", "Foyer", "Front Yard"}
-                    towerName = towers[math.random(1, #towers)]
-                end
-                if R.PlayTower then
-                    local resStart = invoke(R.PlayTower, towerName)
-                    if resStart then
-                        task.wait(1)
-                        for floor = 1, 50 do
-                            if not (_G.LianConfig.SmartTowerAI or _G.LianConfig.AutoTower) then break end
-                            local resSeq = invoke(R.FloorTower)
-                            if not resSeq or resSeq == "destroyed" then break end
-                            if type(resSeq) == "table" then
-                                local ended = false
-                                for _, a in ipairs(resSeq) do
-                                    if a.action == "ended" then ended = true end
-                                end
-                                if ended then break end
+                    for floor = 1, 50 do
+                        if not (_G.LianConfig.SmartTowerAI or _G.LianConfig.AutoTower) then break end
+                        local resSeq = invoke(R.FloorTower)
+                        if not resSeq or resSeq == "destroyed" then break end
+                        if type(resSeq) == "table" then
+                            local ended = false
+                            for _, a in ipairs(resSeq) do
+                                if a.action == "ended" then ended = true end
                             end
-                            task.wait(0.3)
+                            if ended then break end
                         end
+                        task.wait(0.3)
                     end
                 end
-            end)
+            end
             task.wait(5.5)
         else
             task.wait(1)
@@ -2373,13 +2354,11 @@ task.spawn(function()
             safe(function() fire(R.Spin) end)
         end
         if _G.LianConfig.AutoRedeemCodes then
-            safe(function()
-                local codes = {"RELEASE", "HALLOWEEN", "LUCK", "UPDATE", "SUB2DEV", "ANIME", "DICE", "PUMPKIN"}
-                for _, c in ipairs(codes) do
-                    fire(R.Code, c)
-                    task.wait(0.2)
-                end
-            end)
+            local codes = {"RELEASE", "HALLOWEEN", "LUCK", "UPDATE", "SUB2DEV", "ANIME", "DICE", "PUMPKIN"}
+            for _, c in ipairs(codes) do
+                fire(R.Code, c)
+                task.wait(0.2)
+            end
         end
         task.wait(10)
     end
@@ -2389,7 +2368,7 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoEquipBestPlotAndSellRest then
-            safe(equipBestPlotAndSellOutside)
+            equipBestPlotAndSellOutside()
             task.wait(3.5)
         else
             task.wait(1)
@@ -2401,27 +2380,27 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoTrickOrTreat then
-            safe(function()
-                local map = Workspace:FindFirstChild("Halloween") or Workspace:FindFirstChild("Map")
-                local doors = map and (map:FindFirstChild("Doors") or map:FindFirstChild("TrickOrTreat"))
-                if doors and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                    local hrp = LocalPlayer.Character.HumanoidRootPart
-                    local oldCFrame = hrp.CFrame
-                    for _, d in ipairs(doors:GetChildren()) do
-                        if not _G.LianConfig.AutoTrickOrTreat then break end
-                        if d:IsA("Model") or d:IsA("BasePart") then
+            local map = Workspace:FindFirstChild("Halloween") or Workspace:FindFirstChild("Map")
+            local doors = map and (map:FindFirstChild("Doors") or map:FindFirstChild("TrickOrTreat"))
+            if doors and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                local hrp = LocalPlayer.Character.HumanoidRootPart
+                local oldCFrame = hrp.CFrame
+                for _, d in ipairs(doors:GetChildren()) do
+                    if not _G.LianConfig.AutoTrickOrTreat then break end
+                    if d:IsA("Model") or d:IsA("BasePart") then
+                        pcall(function()
                             local pivot = d:GetPivot()
                             hrp.CFrame = pivot * CFrame.new(0, 2, 3)
-                            task.wait(0.4)
-                            fire(R.TrickKnock, d.Name)
-                            task.wait(0.2)
-                            fire(R.TrickLand, d.Name)
-                            task.wait(0.3)
-                        end
+                        end)
+                        task.wait(0.4)
+                        fire(R.TrickKnock, d.Name)
+                        task.wait(0.2)
+                        fire(R.TrickLand, d.Name)
+                        task.wait(0.3)
                     end
-                    hrp.CFrame = oldCFrame
                 end
-            end)
+                pcall(function() hrp.CFrame = oldCFrame end)
+            end
             task.wait(5)
         else
             task.wait(1)
@@ -2462,7 +2441,7 @@ end)
 pcall(function()
     if R.TradeEvent then
         R.TradeEvent.OnClientEvent:Connect(function(event, data)
-            pcall(function()
+            task.spawn(function()
                 if not _G.LianConfig.AutoTradeFeeder then return end
                 local master = _G.LianConfig.MasterAccount
                 if not master or master == "" then return end

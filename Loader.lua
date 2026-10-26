@@ -87,6 +87,9 @@ task.spawn(function()
 end)
 
 
+-- Guard: ensure _G.LianConfig exists before any on-load reference
+_G.LianConfig = _G.LianConfig or {}
+
 -- Connect CharacterAdded for all existing players (ESP on respawn)
 for _, existingPlr in pairs(game:GetService("Players"):GetPlayers()) do
     if existingPlr ~= LocalPlayer then
@@ -843,7 +846,7 @@ GuiService.ErrorMessageChanged:Connect(function(msg)
             setupAutoExecuteOnTeleport()
             task.wait(5)
             pcall(function()
-                TeleportService.Teleport(TeleportService, game.PlaceId, LocalPlayer)
+                TeleportService:Teleport(game.PlaceId, LocalPlayer)
             end)
             isReconnecting = false
         end
@@ -1894,13 +1897,13 @@ ServerTab:CreateToggle({
             local hopped = false
             for _, s in ipairs(res.data) do
                 if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
-                    pcall(function() TeleportService.TeleportToPlaceInstance(TeleportService, placeId, s.id, LocalPlayer) end)
+                    pcall(function() TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer) end)
                     hopped = true
                     break
                 end
             end
             if not hopped then
-                pcall(function() TeleportService.Teleport(TeleportService, placeId, LocalPlayer) end)
+                pcall(function() TeleportService:Teleport(placeId, LocalPlayer) end)
             end
         end
         task.spawn(function()
@@ -2150,7 +2153,8 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoRollHalloween then
-            local rollCount = _G.LianConfig.HalloweenRollOption:find("100") and 1 or 5
+            local opt = _G.LianConfig.HalloweenRollOption or ""
+            local rollCount = opt:find("100") and 1 or 5
             invoke(R.PumpkinRoll, rollCount)
             task.wait(0.35)
         else
@@ -2484,16 +2488,22 @@ task.spawn(function()
                 if raw then
                     ok, res = pcall(function() return HttpService:JSONDecode(raw) end)
                 end
+                local hopped = false
                 if ok and res and res.data then
                     for _, s in ipairs(res.data) do
                         if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
-                            pcall(function() TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer) end)
-                            task.wait(5)
-                            return
+                            local hopOk = pcall(function() TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer) end)
+                            if hopOk then
+                                hopped = true
+                                task.wait(5)
+                                return
+                            end
                         end
                     end
                 end
-                pcall(function() TeleportService:Teleport(placeId, LocalPlayer) end)
+                if not hopped then
+                    pcall(function() TeleportService:Teleport(placeId, LocalPlayer) end)
+                end
             end
             task.wait(5)
         else

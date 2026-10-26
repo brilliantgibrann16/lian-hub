@@ -238,8 +238,8 @@ createBtn("Test Roll", UDim2.new(0, 160, 0, 405), UDim2.new(0, 140, 0, 28), Colo
                 local rollDice = rf:FindFirstChild("RollDice")
                 if rollDice then
                     addLine("Found RollDice remote: " .. rollDice:GetFullName())
-                    local ok, res = pcall(function() return rollDice:InvokeServer() end)
-                    addLine("InvokeServer result: " .. tostring(ok) .. " | " .. tostring(res))
+                    local res = rollDice:InvokeServer()
+                    addLine("InvokeServer result: true | " .. tostring(res))
                 else
                     addLine("RollDice not found in RF!")
                 end

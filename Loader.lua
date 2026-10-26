@@ -74,6 +74,35 @@ task.spawn(function()
     end
 end)
 
+-- Connect CharacterAdded for all existing players (ESP on respawn)
+for _, existingPlr in pairs(game:GetService("Players"):GetPlayers()) do
+    if existingPlr ~= LocalPlayer then
+        existingPlr.CharacterAdded:Connect(function(char)
+            task.wait(1)
+            if _G.LianConfig.PlayerESP then
+                local head = char:FindFirstChild("Head")
+                if head and not head:FindFirstChild("LianESP") then
+                    local billboard = Instance.new("BillboardGui")
+                    billboard.Name = "LianESP"
+                    billboard.Size = UDim2.new(0, 100, 0, 40)
+                    billboard.StudsOffset = Vector3.new(0, 2, 0)
+                    billboard.AlwaysOnTop = true
+                    billboard.Parent = head
+                    local label = Instance.new("TextLabel")
+                    label.Size = UDim2.new(1, 0, 1, 0)
+                    label.BackgroundTransparency = 1
+                    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    label.TextStrokeTransparency = 0
+                    label.Font = Enum.Font.GothamBold
+                    label.TextSize = 14
+                    label.Text = existingPlr.Name
+                    label.Parent = billboard
+                end
+            end
+        end)
+    end
+end
+
 -- Apply ESP to newly joined players
 game:GetService("Players").PlayerAdded:Connect(function(p)
     if p == LocalPlayer then return end
@@ -219,14 +248,6 @@ local function checkGameUpdates()
     local results = {}
     local function check(name, ok)
         table.insert(results, (ok and "✅ " or "❌ ") .. name)
-    end
-    local function safeCheck(name, fn)
-        local ok, val = pcall(fn)
-        if not ok then
-            table.insert(results, "❌ " .. name .. " (ERROR: " .. tostring(val) .. ")")
-            return
-        end
-        table.insert(results, (val and "✅ " or "❌ ") .. name)
     end
 
     -- Wrap all checks in pcall to catch any runtime error
@@ -480,17 +501,6 @@ local function saveConfig()
 end
 
 local function loadConfig()
--- Apply saved visual settings on load
-pcall(function()
-    if _G.LianConfig.Fullbright then
-        local Lighting = game:GetService("Lighting")
-        Lighting.Brightness = 2
-        Lighting.ClockTime = 14
-        Lighting.FogEnd = 100000
-        Lighting.GlobalShadows = false
-        Lighting.OutdoorAmbient = Color3.fromRGB(255,255,255)
-    end
-end)
     pcall(function()
         if isfile and isfile(CONFIG_FILE) and readfile then
             local data = HttpService:JSONDecode(readfile(CONFIG_FILE))
@@ -506,6 +516,18 @@ end)
     _G.LianConfig.ServerLuckHop = false
 end
 loadConfig()
+
+-- Apply saved visual settings on load (after config loaded)
+pcall(function()
+    if _G.LianConfig.Fullbright then
+        local Lighting = game:GetService("Lighting")
+        Lighting.Brightness = 2
+        Lighting.ClockTime = 14
+        Lighting.FogEnd = 100000
+        Lighting.GlobalShadows = false
+        Lighting.OutdoorAmbient = Color3.fromRGB(255,255,255)
+    end
+end)
 
 -- 7. Calculation & Game Data Helpers
 local function parseFormattedNumber(str)
@@ -1304,7 +1326,7 @@ PlotTab:CreateToggle({
 })
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 6b: UNIT GRADES (Aligned with groper99/animedice)
+-- TAB 6b: UNIT GRADES (name-aligned with groper99/animedice; behavior unverified — reference is obfuscated)
 -- ═════════════════════════════════════════════════════════════════════
 GradesTab:CreateSection("🧬 Auto Roll Unit Grades")
 
@@ -1373,8 +1395,26 @@ GradesTab:CreateToggle({
     end,
 })
 
+GradesTab:CreateToggle({
+    Name = "Auto-Sell Shiny Units (Override Protect)",
+    CurrentValue = _G.LianConfig.AutoSellShiny,
+    Callback = function(Value)
+        _G.LianConfig.AutoSellShiny = Value
+        saveConfig()
+    end,
+})
+
+GradesTab:CreateToggle({
+    Name = "Auto-Sell Haunted Units (Override Protect)",
+    CurrentValue = _G.LianConfig.AutoSellHaunted,
+    Callback = function(Value)
+        _G.LianConfig.AutoSellHaunted = Value
+        saveConfig()
+    end,
+})
+
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 6c: TELEPORT (Aligned with groper99/animedice)
+-- TAB 6c: TELEPORT (name-aligned with groper99/animedice; behavior unverified — reference is obfuscated)
 -- ═════════════════════════════════════════════════════════════════════
 TeleportTab:CreateSection("📍 Teleport Destinations")
 
@@ -1515,7 +1555,7 @@ TeleportTab:CreateButton({
 })
 
 -- ═════════════════════════════════════════════════════════════════════
--- TAB 6d: ESP & VISUALS (Aligned with groper99/animedice)
+-- TAB 6d: ESP & VISUALS (name-aligned with groper99/animedice; behavior unverified — reference is obfuscated)
 -- ═════════════════════════════════════════════════════════════════════
 ESPSettingsTab:CreateSection("👁️ Player ESP")
 
@@ -1609,29 +1649,37 @@ ESPSettingsTab:CreateToggle({
 })
 
 ESPSettingsTab:CreateSection("⚡ Performance")
-ESPSettingsTab:CreateToggle({
+ESPSettingsTab:CreateSlider({
     Name = "WalkSpeed (16-150)",
-    CurrentValue = _G.LianConfig.WalkSpeedValue > 16,
+    Range = {16, 150},
+    Increment = 1,
+    Suffix = "ws",
+    CurrentValue = _G.LianConfig.WalkSpeedValue or 16,
+    Flag = "WalkSpeedSlider",
     Callback = function(Value)
-        _G.LianConfig.WalkSpeedValue = Value and 150 or 16
+        _G.LianConfig.WalkSpeedValue = Value
         saveConfig()
         pcall(function()
             if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-                LocalPlayer.Character.Humanoid.WalkSpeed = _G.LianConfig.WalkSpeedValue
+                LocalPlayer.Character.Humanoid.WalkSpeed = Value
             end
         end)
     end,
 })
 
-ESPSettingsTab:CreateToggle({
+ESPSettingsTab:CreateSlider({
     Name = "JumpPower (50-250)",
-    CurrentValue = _G.LianConfig.JumpPowerValue > 50,
+    Range = {50, 250},
+    Increment = 1,
+    Suffix = "jp",
+    CurrentValue = _G.LianConfig.JumpPowerValue or 50,
+    Flag = "JumpPowerSlider",
     Callback = function(Value)
-        _G.LianConfig.JumpPowerValue = Value and 250 or 50
+        _G.LianConfig.JumpPowerValue = Value
         saveConfig()
         pcall(function()
             if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-                LocalPlayer.Character.Humanoid.JumpPower = _G.LianConfig.JumpPowerValue
+                LocalPlayer.Character.Humanoid.JumpPower = Value
             end
         end)
     end,

@@ -196,11 +196,10 @@ local R = {}
 local function getRemote(svc, kind, name)
     if not NET then return nil end
     local folder = svc and NET:FindFirstChild(svc) or NET
-    if not folder then folder = svc and NET:WaitForChild(svc, 4) or NET end
     if not folder then return nil end
-    local sub = folder:FindFirstChild(kind) or folder:WaitForChild(kind, 4)
+    local sub = folder:FindFirstChild(kind)
     if not sub then return nil end
-    return sub:FindFirstChild(name) or sub:WaitForChild(name, 4)
+    return sub:FindFirstChild(name)
 end
 
 R.Roll = getRemote("RollService", "RF", "RollDice")
@@ -458,7 +457,6 @@ _G.LianConfig = {
     AutoBuyTreeUpgrades = false,
     AutoEquipBestPlotAndSellRest = false,
     AutoQuirk = false,
-    QuirkTarget = "Prodigy",
     ServerLuckHop = false,
     AutoTradeFeeder = false,
     MasterAccount = "",
@@ -856,8 +854,9 @@ if okRay and rayLib then
 end
 
 if not Rayfield then
-    warn("[Lian Hub] Rayfield tidak dapat dimuat. Pastikan koneksi internet aktif.")
-    return
+    warn("[Lian Hub] Rayfield tidak dapat dimuat. Pastikan koneksi internet aktif. Workers tetap jalan (headless mode).")
+    -- Stub so all Rayfield:Notify / CreateWindow call sites become no-ops instead of crashing workers.
+    Rayfield = { Notify = function() end, CreateWindow = function() return nil end }
 end
 
 local Window
@@ -998,16 +997,6 @@ FarmTab:CreateToggle({
 
 
 FarmTab:CreateSection("✨ Quirk Reroll Hunter")
-
-FarmTab:CreateDropdown({
-    Name = "Target Quirk (Reroll Sampai Dapat)",
-    Options = {"Prodigy", "Fortune's Favor", "Collector", "Golden Touch"},
-    CurrentOption = _G.LianConfig.QuirkTarget,
-    Callback = function(Option)
-        _G.LianConfig.QuirkTarget = type(Option) == "table" and Option[1] or Option
-        saveConfig()
-    end,
-})
 
 FarmTab:CreateToggle({
     Name = "Auto Reroll Quirk (Auto Stop Pas Target)",
@@ -1858,7 +1847,7 @@ RebirthTab:CreateToggle({
         CurrentValue = false,
         Callback = function(Value)
             if not Value then return end
-        equipBestPlotAndSellOutside()
+        pcall(equipBestPlotAndSellOutside)
         task.spawn(function()
             task.wait(0.5)
             pcall(function() _tg:Set(false) end)
@@ -1895,14 +1884,18 @@ ServerTab:CreateToggle({
             ok, res = pcall(function() return HttpService:JSONDecode(raw) end)
         end
         if ok and res and res.data then
+            local hopped = false
             for _, s in ipairs(res.data) do
                 if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
                     pcall(function() TeleportService.TeleportToPlaceInstance(TeleportService, placeId, s.id, LocalPlayer) end)
+                    hopped = true
                     break
                 end
             end
+            if not hopped then
+                pcall(function() TeleportService.Teleport(TeleportService, placeId, LocalPlayer) end)
+            end
         end
-        pcall(function() TeleportService.Teleport(TeleportService, placeId, LocalPlayer) end)
         task.spawn(function()
             task.wait(0.5)
             pcall(function() _tg:Set(false) end)
@@ -2047,10 +2040,10 @@ PlayerTab:CreateToggle({
     end,
 })
 RunService.Stepped:Connect(function()
-    if _G.LianConfig.Noclip and LocalPlayer.Character then
+    if LocalPlayer.Character then
         for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
             if part:IsA("BasePart") then
-                part.CanCollide = false
+                part.CanCollide = _G.LianConfig.Noclip and false or true
             end
         end
     end
@@ -2068,9 +2061,7 @@ task.spawn(function()
     while true do
         if _G.LianConfig.AutoRoll then
             fire(R.SetAutoRoll, true)
-            task.spawn(function()
-                invoke(R.Roll)
-            end)
+            invoke(R.Roll)
             task.wait(_G.LianConfig.FastRoll and 0.08 or 0.3)
         else
             fire(R.SetAutoRoll, false)
@@ -2134,7 +2125,7 @@ task.spawn(function()
             if R.QuirkRoll then
                 fire(R.QuirkRoll)
                 -- Protect gating: only protect if target quirk obtained (behavior unverified)
-                if _G.LianConfig.QuirkTarget and _G.LianConfig.ProtectHighGrades then
+                if _G.LianConfig.ProtectHighGrades then
                     local protectRemote = getRemote("GradeService", "RE", "SetGradeProtected")
                     if protectRemote then
                         task.wait(0.3) -- wait for server to assign quirk
@@ -2152,10 +2143,8 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoRollHalloween then
-            safe(function()
-                local rollCount = _G.LianConfig.HalloweenRollOption:find("100") and 1 or 5
-                invoke(R.PumpkinRoll, rollCount)
-            end)
+            local rollCount = _G.LianConfig.HalloweenRollOption:find("100") and 1 or 5
+            invoke(R.PumpkinRoll, rollCount)
             task.wait(0.35)
         else
             task.wait(0.5)
@@ -2269,7 +2258,7 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoBuyTreeUpgrades then
-            buyUpgradesTree()
+            pcall(buyUpgradesTree)
             task.wait(2.5)
         else
             task.wait(1)
@@ -2368,7 +2357,7 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoEquipBestPlotAndSellRest then
-            equipBestPlotAndSellOutside()
+            pcall(equipBestPlotAndSellOutside)
             task.wait(3.5)
         else
             task.wait(1)
@@ -2477,29 +2466,28 @@ end)
 task.spawn(function()
     while true do
         if _G.LianConfig.ServerLuckHop then
-            safe(function()
-                local dc = getDC()
-                local weather = (dc and dc.Weather and dc.Weather()) or ""
-                if weather ~= "Bloodmoon" and weather ~= "Eclipse" and weather ~= "Full Moon" then
-                    setupAutoExecuteOnTeleport()
-                    local placeId = game.PlaceId
-                    local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
-                    local raw = game:HttpGet(apiUrl)
-                    local ok, res = false, nil
-                    if raw then
-                        ok, res = pcall(function() return HttpService:JSONDecode(raw) end)
-                    end
-                    if ok and res and res.data then
-                        for _, s in ipairs(res.data) do
-                            if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
-                                TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
-                                return
-                            end
+            local dc = getDC()
+            local weather = (dc and dc.Weather and dc.Weather()) or ""
+            if weather ~= "Bloodmoon" and weather ~= "Eclipse" and weather ~= "Full Moon" then
+                setupAutoExecuteOnTeleport()
+                local placeId = game.PlaceId
+                local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
+                local raw = game:HttpGet(apiUrl)
+                local ok, res = false, nil
+                if raw then
+                    ok, res = pcall(function() return HttpService:JSONDecode(raw) end)
+                end
+                if ok and res and res.data then
+                    for _, s in ipairs(res.data) do
+                        if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
+                            pcall(function() TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer) end)
+                            task.wait(5)
+                            return
                         end
                     end
-                    TeleportService:Teleport(placeId, LocalPlayer)
                 end
-            end)
+                pcall(function() TeleportService:Teleport(placeId, LocalPlayer) end)
+            end
             task.wait(5)
         else
             task.wait(2)

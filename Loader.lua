@@ -759,10 +759,10 @@ local function equipBestPlotAndSellOutside()
                     if isHaunted and _G.LianConfig.ProtectHaunted and not _G.LianConfig.AutoSellHaunted then skip = true end
                     -- Protect high grades
                     if _G.LianConfig.ProtectHighGrades then
-                        local gradeOrder = {Rare=1, Epic=2, Legendary=3, Mythic=4, Secret=5, Celestial=6}
-                        local grade = gradeOrder[tostring(item.Grade or item.grade or "")] or 0
+                        local gradeOrder = {rare=1, epic=2, legendary=3, mythic=4, secret=5, celestial=6}
+                        local grade = gradeOrder[tostring(item.Grade or item.grade or ""):lower()] or 0
                         local gradeTarget = _G.LianConfig.UnitGradeTarget or "Celestial"
-                        local targetLevel = gradeOrder[gradeTarget] or 6
+                        local targetLevel = gradeOrder[gradeTarget:lower()] or 6
                         if grade >= targetLevel then skip = true end
                     end
                 end
@@ -822,7 +822,10 @@ GuiService.ErrorMessageChanged:Connect(function(msg)
             isReconnecting = true
             setupAutoExecuteOnTeleport()
             task.wait(5)
-            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+            pcall(function()
+                TeleportService:Teleport(game.PlaceId, LocalPlayer)
+            end)
+            isReconnecting = false
         end
     end
 end)
@@ -1968,10 +1971,13 @@ end)
 
 -- Auto Buy Dice + Auto Equip Best Dice Worker
 task.spawn(function()
+    local lastBuyTime = 0
     while true do
         if _G.LianConfig.AutoRoll and R.BuyDice then
             safe(function()
-                -- Buy the selected dice type
+                -- Throttle: max once per 5 seconds
+                if tick() - lastBuyTime < 5 then return end
+                lastBuyTime = tick()
                 invoke(R.BuyDice)
                 task.wait(0.5)
                 if R.EquipDice then

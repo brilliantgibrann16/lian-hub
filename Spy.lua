@@ -190,13 +190,20 @@ local function updateUI(latest)
     if latest then
         StatusBadge.Text = "Tertangkap: " .. latest:sub(1, 60) .. "..."
     end
+    -- TextBox rewrite deferred to flushLog (debounced, called by Copy button)
+end
+
+local lastFlush = 0
+local function flushLog()
+    if os.clock() - lastFlush < 0.5 then return end
+    lastFlush = os.clock()
     TextBox.Text = table.concat(liveLogs, "\n")
-    -- I/O (setclipboard/writefile) deferred to Copy button only — per-remote I/O freezes Solara
 end
 
 CopyBtn.MouseButton1Click:Connect(function()
     CopyBtn.Text = "Copying..."
     task.spawn(function()
+        flushLog() -- flush pending logs to TextBox before copy
         pcall(function()
             if setclipboard then setclipboard(getFullLog()) end
         end)

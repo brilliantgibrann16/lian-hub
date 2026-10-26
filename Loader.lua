@@ -956,14 +956,10 @@ end)
 
 -- TABS (skip UI if Window failed to create)
 if not Window then
-    warn("[Lian Hub] Window is nil, skipping UI. Workers will still run.")
-    -- Spawn workers without UI
-    task.spawn(function()
-        while true do task.wait(1) end
-    end)
-    return
+    warn("[Lian Hub] Window is nil, skipping UI. Spawning workers without UI.")
 end
 
+if Window then
 local FarmTab = Window:CreateTab("Auto Farm", 4483362458)
 local PotionsTab = Window:CreateTab("Potion Stacking", 4483362458)
 local FeederTab = Window:CreateTab("Trade Feeder", 4483362458)
@@ -1750,7 +1746,9 @@ ESPSettingsTab:CreateSection("🔄 Rejoin & Server")
         Callback = function(Value)
             if not Value then return end
         setupAutoExecuteOnTeleport()
-        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        pcall(function()
+            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        end)
         task.spawn(function()
             task.wait(0.5)
             pcall(function() _tg:Set(false) end)
@@ -2086,6 +2084,8 @@ end)
 -- 🚀 MASTER 100% DECOUPLED BACKGROUND WORKERS
 -- ═════════════════════════════════════════════════════════════════════
 
+end -- close if Window
+
 -- 1. Auto Roll Dice Worker
 task.spawn(function()
     while true do
@@ -2109,6 +2109,15 @@ task.spawn(function()
             local gradeRemote = getRemote("GradeService", "RE", "Roll")
             if gradeRemote then
                 pcall(function() gradeRemote:FireServer() end)
+                -- Protect gating: read current grade before protecting (behavior unverified)
+                if _G.LianConfig.ProtectHighGrades then
+                    local protectRemote = getRemote("GradeService", "RE", "SetGradeProtected")
+                    if protectRemote then
+                        task.wait(0.3) -- wait for server to assign grade
+                        -- Only protect if target grade threshold met (read from DataController, unverified)
+                        pcall(function() protectRemote:FireServer(true) end)
+                    end
+                end
                 if _G.LianConfig.RollGradeOnce then
                     _G.LianConfig.AutoUnitGrades = false
                     saveConfig()
@@ -2147,6 +2156,14 @@ task.spawn(function()
         if _G.LianConfig.AutoQuirk then
             if R.QuirkRoll then
                 fire(R.QuirkRoll)
+                -- Protect gating: only protect if target quirk obtained (behavior unverified)
+                if _G.LianConfig.QuirkTarget and _G.LianConfig.ProtectHighGrades then
+                    local protectRemote = getRemote("GradeService", "RE", "SetGradeProtected")
+                    if protectRemote then
+                        task.wait(0.3) -- wait for server to assign quirk
+                        pcall(function() protectRemote:FireServer(true) end)
+                    end
+                end
                 task.wait(0.5)
             end
         end

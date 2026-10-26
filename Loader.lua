@@ -58,18 +58,67 @@ task.spawn(function()
             VirtualUser:CaptureController()
             VirtualUser:ClickButton2(Vector2.new(math.random(0, 100), math.random(0, 100)))
         end)
-        -- Also wiggle character slightly to prevent idle kick
+        -- Also wiggle character slightly to prevent idle kick (guard: skip if custom speed set or non-normal state)
         pcall(function()
             if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
                 local hum = LocalPlayer.Character.Humanoid
-                local oldWS = hum.WalkSpeed
-                hum.WalkSpeed = oldWS + 0.01
-                task.wait(0.05)
-                hum.WalkSpeed = oldWS
+                if hum.Health > 0 and hum:GetState() == Enum.HumanoidStateType.Running then
+                    local oldWS = hum.WalkSpeed
+                    hum.WalkSpeed = oldWS + 0.01
+                    task.wait(0.05)
+                    hum.WalkSpeed = oldWS
+                end
             end
         end)
         task.wait(60)
     end
+end)
+
+-- Apply ESP to newly joined players
+game:GetService("Players").PlayerAdded:Connect(function(p)
+    if p == LocalPlayer then return end
+    p.CharacterAdded:Connect(function(char)
+        task.wait(1)
+        if _G.LianConfig.PlayerESP then
+            local head = char:FindFirstChild("Head")
+            if head and not head:FindFirstChild("LianESP") then
+                local billboard = Instance.new("BillboardGui")
+                billboard.Name = "LianESP"
+                billboard.Size = UDim2.new(0, 100, 0, 40)
+                billboard.StudsOffset = Vector3.new(0, 2, 0)
+                billboard.AlwaysOnTop = true
+                billboard.Parent = head
+                local label = Instance.new("TextLabel")
+                label.Size = UDim2.new(1, 0, 1, 0)
+                label.BackgroundTransparency = 1
+                label.TextColor3 = Color3.fromRGB(255, 255, 255)
+                label.TextStrokeTransparency = 0
+                label.Font = Enum.Font.GothamBold
+                label.TextSize = 14
+                label.Text = p.Name
+                label.Parent = billboard
+            end
+        end
+    end)
+end)
+
+-- Reapply visual/movement settings on respawn
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(1)
+    pcall(function()
+        if _G.LianConfig.Fullbright then
+            local Lighting = game:GetService("Lighting")
+            Lighting.Brightness = 2
+            Lighting.ClockTime = 14
+            Lighting.FogEnd = 100000
+            Lighting.GlobalShadows = false
+            Lighting.OutdoorAmbient = Color3.fromRGB(255,255,255)
+        end
+        if char:FindFirstChild("Humanoid") then
+            char.Humanoid.WalkSpeed = _G.LianConfig.WalkSpeedValue or 16
+            char.Humanoid.JumpPower = _G.LianConfig.JumpPowerValue or 50
+        end
+    end)
 end)
 
 -- 2. Teleport Auto-Execute Queue
@@ -646,7 +695,17 @@ local function equipBestPlotAndSellOutside()
         local sellList = {}
         for key, item in pairs(inv) do
             if not plotted[key] then
-                table.insert(sellList, key)
+                local skip = false
+                -- Protect Shiny/Haunted units unless explicitly allowed
+                if type(item) == "table" then
+                    local isShiny = item.Shiny == true or item.shiny == true or tostring(item.Trait or ""):lower():find("shiny")
+                    local isHaunted = item.Haunted == true or item.haunted == true or tostring(item.Trait or ""):lower():find("haunted")
+                    if isShiny and _G.LianConfig.ProtectShiny and not _G.LianConfig.AutoSellShiny then skip = true end
+                    if isHaunted and _G.LianConfig.ProtectHaunted and not _G.LianConfig.AutoSellHaunted then skip = true end
+                end
+                if not skip then
+                    table.insert(sellList, key)
+                end
             end
         end
 

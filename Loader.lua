@@ -410,13 +410,11 @@ local CONFIG_FILE = "LianHub_AnimeDice_Config.json"
 
 _G.LianConfig = {
     AutoRoll = false,
+    AutoBuyDice = false,
     FastRoll = false,
     AutoRollHalloween = false,
     HalloweenRollOption = "500 Labu (5x Rolls)",
-    AutoSkipTutorial = false,
-    LeaveOnTarget = false,
-    TargetRolls = 1000,
-    AutoPotions = false,
+                AutoPotions = false,
     PotionUseLuck = true,
     PotionUseIncome = true,
     PotionUseDamage = true,
@@ -438,6 +436,7 @@ _G.LianConfig = {
     AutoClaimOffline = true,
     AutoLuckySpin = true,
     AutoRebirth = false,
+    AutoAllocStats = true,
     RebirthStatPriority = "Balance / Rata (Money, Luck, Damage, Health, Speed)",
     AutoBuyTreeUpgrades = false,
     AutoEquipBestPlotAndSellRest = true,
@@ -449,8 +448,7 @@ _G.LianConfig = {
     TradeMythic = true,
     TradeSecret = true,
     DiscordWebhook = "",
-    WebhookDrops = false,
-    AutoReconnect = true,
+        AutoReconnect = true,
     Disable3DRendering = false,
     ExtremePotatoMode = false,
     TargetFPS = 30,
@@ -953,14 +951,7 @@ FarmTab:CreateToggle({
     end,
 })
 
-FarmTab:CreateToggle({
-    Name = "Auto Skip Tutorial (Semua Langkah 1-13)",
-    CurrentValue = _G.LianConfig.AutoSkipTutorial,
-    Callback = function(Value)
-        _G.LianConfig.AutoSkipTutorial = Value
-        saveConfig()
-    end,
-})
+
 
 FarmTab:CreateSection("✨ Quirk Reroll Hunter")
 
@@ -983,28 +974,7 @@ FarmTab:CreateToggle({
     end,
 })
 
-FarmTab:CreateSection("🚪 Auto Disconnect Tuyul")
 
-FarmTab:CreateToggle({
-    Name = "Leave Game Saat Mencapai Target Rolls",
-    CurrentValue = _G.LianConfig.LeaveOnTarget,
-    Callback = function(Value)
-        _G.LianConfig.LeaveOnTarget = Value
-        saveConfig()
-    end,
-})
-
-FarmTab:CreateSlider({
-    Name = "Target Rolls (Tuyul Otomatis DC)",
-    Range = {100, 50000},
-    Increment = 100,
-    Suffix = " Rolls",
-    CurrentValue = _G.LianConfig.TargetRolls,
-    Callback = function(Value)
-        _G.LianConfig.TargetRolls = Value
-        saveConfig()
-    end,
-})
 
 -- ═════════════════════════════════════════════════════════════════════
 -- TAB 2: POTION STACKING & SELECTOR
@@ -1787,15 +1757,6 @@ WebhookTab:CreateInput({
     end,
 })
 
-WebhookTab:CreateToggle({
-    Name = "Kirim Notifikasi Drop (Mythic / Secret / Prodigy)",
-    CurrentValue = _G.LianConfig.WebhookDrops,
-    Callback = function(Value)
-        _G.LianConfig.WebhookDrops = Value
-        saveConfig()
-    end,
-})
-
 local function sendDiscordWebhook(title, desc, color)
     local url = _G.LianConfig.DiscordWebhook
     if not url or url == "" or not url:find("http") then return end
@@ -1973,11 +1934,11 @@ end)
 task.spawn(function()
     local lastBuyTime = 0
     while true do
-        if _G.LianConfig.AutoRoll and R.BuyDice then
+        if _G.LianConfig.AutoBuyDice and R.BuyDice then
             safe(function()
                 -- Throttle: max once per 5 seconds
-                if tick() - lastBuyTime < 5 then return end
-                lastBuyTime = tick()
+                if os.clock() - lastBuyTime < 5 then return end
+                lastBuyTime = os.clock()
                 invoke(R.BuyDice)
                 task.wait(0.5)
                 if R.EquipDice then
@@ -2081,6 +2042,7 @@ end)
 -- 5. Rebirth Stats Allocation Worker (Zero Spam — Poin > 0 Baru Up)
 task.spawn(function()
     while true do
+        if _G.LianConfig.AutoAllocStats then
         safe(function()
             local pts = getAvailableStatPoints()
             if pts > 0 and R.AddStat then
@@ -2110,6 +2072,7 @@ task.spawn(function()
                 end
             end
         end)
+        end
         task.wait(2)
     end
 end)
@@ -2294,32 +2257,34 @@ end)
 pcall(function()
     if R.TradeEvent then
         R.TradeEvent.OnClientEvent:Connect(function(event, data)
-            if not _G.LianConfig.AutoTradeFeeder then return end
-            local master = _G.LianConfig.MasterAccount
-            if not master or master == "" then return end
-            if event == "Request" and data and data.player then
-                if data.player.Name:lower() == master:lower() then
-                    fire(R.TradeResp, true)
-                    Rayfield:Notify({ Title = "Trade Diterima!", Content = "Trade otomatis dari Akun Utama: " .. data.player.Name, Duration = 4 })
-                else
-                    fire(R.TradeResp, false)
-                end
-            elseif event == "Started" then
-                task.wait(0.5)
-                local dc = getDC()
-                local inv = (dc and dc.Inventory and dc.Inventory()) or {}
-                for key, unit in pairs(inv) do
-                    local rarity = unit.rarity or (unit.attrs and unit.attrs.rarity) or ""
-                    if (_G.LianConfig.TradeMythic and rarity == "Mythic") or (_G.LianConfig.TradeSecret and rarity == "Secret") then
-                        fire(R.TradeOffer, key, 1)
-                        task.wait(0.2)
+            pcall(function()
+                if not _G.LianConfig.AutoTradeFeeder then return end
+                local master = _G.LianConfig.MasterAccount
+                if not master or master == "" then return end
+                if event == "Request" and data and data.player then
+                    if data.player.Name:lower() == master:lower() then
+                        fire(R.TradeResp, true)
+                        Rayfield:Notify({ Title = "Trade Diterima!", Content = "Trade otomatis dari Akun Utama: " .. data.player.Name, Duration = 4 })
+                    else
+                        fire(R.TradeResp, false)
                     end
+                elseif event == "Started" then
+                    task.wait(0.5)
+                    local dc = getDC()
+                    local inv = (dc and dc.Inventory and dc.Inventory()) or {}
+                    for key, unit in pairs(inv) do
+                        local rarity = unit.rarity or (unit.attrs and unit.attrs.rarity) or ""
+                        if (_G.LianConfig.TradeMythic and rarity == "Mythic") or (_G.LianConfig.TradeSecret and rarity == "Secret") then
+                            fire(R.TradeOffer, key, 1)
+                            task.wait(0.2)
+                        end
+                    end
+                    task.wait(0.5)
+                    fire(R.TradeAdv)
+                    task.wait(3.2)
+                    fire(R.TradeAdv)
                 end
-                task.wait(0.5)
-                fire(R.TradeAdv)
-                task.wait(3.2)
-                fire(R.TradeAdv)
-            end
+            end)
         end)
     end
 end)

@@ -12,7 +12,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/brilliantgibrann16/li
 
 ## ✨ Features
 - **100% Keyless**: No Linkvertise, no Discord requirement, no paywalls.
-- **Anime Dice Auto Farm**: Auto Roll Dice, Fast Roll, Equip Best, Auto Collect Plot Money, Auto Claim Quests (Daily & Weekly).
+- **Anime Dice Auto Farm**: Auto Roll Dice, Fast Roll, Equip Best, Auto Collect Plot Money, Auto Claim Daily Rewards, Auto Halloween Quests.
 - **Universal Player Controls**: Custom WalkSpeed, JumpPower, Infinite Jump, Noclip (Walk through walls).
 - **Visuals & ESP**: Player Chams/ESP, Fullbright.
-- **Server Utilities**: Instant Rejoin, Server Hop, FPS Potato Booster, Built-in Anti-AFK.
+- **Server Utilities**: Instant Rejoin, Weather-Gated Server Hop, FPS Potato Booster, Built-in Anti-AFK (permanent).

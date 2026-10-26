@@ -179,6 +179,16 @@ createBtn("Workspace", UDim2.new(0, 460, 0, 370), UDim2.new(0, 140, 0, 28), Colo
         addLine(string.format("   %s: %s", name, obj and obj:GetFullName() or "MISSING"))
     end
     addLine("")
+    addLine("=== Map folder children (teleport destinations) ===")
+    local map = workspace:FindFirstChild("Map")
+    if map then
+        for _, child in ipairs(map:GetChildren()) do
+            addLine("   " .. child.Name .. " (" .. child.ClassName .. ")")
+        end
+    else
+        addLine("   Map folder not found!")
+    end
+    addLine("")
     addLine("=== Plots folder children ===")
     local plots = workspace:FindFirstChild("Plots")
     if plots then

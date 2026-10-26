@@ -1403,9 +1403,14 @@ TeleportTab:CreateButton({
     Name = "🏠 Teleport ke Plot Sendiri",
     Callback = function()
         pcall(function()
-            local plot = workspace:FindFirstChild("Plots") and workspace.Plots:FindFirstChild(LocalPlayer.Name)
-            if plot and plot:FindFirstChild("Spawn") then
-                LocalPlayer.Character.HumanoidRootPart.CFrame = plot.Spawn.CFrame + Vector3.new(0,3,0)
+            local plot = findMyPlot()
+            if plot then
+                local spawn = plot:FindFirstChild("Spawn") or plot:FindFirstChildWhichIsA("SpawnLocation")
+                if spawn then
+                    LocalPlayer.Character.HumanoidRootPart.CFrame = spawn.CFrame + Vector3.new(0,3,0)
+                else
+                    LocalPlayer.Character.HumanoidRootPart.CFrame = plot:GetPivot() + Vector3.new(0,3,0)
+                end
             else
                 Rayfield:Notify({ Title = "Teleport", Content = "Plot tidak ditemukan!", Duration = 3 })
             end
@@ -1986,11 +1991,8 @@ task.spawn(function()
                 if R.QuirkRoll then
                     invoke(R.QuirkRoll)
                     task.wait(0.5)
-                    -- Check if target quirk obtained (best-effort)
-                    -- If QuirkProtect available, protect the target
-                    if R.QuirkProtect and _G.LianConfig.QuirkTarget then
-                        invoke(R.QuirkProtect, true)
-                    end
+                    -- QuirkProtect only when target quirk obtained (needs remote spy to verify match)
+                    -- TODO: gate on target quirk match before calling QuirkProtect
                 end
             end)
         end

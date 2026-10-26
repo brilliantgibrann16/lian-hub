@@ -77,34 +77,6 @@ task.spawn(function()
     end
 end)
 
--- Apply ESP to existing players' characters on load (not just on respawn)
-_G.LianConfig = _G.LianConfig or {}
-if _G.LianConfig.PlayerESP then
-    for _, existingPlr in pairs(game:GetService("Players"):GetPlayers()) do
-        if existingPlr ~= LocalPlayer and existingPlr.Character then
-            local head = existingPlr.Character:FindFirstChild("Head")
-            if head and not head:FindFirstChild("LianESP") then
-                pcall(function()
-                    local billboard = Instance.new("BillboardGui")
-                    billboard.Name = "LianESP"
-                    billboard.Size = UDim2.new(0, 100, 0, 40)
-                    billboard.StudsOffset = Vector3.new(0, 2, 0)
-                    billboard.AlwaysOnTop = true
-                    billboard.Parent = head
-                    local label = Instance.new("TextLabel")
-                    label.Size = UDim2.new(1, 0, 1, 0)
-                    label.BackgroundTransparency = 1
-                    label.TextColor3 = Color3.fromRGB(255, 255, 255)
-                    label.TextStrokeTransparency = 0
-                    label.Font = Enum.Font.GothamBold
-                    label.TextSize = 14
-                    label.Text = existingPlr.Name
-                    label.Parent = billboard
-                end)
-            end
-        end
-    end
-end
 
 -- Connect CharacterAdded for all existing players (ESP on respawn)
 for _, existingPlr in pairs(game:GetService("Players"):GetPlayers()) do
@@ -163,28 +135,6 @@ game:GetService("Players").PlayerAdded:Connect(function(p)
     end)
 end)
 
--- Apply Fullbright on load (not just on respawn)
-_G.LianConfig = _G.LianConfig or {}
-if _G.LianConfig.Fullbright then
-    pcall(function()
-        local Lighting = game:GetService("Lighting")
-        Lighting.Brightness = 2
-        Lighting.ClockTime = 14
-        Lighting.FogEnd = 100000
-        Lighting.GlobalShadows = false
-        Lighting.OutdoorAmbient = Color3.fromRGB(255,255,255)
-    end)
-end
-
--- Apply WalkSpeed/JumpPower on load
-_G.LianConfig = _G.LianConfig or {}
-pcall(function()
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("Humanoid") then
-        char.Humanoid.WalkSpeed = _G.LianConfig.WalkSpeedValue or 16
-        char.Humanoid.JumpPower = _G.LianConfig.JumpPowerValue or 50
-    end
-end)
 
 -- Reapply visual/movement settings on respawn
 LocalPlayer.CharacterAdded:Connect(function(char)
@@ -481,7 +431,6 @@ _G.LianConfig = {
     PotionUseSpeed = false,
     PotionUseHalloween = true,
     PotionUseTower = true,
-    AutoSpin = false,
     AutoTrickOrTreat = false,
     AutoHalloweenQuestClaim = false,  -- renamed from AutoHalloweenDoors
     AutoPumpkinPass = false,
@@ -1146,14 +1095,7 @@ PotionsTab:CreateToggle({
     end,
 })
 
-PotionsTab:CreateToggle({
-    Name = "Auto Spin Lucky Spin (Free)",
-    CurrentValue = _G.LianConfig.AutoSpin,
-    Callback = function(Value)
-        _G.LianConfig.AutoSpin = Value
-        saveConfig()
-    end,
-})
+
 
 -- ═════════════════════════════════════════════════════════════════════
 -- TAB 3: AUTO TRADE FEEDER (TRANSFER KE AKUN UTAMA)
@@ -1277,7 +1219,8 @@ TowerTab:CreateToggle({
     end,
 })
 
-    local _tg = TowerTab:CreateToggle({
+    local _tg
+    _tg = TowerTab:CreateToggle({
         Name = "🔥 Force Equip Best Tower Team Sekarang",
         CurrentValue = false,
         Callback = function(Value)
@@ -1317,7 +1260,8 @@ TowerTab:CreateToggle({
 -- ═════════════════════════════════════════════════════════════════════
 PlotTab:CreateSection("💰 Plot Management")
 
-    local _tg = PlotTab:CreateToggle({
+    local _tg
+    _tg = PlotTab:CreateToggle({
         Name = "🔍 Check Game Updates (Diagnose Broken Features)",
         CurrentValue = false,
         Callback = function(Value)
@@ -1495,7 +1439,8 @@ GradesTab:CreateToggle({
 -- ═════════════════════════════════════════════════════════════════════
 TeleportTab:CreateSection("📍 Teleport Destinations")
 
-    local _tg = TeleportTab:CreateToggle({
+    local _tg
+    _tg = TeleportTab:CreateToggle({
         Name = "🏠 Teleport ke Plot Sendiri",
         CurrentValue = false,
         Callback = function(Value)
@@ -1520,7 +1465,8 @@ TeleportTab:CreateSection("📍 Teleport Destinations")
     end,
 })
 
-    local _tg = TeleportTab:CreateToggle({
+    local _tg
+    _tg = TeleportTab:CreateToggle({
         Name = "🎲 Teleport ke Dice Shop",
         CurrentValue = false,
         Callback = function(Value)
@@ -1540,7 +1486,8 @@ TeleportTab:CreateSection("📍 Teleport Destinations")
     end,
 })
 
-    local _tg = TeleportTab:CreateToggle({
+    local _tg
+    _tg = TeleportTab:CreateToggle({
         Name = "🔄 Teleport ke Rebirth Station",
         CurrentValue = false,
         Callback = function(Value)
@@ -1560,7 +1507,8 @@ TeleportTab:CreateSection("📍 Teleport Destinations")
     end,
 })
 
-    local _tg = TeleportTab:CreateToggle({
+    local _tg
+    _tg = TeleportTab:CreateToggle({
         Name = "🧬 Teleport ke Fusing Station",
         CurrentValue = false,
         Callback = function(Value)
@@ -1580,7 +1528,8 @@ TeleportTab:CreateSection("📍 Teleport Destinations")
     end,
 })
 
-    local _tg = TeleportTab:CreateToggle({
+    local _tg
+    _tg = TeleportTab:CreateToggle({
         Name = "📋 Teleport ke Quest Board",
         CurrentValue = false,
         Callback = function(Value)
@@ -1600,7 +1549,8 @@ TeleportTab:CreateSection("📍 Teleport Destinations")
     end,
 })
 
-    local _tg = TeleportTab:CreateToggle({
+    local _tg
+    _tg = TeleportTab:CreateToggle({
         Name = "🎒 Teleport ke Backpack / Inventory",
         CurrentValue = false,
         Callback = function(Value)
@@ -1629,7 +1579,8 @@ TeleportTab:CreateInput({
         _G.LianConfig.TeleportTarget = Text:gsub("%s+", "")
     end,
 })
-    local _tg = TeleportTab:CreateToggle({
+    local _tg
+    _tg = TeleportTab:CreateToggle({
         Name = "➡️ Teleport ke Player",
         CurrentValue = false,
         Callback = function(Value)
@@ -1656,7 +1607,8 @@ TeleportTab:CreateInput({
     end,
 })
 
-    local _tg = TeleportTab:CreateToggle({
+    local _tg
+    _tg = TeleportTab:CreateToggle({
         Name = "🎲 Teleport ke Random Player",
         CurrentValue = false,
         Callback = function(Value)
@@ -1750,7 +1702,8 @@ ESPSettingsTab:CreateToggle({
 })
 
 ESPSettingsTab:CreateSection("🔄 Rejoin & Server")
-    local _tg = ESPSettingsTab:CreateToggle({
+    local _tg
+    _tg = ESPSettingsTab:CreateToggle({
         Name = "🔄 Rejoin Server Sekarang",
         CurrentValue = false,
         Callback = function(Value)
@@ -1878,7 +1831,8 @@ RebirthTab:CreateToggle({
     end,
 })
 
-    local _tg = RebirthTab:CreateToggle({
+    local _tg
+    _tg = RebirthTab:CreateToggle({
         Name = "⚡ Equip Best ke Plot & Jual Semua di Luar Plot Sekarang",
         CurrentValue = false,
         Callback = function(Value)
@@ -1905,7 +1859,8 @@ ServerTab:CreateToggle({
     end,
 })
 
-    local _tg = ServerTab:CreateToggle({
+    local _tg
+    _tg = ServerTab:CreateToggle({
         Name = "🔄 Force Hop ke Server Lain Sekarang",
         CurrentValue = false,
         Callback = function(Value)
@@ -1970,7 +1925,8 @@ local function sendDiscordWebhook(title, desc, color)
     end)
 end
 
-    local _tg = WebhookTab:CreateToggle({
+    local _tg
+    _tg = WebhookTab:CreateToggle({
         Name = "🔔 Test Kirim Webhook Sekarang",
         CurrentValue = false,
         Callback = function(Value)

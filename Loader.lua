@@ -265,8 +265,8 @@ R.HalloweenPath = getRemote("HalloweenService", "RE", "ClaimAllPath")
 R.HalloweenQuest = getRemote("HalloweenQuestService", "RE", "Claim")
 R.TrickKnock = getRemote("TrickOrTreatService", "RE", "Knocked")
 R.TrickLand = getRemote("TrickOrTreatService", "RE", "Landed")
-R.QuirkRoll = getRemote("QuirkService", "RE", "Roll")
-R.QuirkProtect = getRemote("QuirkService", "RE", "SetQuirkProtected")
+R.QuirkRoll = getRemote("GradeService", "RE", "Roll")
+R.QuirkProtect = getRemote("GradeService", "RE", "SetGradeProtected")
 R.TradeReq = getRemote("TradeService", "RE", "RequestTrade")
 R.TradeResp = getRemote("TradeService", "RE", "RespondToRequest")
 R.TradeOffer = getRemote("TradeService", "RE", "ChangeOffer")
@@ -344,8 +344,9 @@ local function checkGameUpdates()
             {"HalloweenService","RE","ClaimAllPath"}, {"HalloweenQuestService","RE","Claim"},
             {"BoostService","RE","Use"}, {"SpinService","RE","Use"},
             {"DailyRewardService","RE","Claim"}, {"OfflineEarningsService","RE","Claim"},
-            {"CodesService","RE","RedeemCode"}, {"QuirkService","RE","Roll"},
-            {"TradeService","RE","RequestTrade"}, {"TradeService","RE","TradeEvent"},
+            {"CodesService","RE","RedeemCode"}, {"GradeService","RE","Roll"},
+            {"GradeService","RE","SetGradeProtected"}, {"TradeService","RE","RequestTrade"},
+            {"TradeService","RE","TradeEvent"}, {"TradeService","RE","SetTradeRequestsEnabled"},
         }
         for _, s in ipairs(services) do
             local svc = net:FindFirstChild(s[1])
@@ -1509,7 +1510,7 @@ TeleportTab:CreateButton({
     Name = "🎲 Teleport ke Dice Shop",
     Callback = function()
         pcall(function()
-            local shop = workspace:FindFirstChild("DiceShop") or workspace:FindFirstChild("Shop")
+            local shop = workspace:FindFirstChild("DiceShop") or workspace:FindFirstChild("Shop") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("DiceShop"))
             if shop then
                 LocalPlayer.Character.HumanoidRootPart.CFrame = shop:GetPivot() + Vector3.new(0,3,0)
             else
@@ -1523,7 +1524,7 @@ TeleportTab:CreateButton({
     Name = "🔄 Teleport ke Rebirth Station",
     Callback = function()
         pcall(function()
-            local rebirth = workspace:FindFirstChild("Rebirth") or workspace:FindFirstChild("RebirthStation")
+            local rebirth = workspace:FindFirstChild("Rebirth") or workspace:FindFirstChild("RebirthStation") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Rebirth"))
             if rebirth then
                 LocalPlayer.Character.HumanoidRootPart.CFrame = rebirth:GetPivot() + Vector3.new(0,3,0)
             else
@@ -1537,7 +1538,7 @@ TeleportTab:CreateButton({
     Name = "🧬 Teleport ke Fusing Station",
     Callback = function()
         pcall(function()
-            local fuse = workspace:FindFirstChild("Fusing") or workspace:FindFirstChild("Fuse")
+            local fuse = workspace:FindFirstChild("Fusing") or workspace:FindFirstChild("Fuse") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Fusing"))
             if fuse then
                 LocalPlayer.Character.HumanoidRootPart.CFrame = fuse:GetPivot() + Vector3.new(0,3,0)
             else
@@ -1551,7 +1552,7 @@ TeleportTab:CreateButton({
     Name = "📋 Teleport ke Quest Board",
     Callback = function()
         pcall(function()
-            local q = workspace:FindFirstChild("Quests") or workspace:FindFirstChild("QuestBoard")
+            local q = workspace:FindFirstChild("Quests") or workspace:FindFirstChild("QuestBoard") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Quests"))
             if q then
                 LocalPlayer.Character.HumanoidRootPart.CFrame = q:GetPivot() + Vector3.new(0,3,0)
             else
@@ -1565,7 +1566,7 @@ TeleportTab:CreateButton({
     Name = "🎒 Teleport ke Backpack / Inventory",
     Callback = function()
         pcall(function()
-            local bp = workspace:FindFirstChild("Backpack") or workspace:FindFirstChild("Inventory")
+            local bp = workspace:FindFirstChild("Backpack") or workspace:FindFirstChild("Inventory") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Backpack"))
             if bp then
                 LocalPlayer.Character.HumanoidRootPart.CFrame = bp:GetPivot() + Vector3.new(0,3,0)
             else
@@ -1709,7 +1710,7 @@ ESPSettingsTab:CreateToggle({
         saveConfig()
         -- Try to find and toggle trade request remote
         pcall(function()
-            local tradeRemote = getRemote("TradeService", "RE", "ToggleRequests") or getRemote("TradeService", "RF", "ToggleRequests")
+            local tradeRemote = getRemote("TradeService", "RE", "SetTradeRequestsEnabled")
             if tradeRemote then
                 if tradeRemote:IsA("RemoteEvent") then
                     tradeRemote:FireServer(Value)
@@ -2022,12 +2023,15 @@ task.spawn(function()
             safe(function()
                 -- Try common remote patterns for unit grading
                 -- TODO: UnitGradePick ("Best Unit"/"Equipped Unit"/"Any Unit") not yet wired — needs remote signature discovery
-                local gradeRemote = getRemote("UnitService", "RF", "RollGrade") or getRemote("GradeService", "RF", "Roll") or getRemote("UnitService", "RE", "RollGrade")
+                local gradeRemote = getRemote("GradeService", "RE", "Roll")
                 if gradeRemote then
-                    if gradeRemote:IsA("RemoteFunction") then
-                        gradeRemote:InvokeServer()
-                    elseif gradeRemote:IsA("RemoteEvent") then
-                        gradeRemote:FireServer()
+                    gradeRemote:FireServer()
+                    -- Protect high grades if enabled
+                    if _G.LianConfig.ProtectHighGrades then
+                        local protectRemote = getRemote("GradeService", "RE", "SetGradeProtected")
+                        if protectRemote then
+                            protectRemote:FireServer(true)
+                        end
                     end
                     if _G.LianConfig.RollGradeOnce then
                         _G.LianConfig.AutoUnitGrades = false
@@ -2070,10 +2074,12 @@ task.spawn(function()
         if _G.LianConfig.AutoQuirk then
             safe(function()
                 if R.QuirkRoll then
-                    invoke(R.QuirkRoll)
+                    fire(R.QuirkRoll)
                     task.wait(0.5)
-                    -- QuirkProtect only when target quirk obtained (needs remote spy to verify match)
-                    -- TODO: gate on target quirk match before calling QuirkProtect
+                    -- SetGradeProtected to protect the rolled grade
+                    if _G.LianConfig.ProtectHighGrades and R.QuirkProtect then
+                        fire(R.QuirkProtect, true)
+                    end
                 end
             end)
         end

@@ -73,8 +73,13 @@ TextBox.Text = "=== Click a button below to scan ===\n"
 TextBox.Parent = Frame
 
 local function addLine(text)
-    TextBox.Text = TextBox.Text .. text .. "\n"
+    -- Don't update TextBox on every line (causes lag). Collect in logs, update at end.
+    table.insert(logs, text)
     print(text)
+end
+
+local function flushLog()
+    TextBox.Text = table.concat(logs, "\n")
 end
 
 local function clearLog()
@@ -98,6 +103,7 @@ local function createBtn(name, pos, size, color, callback)
         btn.Text = "Scanning..."
         callback()
         btn.Text = name
+        flushLog()
     end)
     return btn
 end

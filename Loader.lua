@@ -919,7 +919,7 @@ if not parentGui then
 end
 if not parentGui then
     warn("[Lian Hub] No GUI parent available. UI cannot be created.")
-end
+else
     local oldBtn = parentGui:FindFirstChild("LianHubFloatingBtn")
     if oldBtn then oldBtn:Destroy() end
 
@@ -967,6 +967,8 @@ end
             end
         end
     end)
+
+end
 
 -- TABS (skip UI if Window failed to create)
 if not Window then

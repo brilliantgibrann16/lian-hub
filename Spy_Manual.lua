@@ -24,7 +24,12 @@ end
 local _guiParent = nil
 if type(gethui) == "function" then pcall(function() _guiParent = gethui() end) end
 if not _guiParent then pcall(function() _guiParent = game.CoreGui end) end
-if not _guiParent then pcall(function() _guiParent = LocalPlayer:WaitForChild("PlayerGui", 5) end) end
+if not _guiParent then
+    _guiParent = LocalPlayer:FindFirstChild("PlayerGui")
+    if not _guiParent then
+        _guiParent = LocalPlayer:WaitForChild("PlayerGui", 5)
+    end
+end
 
 -- Create UI
 local ScreenGui = Instance.new("ScreenGui")

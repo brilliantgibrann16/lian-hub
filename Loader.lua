@@ -773,9 +773,8 @@ local function equipBestPlotAndSellOutside()
                     if _G.LianConfig.ProtectHighGrades then
                         local gradeOrder = {rare=1, epic=2, legendary=3, mythic=4, secret=5, celestial=6}
                         local grade = gradeOrder[tostring(item.Grade or item.grade or ""):lower()] or 0
-                        local gradeTarget = _G.LianConfig.UnitGradeTarget or "Celestial"
-                        local targetLevel = gradeOrder[gradeTarget:lower()] or 6
-                        if grade >= targetLevel then skip = true end
+                        -- Protect Mythic+ (grade >= 4) regardless of grading target
+                        if grade >= 4 then skip = true end
                     end
                 end
                 if not skip then
@@ -808,14 +807,16 @@ local function applyPotatoMode(enable)
             Lighting.Brightness = 1
         end)
         for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj:IsA("BasePart") then
-                obj.Material = Enum.Material.SmoothPlastic
-                obj.CastShadow = false
-            elseif obj:IsA("Decal") then
-                obj.Transparency = 1
-            elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
-                obj.Enabled = false
-            end
+            pcall(function()
+                if obj:IsA("BasePart") then
+                    obj.Material = Enum.Material.SmoothPlastic
+                    obj.CastShadow = false
+                elseif obj:IsA("Decal") then
+                    obj.Transparency = 1
+                elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                    obj.Enabled = false
+                end
+            end)
         end
     else
         pcall(function() if setfpscap then setfpscap(60) end end)
@@ -2091,7 +2092,9 @@ task.spawn(function()
                 local canRebirth, curCash, cost = canAffordRebirth()
                 if canRebirth then
                     fire(R.Rebirth)
-                    Rayfield:Notify({ Title = "Rebirth Sukses!", Content = "Uang cukup ($" .. math.floor(curCash) .. "). Rebirth diproses!", Duration = 3 })
+                    pcall(function()
+                        Rayfield:Notify({ Title = "Rebirth Sukses!", Content = "Uang cukup ($" .. math.floor(curCash) .. "). Rebirth diproses!", Duration = 3 })
+                    end)
                     task.wait(1.5)
                     fire(R.EquipBest)
                 end
@@ -2391,8 +2394,10 @@ if _G.LianConfig.Disable3DRendering then
     pcall(function() RunService:Set3dRenderingEnabled(false) end)
 end
 
-Rayfield:Notify({
-    Title = "⚡ Lian Hub v6.3 Ready!",
-    Content = "Master Exploit Suite aktif! Gunakan tombol [⚡ Lian Hub] atau RightControl untuk hide/show.",
-    Duration = 5
-})
+pcall(function()
+    Rayfield:Notify({
+        Title = "⚡ Lian Hub v6.3 Ready!",
+        Content = "Master Exploit Suite aktif! Gunakan tombol [⚡ Lian Hub] atau RightControl untuk hide/show.",
+        Duration = 5
+    })
+end)

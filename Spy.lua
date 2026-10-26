@@ -191,15 +191,7 @@ local function updateUI(latest)
         StatusBadge.Text = "Tertangkap: " .. latest:sub(1, 60) .. "..."
     end
     TextBox.Text = table.concat(liveLogs, "\n")
-    -- Non-blocking I/O (don't freeze on every remote)
-    task.spawn(function()
-        pcall(function()
-            if setclipboard then setclipboard(getFullLog()) end
-        end)
-        pcall(function()
-            if writefile then writefile("LianSpy_LiveDump.txt", getFullLog()) end
-        end)
-    end)
+    -- I/O (setclipboard/writefile) deferred to Copy button only — per-remote I/O freezes Solara
 end
 
 CopyBtn.MouseButton1Click:Connect(function()

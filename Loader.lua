@@ -1397,6 +1397,9 @@ GradesTab:CreateDropdown({
     end,
 })
 
+-- NOTE: UnitGradeTarget stored but NOT consumed by AutoUnitGrades worker.
+-- GradeService.RE.Roll takes no args (server auto-picks). Name-aligned, behavior unverified.
+
 GradesTab:CreateDropdown({
     Name = "Pick Unit (Grade Target)",
     Options = {"Best Unit", "Equipped Unit", "Any Unit"},
@@ -1406,6 +1409,9 @@ GradesTab:CreateDropdown({
         saveConfig()
     end,
 })
+
+-- NOTE: UnitGradePick stored but NOT consumed by AutoUnitGrades worker.
+-- GradeService.RE.Roll takes no args (server auto-picks). Name-aligned, behavior unverified.
 
 GradesTab:CreateToggle({
     Name = "Auto Protect High Grades (Jangan Jual)",
@@ -1501,7 +1507,11 @@ TeleportTab:CreateSection("📍 Teleport Destinations")
         pcall(function()
         local shop = workspace:FindFirstChild("DiceShop") or workspace:FindFirstChild("Shop") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("DiceShop"))
         if shop then
-        LocalPlayer.Character.HumanoidRootPart.CFrame = shop:GetPivot() + Vector3.new(0,3,0)
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            LocalPlayer.Character.HumanoidRootPart.CFrame = shop:GetPivot() + Vector3.new(0,3,0)
+        else
+            pcall(function() Rayfield:Notify({ Title = "Teleport", Content = "Character not ready, coba lagi.", Duration = 3 }) end)
+        end
         else
         Rayfield:Notify({ Title = "Teleport", Content = "Dice Shop tidak ditemukan!", Duration = 3 })
         end
@@ -1522,7 +1532,11 @@ TeleportTab:CreateSection("📍 Teleport Destinations")
         pcall(function()
         local rebirth = workspace:FindFirstChild("Rebirth") or workspace:FindFirstChild("RebirthStation") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Rebirth"))
         if rebirth then
-        LocalPlayer.Character.HumanoidRootPart.CFrame = rebirth:GetPivot() + Vector3.new(0,3,0)
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            LocalPlayer.Character.HumanoidRootPart.CFrame = rebirth:GetPivot() + Vector3.new(0,3,0)
+        else
+            pcall(function() Rayfield:Notify({ Title = "Teleport", Content = "Character not ready, coba lagi.", Duration = 3 }) end)
+        end
         else
         Rayfield:Notify({ Title = "Teleport", Content = "Rebirth Station tidak ditemukan!", Duration = 3 })
         end
@@ -1543,7 +1557,11 @@ TeleportTab:CreateSection("📍 Teleport Destinations")
         pcall(function()
         local fuse = workspace:FindFirstChild("Fusing") or workspace:FindFirstChild("Fuse") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Fusing"))
         if fuse then
-        LocalPlayer.Character.HumanoidRootPart.CFrame = fuse:GetPivot() + Vector3.new(0,3,0)
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            LocalPlayer.Character.HumanoidRootPart.CFrame = fuse:GetPivot() + Vector3.new(0,3,0)
+        else
+            pcall(function() Rayfield:Notify({ Title = "Teleport", Content = "Character not ready, coba lagi.", Duration = 3 }) end)
+        end
         else
         Rayfield:Notify({ Title = "Teleport", Content = "Fusing Station tidak ditemukan!", Duration = 3 })
         end
@@ -1564,7 +1582,11 @@ TeleportTab:CreateSection("📍 Teleport Destinations")
         pcall(function()
         local q = workspace:FindFirstChild("Quests") or workspace:FindFirstChild("QuestBoard") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Quests"))
         if q then
-        LocalPlayer.Character.HumanoidRootPart.CFrame = q:GetPivot() + Vector3.new(0,3,0)
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            LocalPlayer.Character.HumanoidRootPart.CFrame = q:GetPivot() + Vector3.new(0,3,0)
+        else
+            pcall(function() Rayfield:Notify({ Title = "Teleport", Content = "Character not ready, coba lagi.", Duration = 3 }) end)
+        end
         else
         Rayfield:Notify({ Title = "Teleport", Content = "Quest Board tidak ditemukan!", Duration = 3 })
         end
@@ -1585,7 +1607,11 @@ TeleportTab:CreateSection("📍 Teleport Destinations")
         pcall(function()
         local bp = workspace:FindFirstChild("Backpack") or workspace:FindFirstChild("Inventory") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Backpack"))
         if bp then
-        LocalPlayer.Character.HumanoidRootPart.CFrame = bp:GetPivot() + Vector3.new(0,3,0)
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            LocalPlayer.Character.HumanoidRootPart.CFrame = bp:GetPivot() + Vector3.new(0,3,0)
+        else
+            pcall(function() Rayfield:Notify({ Title = "Teleport", Content = "Character not ready, coba lagi.", Duration = 3 }) end)
+        end
         else
         Rayfield:Notify({ Title = "Teleport", Content = "Backpack tidak ditemukan!", Duration = 3 })
         end

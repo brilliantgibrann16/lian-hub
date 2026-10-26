@@ -62,7 +62,7 @@ task.spawn(function()
         pcall(function()
             if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
                 local hum = LocalPlayer.Character.Humanoid
-                if hum.Health > 0 and hum:GetState() == Enum.HumanoidStateType.Running then
+                if hum.Health > 0 and hum:GetState() ~= Enum.HumanoidStateType.Dead and hum:GetState() ~= Enum.HumanoidStateType.Jumping and hum:GetState() ~= Enum.HumanoidStateType.Freefall then
                     local oldWS = hum.WalkSpeed
                     hum.WalkSpeed = oldWS + 0.01
                     task.wait(0.05)
@@ -427,8 +427,6 @@ _G.LianConfig = {
     AutoTrickOrTreat = false,
     AutoHalloweenQuestClaim = false,  -- renamed from AutoHalloweenDoors
     AutoPumpkinPass = false,
-    AutoCandyShop = false,
-    CandyShopItem = "Pumpkin Egg",
     AutoTower = false,
     SmartTowerAI = false,
     AutoEquipTowerTeam = true,
@@ -436,16 +434,12 @@ _G.LianConfig = {
     AutoCollectCash = false,
     AutoLevelUpSlots = false,
     AutoDailyReward = false,
-    AutoQuests = false,
     AutoRedeemCodes = false,
     AutoClaimOffline = true,
     AutoLuckySpin = true,
-    AutoTicketShop = false,
-    TicketShopItem = "Clover",
     AutoRebirth = false,
     RebirthStatPriority = "Balance / Rata (Money, Luck, Damage, Health, Speed)",
     AutoBuyTreeUpgrades = false,
-    AutoBuyBestDice = false,
     AutoEquipBestPlotAndSellRest = true,
     AutoQuirk = false,
     QuirkTarget = "Prodigy",
@@ -526,6 +520,30 @@ pcall(function()
         Lighting.FogEnd = 100000
         Lighting.GlobalShadows = false
         Lighting.OutdoorAmbient = Color3.fromRGB(255,255,255)
+    end
+    if _G.LianConfig.PlayerESP then
+        for _, plr in pairs(game:GetService("Players"):GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Character then
+                local head = plr.Character:FindFirstChild("Head")
+                if head and not head:FindFirstChild("LianESP") then
+                    local billboard = Instance.new("BillboardGui")
+                    billboard.Name = "LianESP"
+                    billboard.Size = UDim2.new(0, 100, 0, 40)
+                    billboard.StudsOffset = Vector3.new(0, 2, 0)
+                    billboard.AlwaysOnTop = true
+                    billboard.Parent = head
+                    local label = Instance.new("TextLabel")
+                    label.Size = UDim2.new(1, 0, 1, 0)
+                    label.BackgroundTransparency = 1
+                    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    label.TextStrokeTransparency = 0
+                    label.Font = Enum.Font.GothamBold
+                    label.TextSize = 14
+                    label.Text = plr.Name
+                    label.Parent = billboard
+                end
+            end
+        end
     end
 end)
 
@@ -734,9 +752,9 @@ local function equipBestPlotAndSellOutside()
                     if isHaunted and _G.LianConfig.ProtectHaunted and not _G.LianConfig.AutoSellHaunted then skip = true end
                     -- Protect high grades
                     if _G.LianConfig.ProtectHighGrades then
-                        local grade = tonumber(item.Grade) or tonumber(item.grade) or 0
-                        local gradeTarget = _G.LianConfig.UnitGradeTarget or "Celestial"
                         local gradeOrder = {Rare=1, Epic=2, Legendary=3, Mythic=4, Secret=5, Celestial=6}
+                        local grade = gradeOrder[tostring(item.Grade or item.grade or "")] or 0
+                        local gradeTarget = _G.LianConfig.UnitGradeTarget or "Celestial"
                         local targetLevel = gradeOrder[gradeTarget] or 6
                         if grade >= targetLevel then skip = true end
                     end
@@ -1142,26 +1160,8 @@ HalloweenTab:CreateToggle({
     end,
 })
 
-HalloweenTab:CreateSection("🛒 Halloween Candy Shop")
 
-HalloweenTab:CreateDropdown({
-    Name = "Target Beli Candy Shop",
-    Options = {"Pumpkin Egg", "Ghost Dice", "Candy Potion", "Lucky Bag"},
-    CurrentOption = _G.LianConfig.CandyShopItem,
-    Callback = function(Option)
-        _G.LianConfig.CandyShopItem = type(Option) == "table" and Option[1] or Option
-        saveConfig()
-    end,
-})
 
-HalloweenTab:CreateToggle({
-    Name = "Auto Beli Item Candy Shop",
-    CurrentValue = _G.LianConfig.AutoCandyShop,
-    Callback = function(Value)
-        _G.LianConfig.AutoCandyShop = Value
-        saveConfig()
-    end,
-})
 
 -- ═════════════════════════════════════════════════════════════════════
 -- TAB 5: TOWERS (SMART SIMULATION AI & POTION FARMING)
@@ -1259,14 +1259,6 @@ PlotTab:CreateToggle({
 
 PlotTab:CreateSection("📜 Quests & Rewards")
 
-PlotTab:CreateToggle({
-    Name = "Auto Claim Quests (Daily & Weekly)",
-    CurrentValue = _G.LianConfig.AutoQuests,
-    Callback = function(Value)
-        _G.LianConfig.AutoQuests = Value
-        saveConfig()
-    end,
-})
 
 PlotTab:CreateToggle({
     Name = "Auto Claim Daily Rewards",
@@ -1304,26 +1296,8 @@ PlotTab:CreateToggle({
     end,
 })
 
-PlotTab:CreateSection("🎟️ Ticket Shop Buyer")
 
-PlotTab:CreateDropdown({
-    Name = "Target Item Ticket Shop",
-    Options = {"Clover", "Lucky Spin", "Potion Bag", "Super Roll", "Dice Ticket"},
-    CurrentOption = _G.LianConfig.TicketShopItem,
-    Callback = function(Option)
-        _G.LianConfig.TicketShopItem = type(Option) == "table" and Option[1] or Option
-        saveConfig()
-    end,
-})
 
-PlotTab:CreateToggle({
-    Name = "Auto Beli Item Ticket Shop",
-    CurrentValue = _G.LianConfig.AutoTicketShop,
-    Callback = function(Value)
-        _G.LianConfig.AutoTicketShop = Value
-        saveConfig()
-    end,
-})
 
 -- ═════════════════════════════════════════════════════════════════════
 -- TAB 6b: UNIT GRADES (name-aligned with groper99/animedice; behavior unverified — reference is obfuscated)
@@ -1727,14 +1701,6 @@ RebirthTab:CreateToggle({
     end,
 })
 
-RebirthTab:CreateToggle({
-    Name = "Auto Buy Best Dice dari Shop",
-    CurrentValue = _G.LianConfig.AutoBuyBestDice,
-    Callback = function(Value)
-        _G.LianConfig.AutoBuyBestDice = Value
-        saveConfig()
-    end,
-})
 
 RebirthTab:CreateSection("🌾 Plot Optimization & Auto-Sell Luar Plot")
 
@@ -1957,12 +1923,13 @@ task.spawn(function()
     end
 end)
 
--- Auto Unit Grades Worker (aligned with groper99/animedice)
+-- Auto Unit Grades Worker (aligned with groper99/animedice; behavior unverified — reference obfuscated)
 task.spawn(function()
     while true do
         if _G.LianConfig.AutoUnitGrades then
             safe(function()
                 -- Try common remote patterns for unit grading
+                -- TODO: UnitGradePick ("Best Unit"/"Equipped Unit"/"Any Unit") not yet wired — needs remote signature discovery
                 local gradeRemote = getRemote("UnitService", "RF", "RollGrade") or getRemote("GradeService", "RF", "Roll") or getRemote("UnitService", "RE", "RollGrade")
                 if gradeRemote then
                     if gradeRemote:IsA("RemoteFunction") then
@@ -2189,17 +2156,6 @@ task.spawn(function()
                 for _, c in ipairs(codes) do
                     fire(R.Code, c)
                     task.wait(0.2)
-                end
-            end)
-        end
-        if _G.LianConfig.AutoQuests then
-            safe(function()
-                for _, p in ipairs({"Daily", "Weekly"}) do
-                    if M.Quests and M.Quests.Periods and M.Quests.Periods[p] then
-                        for _, q in ipairs(M.Quests.Periods[p].quests or {}) do
-                            fire(R.HalloweenQuest, p, q.id)
-                        end
-                    end
                 end
             end)
         end

@@ -876,7 +876,11 @@ if not Rayfield then
     end
 end
 
-local Window = Rayfield:CreateWindow({
+local Window
+if Rayfield then
+    local okWin, win = pcall(function()
+        return Rayfield:CreateWindow({
+
     Name = "⚡ Lian Hub v6.3 | Anime Dice Master Suite",
     Icon = 0,
     LoadingTitle = "Lian Hub Injecting...",
@@ -886,7 +890,18 @@ local Window = Rayfield:CreateWindow({
     DisableBuildWarnings = true,
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
-})
+        })
+    end)
+    if okWin and win then
+        Window = win
+    else
+        warn("[Lian Hub] CreateWindow failed: " .. tostring(win))
+        Window = nil
+    end
+else
+    warn("[Lian Hub] Rayfield not available, skipping UI creation")
+    Window = nil
+end
 
 -- Floating Draggable Toggle Button
 pcall(function()
@@ -952,7 +967,16 @@ pcall(function()
     end)
 end)
 
--- TABS
+-- TABS (skip UI if Window failed to create)
+if not Window then
+    warn("[Lian Hub] Window is nil, skipping UI. Workers will still run.")
+    -- Spawn workers without UI
+    task.spawn(function()
+        while true do task.wait(1) end
+    end)
+    return
+end
+
 local FarmTab = Window:CreateTab("Auto Farm", 4483362458)
 local PotionsTab = Window:CreateTab("Potion Stacking", 4483362458)
 local FeederTab = Window:CreateTab("Trade Feeder", 4483362458)

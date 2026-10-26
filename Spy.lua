@@ -1,3 +1,4 @@
+print('[LianSpy] Starting... executor: ' .. (identifyexecutor and identifyexecutor() or 'unknown'))
 --[[
     ═════════════════════════════════════════════════════════════════════════
     🔍 LIAN SPY v3 — LIVE ACTION SNIFFER & FRAMEWORK DECODER 🔍

@@ -1897,13 +1897,13 @@ ServerTab:CreateToggle({
             local hopped = false
             for _, s in ipairs(res.data) do
                 if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
-                    pcall(function() TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer) end)
+                    TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
                     hopped = true
                     break
                 end
             end
             if not hopped then
-                pcall(function() TeleportService:Teleport(placeId, LocalPlayer) end)
+                TeleportService:Teleport(placeId, LocalPlayer)
             end
         end
         task.spawn(function()
@@ -2068,13 +2068,20 @@ end -- close if Window
 
 -- 1. Auto Roll Dice Worker
 task.spawn(function()
+    local autoRollState = false
     while true do
         if _G.LianConfig.AutoRoll then
-            fire(R.SetAutoRoll, true)
+            if not autoRollState then
+                fire(R.SetAutoRoll, true)
+                autoRollState = true
+            end
             invoke(R.Roll)
             task.wait(_G.LianConfig.FastRoll and 0.08 or 0.3)
         else
-            fire(R.SetAutoRoll, false)
+            if autoRollState then
+                fire(R.SetAutoRoll, false)
+                autoRollState = false
+            end
             task.wait(0.5)
         end
     end
@@ -2087,13 +2094,14 @@ task.spawn(function()
             local gradeRemote = getRemote("GradeService", "RE", "Roll")
             if gradeRemote then
                 pcall(function() gradeRemote:FireServer() end)
-                -- Protect gating: read current grade before protecting (behavior unverified)
+                -- Protect gating: only protect when a high grade is actually obtained.
+                -- TODO: read current grade from DataController before protecting to avoid locking bad grades.
+                -- Currently fires SetGradeProtected(true) after every roll when ProtectHighGrades is on.
                 if _G.LianConfig.ProtectHighGrades then
                     local protectRemote = getRemote("GradeService", "RE", "SetGradeProtected")
                     if protectRemote then
                         task.wait(0.3) -- wait for server to assign grade
-                        -- Only protect if target grade threshold met (read from DataController, unverified)
-                        pcall(function() protectRemote:FireServer(true) end)
+                        protectRemote:FireServer(true)
                     end
                 end
                 if _G.LianConfig.RollGradeOnce then
@@ -2135,6 +2143,7 @@ task.spawn(function()
             if R.QuirkRoll then
                 fire(R.QuirkRoll)
                 -- Protect gating: only protect if target quirk obtained (behavior unverified)
+                -- TODO: read current quirk from DataController before protecting.
                 if _G.LianConfig.ProtectHighGrades then
                     local protectRemote = getRemote("GradeService", "RE", "SetGradeProtected")
                     if protectRemote then
@@ -2492,17 +2501,15 @@ task.spawn(function()
                 if ok and res and res.data then
                     for _, s in ipairs(res.data) do
                         if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
-                            local hopOk = pcall(function() TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer) end)
-                            if hopOk then
-                                hopped = true
-                                task.wait(5)
-                                return
-                            end
+                            TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
+                            hopped = true
+                            task.wait(5)
+                            return
                         end
                     end
                 end
                 if not hopped then
-                    pcall(function() TeleportService:Teleport(placeId, LocalPlayer) end)
+                    TeleportService:Teleport(placeId, LocalPlayer)
                 end
             end
             task.wait(5)

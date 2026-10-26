@@ -180,7 +180,7 @@ local function getFullLog()
     table.insert(res, "═══════════════════════════════════════════════════════")
     table.insert(res, "🎯 LIVE REMOTE CLICKS CAPTURED BY LIAN SPY:")
     table.insert(res, "═══════════════════════════════════════════════════════")
-    for _, l in ipairs(liveLogs) do table.insert(res, l) end
+    for i = #liveLogs, 1, -1 do table.insert(res, liveLogs[i]) end
     table.insert(res, "\n")
     for _, l in ipairs(logs) do table.insert(res, l) end
     return table.concat(res, "\n")

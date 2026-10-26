@@ -256,8 +256,7 @@ R.HalloweenQuest = getRemote("HalloweenQuestService", "RE", "Claim")
 R.TrickKnock = getRemote("TrickOrTreatService", "RE", "Knocked")
 R.TrickLand = getRemote("TrickOrTreatService", "RE", "Landed")
 R.QuirkRoll = getRemote("QuirkService", "RE", "Roll") or getRemote("GradeService", "RE", "Roll")
-R.QuirkProtect = getRemote("QuirkService", "RE", "SetQuirkProtected") or getRemote("GradeService", "RE", "SetGradeProtected")
-R.TradeReq = getRemote("TradeService", "RE", "RequestTrade")
+
 R.TradeResp = getRemote("TradeService", "RE", "RespondToRequest")
 R.TradeOffer = getRemote("TradeService", "RE", "ChangeOffer")
 R.TradeAdv = getRemote("TradeService", "RE", "AdvanceTrade")
@@ -312,15 +311,21 @@ local function checkGameUpdates()
         local services = {
             {"RollService","RE","SetAutoRoll"}, {"RollService","RF","RollDice"},
             {"PumpkinDiceService","RF","Roll"}, {"PlotService","RE","CollectBalance"},
-            {"PlotService","RE","EquipBest"}, {"SellService","RF","SellInventory"},
+            {"PlotService","RE","EquipBest"}, {"PlotService","RE","LevelUpSlot"},
+            {"DiceShopService","RE","BuyDice"}, {"DiceShopService","RE","EquipDice"},
+            {"SellService","RF","SellInventory"},
             {"RebirthService","RE","Rebirth"}, {"RebirthService","RE","AddStat"},
             {"Towers","RF","PlayTower"}, {"Towers","RF","CompleteTowerFloor"},
+            {"Towers","RE","EquipBestTowerTeam"},
             {"TrickOrTreatService","RE","Knocked"}, {"TrickOrTreatService","RE","Landed"},
             {"HalloweenService","RE","ClaimAllPath"}, {"HalloweenQuestService","RE","Claim"},
             {"BoostService","RE","Use"}, {"SpinService","RE","Use"},
             {"DailyRewardService","RE","Claim"}, {"OfflineEarningsService","RE","Claim"},
             {"CodesService","RE","RedeemCode"}, {"GradeService","RE","Roll"},
-            {"GradeService","RE","SetGradeProtected"}, {"TradeService","RE","RequestTrade"},
+            {"GradeService","RE","SetGradeProtected"}, {"QuirkService","RE","Roll"},
+            {"QuirkService","RE","SetQuirkProtected"},
+            {"TradeService","RE","RequestTrade"}, {"TradeService","RE","RespondToRequest"},
+            {"TradeService","RE","ChangeOffer"}, {"TradeService","RE","AdvanceTrade"},
             {"TradeService","RE","TradeEvent"}, {"TradeService","RE","SetTradeRequestsEnabled"},
         }
         for _, s in ipairs(services) do
@@ -920,24 +925,22 @@ else
 end
 
 -- Floating Draggable Toggle Button
-pcall(function()
-    local parentGui = nil
-    if type(gethui) == "function" then
-        pcall(function() parentGui = gethui() end)
-    end
+local parentGui = nil
+if type(gethui) == "function" then
+    pcall(function() parentGui = gethui() end)
+end
+if not parentGui then
+    pcall(function() parentGui = game:GetService("CoreGui") end)
+end
+if not parentGui then
+    parentGui = LocalPlayer:FindFirstChild("PlayerGui")
     if not parentGui then
-        pcall(function() parentGui = game:GetService("CoreGui") end)
+        parentGui = LocalPlayer:WaitForChild("PlayerGui", 5)
     end
-    if not parentGui then
-        -- FindFirstChild (non-yielding) first; only WaitForChild outside pcall as last resort
-        parentGui = LocalPlayer:FindFirstChild("PlayerGui")
-        if not parentGui then
-            parentGui = LocalPlayer:WaitForChild("PlayerGui", 5)
-        end
-    end
-    if not parentGui then
-        warn("[Lian Hub] No GUI parent available. UI cannot be created.")
-    end
+end
+if not parentGui then
+    warn("[Lian Hub] No GUI parent available. UI cannot be created.")
+end
     local oldBtn = parentGui:FindFirstChild("LianHubFloatingBtn")
     if oldBtn then oldBtn:Destroy() end
 
@@ -985,7 +988,6 @@ pcall(function()
             end
         end
     end)
-end)
 
 -- TABS (skip UI if Window failed to create)
 if not Window then
@@ -1782,23 +1784,6 @@ ESPSettingsTab:CreateToggle({
 })
 
 ESPSettingsTab:CreateSection("⚡ Performance")
-ESPSettingsTab:CreateSlider({
-    Name = "WalkSpeed (16-150)",
-    Range = {16, 150},
-    Increment = 1,
-    Suffix = "ws",
-    CurrentValue = _G.LianConfig.WalkSpeedValue or 16,
-    Flag = "WalkSpeedSlider",
-    Callback = function(Value)
-        _G.LianConfig.WalkSpeedValue = Value
-        saveConfig()
-        pcall(function()
-            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-                LocalPlayer.Character.Humanoid.WalkSpeed = Value
-            end
-        end)
-    end,
-})
 
 ESPSettingsTab:CreateSlider({
     Name = "JumpPower (50-250)",
@@ -1977,14 +1962,13 @@ local function sendDiscordWebhook(title, desc, color)
             timestamp = DateTime.now():ToIsoDate()
         }}
     }
-    pcall(function()
-        req({
-            Url = url,
-            Method = "POST",
-            Headers = { ["Content-Type"] = "application/json" },
-            Body = HttpService:JSONEncode(payload)
-        })
-    end)
+    -- req (syn.request/http.request) yields; call directly outside pcell.
+    req({
+        Url = url,
+        Method = "POST",
+        Headers = { ["Content-Type"] = "application/json" },
+        Body = HttpService:JSONEncode(payload)
+    })
 end
 
     local _tg
@@ -2137,7 +2121,7 @@ task.spawn(function()
                 -- Firing SetGradeProtected(true) after every roll can lock a bad grade.
                 -- TODO: read current grade from DataController before protecting.
                 -- if _G.LianConfig.ProtectHighGrades then
-                --     local protectRemote = R.QuirkProtect or getRemote("GradeService", "RE", "SetGradeProtected")
+                --     local protectRemote = getRemote("GradeService", "RE", "SetGradeProtected")
                 --     if protectRemote then
                 --         task.wait(0.3) -- wait for server to assign grade
                 --         protectRemote:FireServer(true)
@@ -2186,7 +2170,7 @@ task.spawn(function()
                 -- Firing SetGradeProtected(true) after every roll can lock a bad quirk.
                 -- TODO: read current quirk from DataController before protecting.
                 -- if _G.LianConfig.ProtectHighGrades then
-                --     local protectRemote = R.QuirkProtect or getRemote("GradeService", "RE", "SetGradeProtected")
+                --     local protectRemote = getRemote("GradeService", "RE", "SetGradeProtected")
                 --     if protectRemote then
                 --         task.wait(0.3) -- wait for server to assign quirk
                 --         protectRemote:FireServer(true)

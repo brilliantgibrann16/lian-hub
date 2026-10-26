@@ -102,14 +102,18 @@ local function createBtn(name, pos, size, color, callback)
     btn.MouseButton1Click:Connect(function()
         btn.Text = "Scanning..."
         task.spawn(function()
-            callback()
+            local ok, err = pcall(callback)
             btn.Text = name
+            if not ok then
+                addLine("[ERROR] " .. tostring(err))
+            end
             flushLog()
         end)
         -- Safety: reset button text if callback hangs or errors
         task.delay(30, function()
             if btn.Text == "Scanning..." then
                 btn.Text = name
+                flushLog()
             end
         end)
     end)

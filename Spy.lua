@@ -186,10 +186,14 @@ local function getFullLog()
     return table.concat(res, "\n")
 end
 
+local _uiFlush = false
 local function updateUI(latest)
+    if _uiFlush then return end
+    _uiFlush = true
     if latest then
         StatusBadge.Text = "Tertangkap: " .. latest:sub(1, 60) .. "..."
     end
+    task.delay(0.3, function() _uiFlush = false end)
     -- TextBox rewrite deferred to flushLog (debounced, called by Copy button)
 end
 

@@ -237,14 +237,13 @@ R.TradeEvent = getRemote("TradeService", "RE", "TradeEvent")
 
 local function fire(remote, ...)
     if remote then
-        pcall(function(...) remote:FireServer(...) end, ...)
+        remote:FireServer(...)
     end
 end
 
 local function invoke(remote, ...)
     if remote then
-        local ok, res = pcall(function(...) return remote:InvokeServer(...) end, ...)
-        if ok then return res end
+        return remote:InvokeServer(...)
     end
     return nil
 end
@@ -475,8 +474,6 @@ _G.LianConfig = {
     TeleportTarget = "",
     -- Aligned with groper99/animedice reference features
     AutoUnitGrades = false,
-    UnitGradeTarget = "Celestial",
-    UnitGradePick = "Best Unit",
     ProtectHighGrades = true,
     RollGradeOnce = false,
     ProtectShiny = true,
@@ -840,7 +837,7 @@ GuiService.ErrorMessageChanged:Connect(function(msg)
             setupAutoExecuteOnTeleport()
             task.wait(5)
             pcall(function()
-                TeleportService:Teleport(game.PlaceId, LocalPlayer)
+                TeleportService.Teleport(TeleportService, game.PlaceId, LocalPlayer)
             end)
             isReconnecting = false
         end
@@ -1365,31 +1362,7 @@ GradesTab:CreateToggle({
     end,
 })
 
-GradesTab:CreateDropdown({
-    Name = "Target Rarity Grade",
-    Options = {"Rare", "Epic", "Legendary", "Mythic", "Secret", "Celestial"},
-    CurrentOption = _G.LianConfig.UnitGradeTarget,
-    Callback = function(Option)
-        _G.LianConfig.UnitGradeTarget = type(Option) == "table" and Option[1] or Option
-        saveConfig()
-    end,
-})
 
--- NOTE: UnitGradeTarget stored but NOT consumed by AutoUnitGrades worker.
--- GradeService.RE.Roll takes no args (server auto-picks). Name-aligned, behavior unverified.
-
-GradesTab:CreateDropdown({
-    Name = "Pick Unit (Grade Target)",
-    Options = {"Best Unit", "Equipped Unit", "Any Unit"},
-    CurrentOption = _G.LianConfig.UnitGradePick,
-    Callback = function(Option)
-        _G.LianConfig.UnitGradePick = type(Option) == "table" and Option[1] or Option
-        saveConfig()
-    end,
-})
-
--- NOTE: UnitGradePick stored but NOT consumed by AutoUnitGrades worker.
--- GradeService.RE.Roll takes no args (server auto-picks). Name-aligned, behavior unverified.
 
 GradesTab:CreateToggle({
     Name = "Auto Protect High Grades (Jangan Jual)",
@@ -1916,16 +1889,20 @@ ServerTab:CreateToggle({
         setupAutoExecuteOnTeleport()
         local placeId = game.PlaceId
         local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
-        local ok, res = pcall(function() return HttpService:JSONDecode(game:HttpGet(apiUrl)) end)
+        local raw = game:HttpGet(apiUrl)
+        local ok, res = false, nil
+        if raw then
+            ok, res = pcall(function() return HttpService:JSONDecode(raw) end)
+        end
         if ok and res and res.data then
             for _, s in ipairs(res.data) do
                 if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
-                    pcall(function() TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer) end)
+                    pcall(function() TeleportService.TeleportToPlaceInstance(TeleportService, placeId, s.id, LocalPlayer) end)
                     break
                 end
             end
         end
-        pcall(function() TeleportService:Teleport(placeId, LocalPlayer) end)
+        pcall(function() TeleportService.Teleport(TeleportService, placeId, LocalPlayer) end)
         task.spawn(function()
             task.wait(0.5)
             pcall(function() _tg:Set(false) end)
@@ -2507,7 +2484,11 @@ task.spawn(function()
                     setupAutoExecuteOnTeleport()
                     local placeId = game.PlaceId
                     local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
-                    local ok, res = pcall(function() return HttpService:JSONDecode(game:HttpGet(apiUrl)) end)
+                    local raw = game:HttpGet(apiUrl)
+                    local ok, res = false, nil
+                    if raw then
+                        ok, res = pcall(function() return HttpService:JSONDecode(raw) end)
+                    end
                     if ok and res and res.data then
                         for _, s in ipairs(res.data) do
                             if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then

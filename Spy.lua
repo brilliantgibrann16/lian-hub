@@ -203,12 +203,18 @@ local function updateUI(latest)
 end
 
 CopyBtn.MouseButton1Click:Connect(function()
-    if setclipboard then
-        setclipboard(getFullLog())
+    CopyBtn.Text = "Copying..."
+    task.spawn(function()
+        pcall(function()
+            if setclipboard then setclipboard(getFullLog()) end
+        end)
+        pcall(function()
+            if writefile then writefile("LianSpy_LiveDump.txt", getFullLog()) end
+        end)
         CopyBtn.Text = "✅ Tersalin Lengkap!"
         task.wait(1.5)
         CopyBtn.Text = "📋 Copy Semua Log (Static + Live)"
-    end
+    end)
 end)
 
 -- Tombol Percobaan Roll Mandiri

@@ -295,16 +295,9 @@ local function safe(fn, ...)
     return ok and res
 end
 
--- Safe yield wrapper: task.spawn inside pcall to avoid yield-in-pcall errors
--- on executors where pcall forbids yielding (Solara/Level-3).
--- Usage: replace safe(function() task.wait(1) ... end) with safeYield(function() ... end)
-local function safeYield(fn, ...)
-    local args = {...}
-    local ok, res = pcall(function()
-        return task.spawn(fn, unpack(args))
-    end)
-    return ok and res
-end
+-- NOTE: task.wait inside safe() (pcall) may fail on Solara/Level-3 executors
+-- where pcall forbids yielding. If a worker silently dies, move task.wait
+-- OUTSIDE the safe() call: safe(function() ... end); task.wait(n)
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -1284,15 +1277,19 @@ TowerTab:CreateToggle({
     end,
 })
 
-TowerTab:CreateToggle({
-    Name = "🔥 Force Equip Best Tower Team Sekarang",
-    CurrentValue = false,
-    Callback = function(Value)
-        if not Value then return end
-        fire(R.BestTeam)
-        Rayfield:Notify({ Title = "Tower Team", Content = "Best Tower Team berhasil dipasang!", Duration = 3 })
-    end,
-})
+    local _tg = TowerTab:CreateToggle({
+        Name = "🔥 Force Equip Best Tower Team Sekarang",
+        CurrentValue = false,
+        Callback = function(Value)
+            if not Value then return end
+            fire(R.BestTeam)
+            Rayfield:Notify({ Title = "Tower Team", Content = "Best Tower Team berhasil dipasang!", Duration = 3 })
+            task.spawn(function()
+                task.wait(0.5)
+                pcall(function() _tg:Set(false) end)
+            end)
+        end,
+    })
 
 TowerTab:CreateSection("🎯 Manual Tower / Target Farming")
 
@@ -1320,11 +1317,11 @@ TowerTab:CreateToggle({
 -- ═════════════════════════════════════════════════════════════════════
 PlotTab:CreateSection("💰 Plot Management")
 
-PlotTab:CreateToggle({
-    Name = "🔍 Check Game Updates (Diagnose Broken Features)",
-    CurrentValue = false,
-    Callback = function(Value)
-        if not Value then return end
+    local _tg = PlotTab:CreateToggle({
+        Name = "🔍 Check Game Updates (Diagnose Broken Features)",
+        CurrentValue = false,
+        Callback = function(Value)
+            if not Value then return end
         local ok, res = pcall(_G.LianHubCheckUpdates)
         if not ok then
         warn("[LianHub] CheckUpdates error: " .. tostring(res))
@@ -1338,6 +1335,10 @@ PlotTab:CreateToggle({
         Content = broken .. " broken out of " .. #(res or {}) .. " checks. See F9 console for details.",
         Duration = 6
         })
+        task.spawn(function()
+            task.wait(0.5)
+            pcall(function() _tg:Set(false) end)
+        end)
     end,
 })
 
@@ -1494,11 +1495,11 @@ GradesTab:CreateToggle({
 -- ═════════════════════════════════════════════════════════════════════
 TeleportTab:CreateSection("📍 Teleport Destinations")
 
-TeleportTab:CreateToggle({
-    Name = "🏠 Teleport ke Plot Sendiri",
-    CurrentValue = false,
-    Callback = function(Value)
-        if not Value then return end
+    local _tg = TeleportTab:CreateToggle({
+        Name = "🏠 Teleport ke Plot Sendiri",
+        CurrentValue = false,
+        Callback = function(Value)
+            if not Value then return end
         pcall(function()
         local plot = findMyPlot()
         if plot then
@@ -1512,14 +1513,18 @@ TeleportTab:CreateToggle({
         Rayfield:Notify({ Title = "Teleport", Content = "Plot tidak ditemukan!", Duration = 3 })
         end
         end)
+        task.spawn(function()
+            task.wait(0.5)
+            pcall(function() _tg:Set(false) end)
+        end)
     end,
 })
 
-TeleportTab:CreateToggle({
-    Name = "🎲 Teleport ke Dice Shop",
-    CurrentValue = false,
-    Callback = function(Value)
-        if not Value then return end
+    local _tg = TeleportTab:CreateToggle({
+        Name = "🎲 Teleport ke Dice Shop",
+        CurrentValue = false,
+        Callback = function(Value)
+            if not Value then return end
         pcall(function()
         local shop = workspace:FindFirstChild("DiceShop") or workspace:FindFirstChild("Shop") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("DiceShop"))
         if shop then
@@ -1528,14 +1533,18 @@ TeleportTab:CreateToggle({
         Rayfield:Notify({ Title = "Teleport", Content = "Dice Shop tidak ditemukan!", Duration = 3 })
         end
         end)
+        task.spawn(function()
+            task.wait(0.5)
+            pcall(function() _tg:Set(false) end)
+        end)
     end,
 })
 
-TeleportTab:CreateToggle({
-    Name = "🔄 Teleport ke Rebirth Station",
-    CurrentValue = false,
-    Callback = function(Value)
-        if not Value then return end
+    local _tg = TeleportTab:CreateToggle({
+        Name = "🔄 Teleport ke Rebirth Station",
+        CurrentValue = false,
+        Callback = function(Value)
+            if not Value then return end
         pcall(function()
         local rebirth = workspace:FindFirstChild("Rebirth") or workspace:FindFirstChild("RebirthStation") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Rebirth"))
         if rebirth then
@@ -1544,14 +1553,18 @@ TeleportTab:CreateToggle({
         Rayfield:Notify({ Title = "Teleport", Content = "Rebirth Station tidak ditemukan!", Duration = 3 })
         end
         end)
+        task.spawn(function()
+            task.wait(0.5)
+            pcall(function() _tg:Set(false) end)
+        end)
     end,
 })
 
-TeleportTab:CreateToggle({
-    Name = "🧬 Teleport ke Fusing Station",
-    CurrentValue = false,
-    Callback = function(Value)
-        if not Value then return end
+    local _tg = TeleportTab:CreateToggle({
+        Name = "🧬 Teleport ke Fusing Station",
+        CurrentValue = false,
+        Callback = function(Value)
+            if not Value then return end
         pcall(function()
         local fuse = workspace:FindFirstChild("Fusing") or workspace:FindFirstChild("Fuse") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Fusing"))
         if fuse then
@@ -1560,14 +1573,18 @@ TeleportTab:CreateToggle({
         Rayfield:Notify({ Title = "Teleport", Content = "Fusing Station tidak ditemukan!", Duration = 3 })
         end
         end)
+        task.spawn(function()
+            task.wait(0.5)
+            pcall(function() _tg:Set(false) end)
+        end)
     end,
 })
 
-TeleportTab:CreateToggle({
-    Name = "📋 Teleport ke Quest Board",
-    CurrentValue = false,
-    Callback = function(Value)
-        if not Value then return end
+    local _tg = TeleportTab:CreateToggle({
+        Name = "📋 Teleport ke Quest Board",
+        CurrentValue = false,
+        Callback = function(Value)
+            if not Value then return end
         pcall(function()
         local q = workspace:FindFirstChild("Quests") or workspace:FindFirstChild("QuestBoard") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Quests"))
         if q then
@@ -1576,14 +1593,18 @@ TeleportTab:CreateToggle({
         Rayfield:Notify({ Title = "Teleport", Content = "Quest Board tidak ditemukan!", Duration = 3 })
         end
         end)
+        task.spawn(function()
+            task.wait(0.5)
+            pcall(function() _tg:Set(false) end)
+        end)
     end,
 })
 
-TeleportTab:CreateToggle({
-    Name = "🎒 Teleport ke Backpack / Inventory",
-    CurrentValue = false,
-    Callback = function(Value)
-        if not Value then return end
+    local _tg = TeleportTab:CreateToggle({
+        Name = "🎒 Teleport ke Backpack / Inventory",
+        CurrentValue = false,
+        Callback = function(Value)
+            if not Value then return end
         pcall(function()
         local bp = workspace:FindFirstChild("Backpack") or workspace:FindFirstChild("Inventory") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Backpack"))
         if bp then
@@ -1591,6 +1612,10 @@ TeleportTab:CreateToggle({
         else
         Rayfield:Notify({ Title = "Teleport", Content = "Backpack tidak ditemukan!", Duration = 3 })
         end
+        end)
+        task.spawn(function()
+            task.wait(0.5)
+            pcall(function() _tg:Set(false) end)
         end)
     end,
 })
@@ -1604,11 +1629,11 @@ TeleportTab:CreateInput({
         _G.LianConfig.TeleportTarget = Text:gsub("%s+", "")
     end,
 })
-TeleportTab:CreateToggle({
-    Name = "➡️ Teleport ke Player",
-    CurrentValue = false,
-    Callback = function(Value)
-        if not Value then return end
+    local _tg = TeleportTab:CreateToggle({
+        Name = "➡️ Teleport ke Player",
+        CurrentValue = false,
+        Callback = function(Value)
+            if not Value then return end
         pcall(function()
         local target = _G.LianConfig.TeleportTarget
         if not target or target == "" then
@@ -1624,14 +1649,18 @@ TeleportTab:CreateToggle({
         end
         Rayfield:Notify({ Title = "Teleport", Content = "Player tidak ditemukan!", Duration = 3 })
         end)
+        task.spawn(function()
+            task.wait(0.5)
+            pcall(function() _tg:Set(false) end)
+        end)
     end,
 })
 
-TeleportTab:CreateToggle({
-    Name = "🎲 Teleport ke Random Player",
-    CurrentValue = false,
-    Callback = function(Value)
-        if not Value then return end
+    local _tg = TeleportTab:CreateToggle({
+        Name = "🎲 Teleport ke Random Player",
+        CurrentValue = false,
+        Callback = function(Value)
+            if not Value then return end
         pcall(function()
         local players = game:GetService("Players"):GetPlayers()
         local others = {}
@@ -1647,6 +1676,10 @@ TeleportTab:CreateToggle({
         else
         Rayfield:Notify({ Title = "Teleport", Content = "Tidak ada player lain!", Duration = 3 })
         end
+        end)
+        task.spawn(function()
+            task.wait(0.5)
+            pcall(function() _tg:Set(false) end)
         end)
     end,
 })
@@ -1717,13 +1750,17 @@ ESPSettingsTab:CreateToggle({
 })
 
 ESPSettingsTab:CreateSection("🔄 Rejoin & Server")
-ESPSettingsTab:CreateToggle({
-    Name = "🔄 Rejoin Server Sekarang",
-    CurrentValue = false,
-    Callback = function(Value)
-        if not Value then return end
+    local _tg = ESPSettingsTab:CreateToggle({
+        Name = "🔄 Rejoin Server Sekarang",
+        CurrentValue = false,
+        Callback = function(Value)
+            if not Value then return end
         setupAutoExecuteOnTeleport()
         TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        task.spawn(function()
+            task.wait(0.5)
+            pcall(function() _tg:Set(false) end)
+        end)
     end,
 })
 
@@ -1841,12 +1878,16 @@ RebirthTab:CreateToggle({
     end,
 })
 
-RebirthTab:CreateToggle({
-    Name = "⚡ Equip Best ke Plot & Jual Semua di Luar Plot Sekarang",
-    CurrentValue = false,
-    Callback = function(Value)
-        if not Value then return end
+    local _tg = RebirthTab:CreateToggle({
+        Name = "⚡ Equip Best ke Plot & Jual Semua di Luar Plot Sekarang",
+        CurrentValue = false,
+        Callback = function(Value)
+            if not Value then return end
         equipBestPlotAndSellOutside()
+        task.spawn(function()
+            task.wait(0.5)
+            pcall(function() _tg:Set(false) end)
+        end)
     end,
 })
 
@@ -1864,11 +1905,11 @@ ServerTab:CreateToggle({
     end,
 })
 
-ServerTab:CreateToggle({
-    Name = "🔄 Force Hop ke Server Lain Sekarang",
-    CurrentValue = false,
-    Callback = function(Value)
-        if not Value then return end
+    local _tg = ServerTab:CreateToggle({
+        Name = "🔄 Force Hop ke Server Lain Sekarang",
+        CurrentValue = false,
+        Callback = function(Value)
+            if not Value then return end
         setupAutoExecuteOnTeleport()
         local placeId = game.PlaceId
         local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
@@ -1882,6 +1923,10 @@ ServerTab:CreateToggle({
         end
         end
         TeleportService:Teleport(placeId, LocalPlayer)
+        task.spawn(function()
+            task.wait(0.5)
+            pcall(function() _tg:Set(false) end)
+        end)
     end,
 })
 
@@ -1925,13 +1970,17 @@ local function sendDiscordWebhook(title, desc, color)
     end)
 end
 
-WebhookTab:CreateToggle({
-    Name = "🔔 Test Kirim Webhook Sekarang",
-    CurrentValue = false,
-    Callback = function(Value)
-        if not Value then return end
+    local _tg = WebhookTab:CreateToggle({
+        Name = "🔔 Test Kirim Webhook Sekarang",
+        CurrentValue = false,
+        Callback = function(Value)
+            if not Value then return end
         sendDiscordWebhook("🔔 Test Webhook Lian Hub", "Koneksi webhook dari akun **" .. LocalPlayer.Name .. "** berhasil!", 65280)
         Rayfield:Notify({ Title = "Webhook Terkirim!", Content = "Cek channel Discord Bubu yaa!", Duration = 3 })
+        task.spawn(function()
+            task.wait(0.5)
+            pcall(function() _tg:Set(false) end)
+        end)
     end,
 })
 

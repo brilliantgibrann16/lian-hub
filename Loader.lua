@@ -57,23 +57,7 @@ pcall(function() VirtualInputManager = game:GetService("VirtualInputManager") en
 
 -- 1. Anti-AFK (AUTO — no toggle, runs from script start, minimize-safe)
 local _antiAfkConn = nil
-local function disableIdledConnections()
-    pcall(function()
-        local env = (type(getgenv) == "function" and getgenv()) or _G
-        local gc = getconnections or get_signal_cons or (env and (env.getconnections or env.get_signal_cons))
-        if type(gc) == "function" and LocalPlayer then
-            for _, conn in pairs(gc(LocalPlayer.Idled)) do
-                if conn ~= _antiAfkConn then
-                    if conn.Disable then
-                        conn:Disable()
-                    elseif conn.Disconnect then
-                        conn:Disconnect()
-                    end
-                end
-            end
-        end
-    end)
-end
+local onIdled = nil
 
 local function pulseAntiAfk()
     pcall(function()
@@ -96,12 +80,35 @@ local function pulseAntiAfk()
     end)
 end
 
-disableIdledConnections()
-if LocalPlayer then
-    _antiAfkConn = LocalPlayer.Idled:Connect(function()
-        disableIdledConnections()
-        pulseAntiAfk()
+local function disableIdledConnections()
+    pcall(function()
+        local env = (type(getgenv) == "function" and getgenv()) or _G
+        local gc = getconnections or get_signal_cons or (env and (env.getconnections or env.get_signal_cons))
+        if type(gc) == "function" and LocalPlayer then
+            for _, conn in pairs(gc(LocalPlayer.Idled)) do
+                if conn ~= _antiAfkConn and conn.Connection ~= _antiAfkConn and conn.Function ~= onIdled then
+                    if conn.Disable then
+                        conn:Disable()
+                    elseif conn.Disconnect then
+                        conn:Disconnect()
+                    end
+                end
+            end
+        end
+        if LocalPlayer and onIdled and (not _antiAfkConn or _antiAfkConn.Connected == false) then
+            _antiAfkConn = LocalPlayer.Idled:Connect(onIdled)
+        end
     end)
+end
+
+onIdled = function()
+    disableIdledConnections()
+    pulseAntiAfk()
+end
+
+disableIdledConnections()
+if LocalPlayer and (not _antiAfkConn or _antiAfkConn.Connected == false) then
+    _antiAfkConn = LocalPlayer.Idled:Connect(onIdled)
 end
 
 -- Permanent Anti-AFK heartbeat (auto, no toggle, keeps minimized instances active)
@@ -202,27 +209,32 @@ end)
 
 
 -- Reapply visual/movement settings on respawn
-LocalPlayer.CharacterAdded:Connect(function(char)
-    task.wait(1)
-    pcall(function()
-        if _G.LianConfig.Fullbright then
-            local Lighting = game:GetService("Lighting")
-            Lighting.Brightness = 2
-            Lighting.ClockTime = 14
-            Lighting.FogEnd = 100000
-            Lighting.GlobalShadows = false
-            Lighting.OutdoorAmbient = Color3.fromRGB(255,255,255)
-        end
-        if char:FindFirstChild("Humanoid") then
-            char.Humanoid.WalkSpeed = _G.LianConfig.WalkSpeedValue or 16
-            char.Humanoid.JumpPower = _G.LianConfig.JumpPowerValue or 50
-        end
+if LocalPlayer then
+    LocalPlayer.CharacterAdded:Connect(function(char)
+        task.wait(1)
+        pcall(function()
+            if _G.LianConfig.Fullbright then
+                local Lighting = game:GetService("Lighting")
+                Lighting.Brightness = 2
+                Lighting.ClockTime = 14
+                Lighting.FogEnd = 100000
+                Lighting.GlobalShadows = false
+                Lighting.OutdoorAmbient = Color3.fromRGB(255,255,255)
+            end
+            if char:FindFirstChild("Humanoid") then
+                char.Humanoid.WalkSpeed = _G.LianConfig.WalkSpeedValue or 16
+                char.Humanoid.JumpPower = _G.LianConfig.JumpPowerValue or 50
+            end
+        end)
     end)
-end)
+end
 
 -- 2. Teleport Auto-Execute Queue (Auto-Inject on Script Startup & Teleport)
 _G._LianTeleportQueued = false
-local function setupAutoExecuteOnTeleport()
+local function setupAutoExecuteOnTeleport(force)
+    if force then
+        _G._LianTeleportQueued = false
+    end
     if _G._LianTeleportQueued then return end
     local env = (type(getgenv) == "function" and getgenv()) or _G
     local qot = queue_on_teleport
@@ -240,7 +252,7 @@ local function setupAutoExecuteOnTeleport()
     end
 end
 
--- Auto-queue immediately when script starts running + hook OnTeleport for game-driven AFK hops
+-- Auto-queue immediately when script starts running + hook OnTeleport / TeleportInitFailed
 setupAutoExecuteOnTeleport()
 if LocalPlayer then
     pcall(function()
@@ -249,6 +261,11 @@ if LocalPlayer then
         end)
     end)
 end
+pcall(function()
+    TeleportService.TeleportInitFailed:Connect(function()
+        setupAutoExecuteOnTeleport(true)
+    end)
+end)
 
 -- 3. Thread Identity Dropper (Solara-Safe)
 local function asGame(fn, ...)
@@ -925,7 +942,10 @@ local function triggerAutoReconnect(msg)
         task.spawn(function()
             while isReconnecting and _G.LianConfig.AutoReconnect do
                 task.wait(4)
-                TeleportService:Teleport(game.PlaceId, LocalPlayer)
+                setupAutoExecuteOnTeleport()
+                task.spawn(function()
+                    TeleportService:Teleport(game.PlaceId, LocalPlayer)
+                end)
                 task.wait(6)
             end
             isReconnecting = false
@@ -1000,7 +1020,7 @@ end
 if not parentGui then
     pcall(function() parentGui = game:GetService("CoreGui") end)
 end
-if not parentGui then
+if not parentGui and LocalPlayer then
     parentGui = LocalPlayer:FindFirstChild("PlayerGui")
     if not parentGui then
         parentGui = LocalPlayer:WaitForChild("PlayerGui", 5)

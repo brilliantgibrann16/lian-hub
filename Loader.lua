@@ -44,24 +44,72 @@ local Workspace = game:GetService("Workspace")
 local GuiService = game:GetService("GuiService")
 
 local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    local _plrT = os.clock()
+    while not Players.LocalPlayer and os.clock() - _plrT < 10 do
+        task.wait(0.2)
+    end
+    LocalPlayer = Players.LocalPlayer
+end
 
--- 1. Anti-AFK (AUTO — no toggle, runs from script start)
-LocalPlayer.Idled:Connect(function()
+local VirtualInputManager = nil
+pcall(function() VirtualInputManager = game:GetService("VirtualInputManager") end)
+
+-- 1. Anti-AFK (AUTO — no toggle, runs from script start, minimize-safe)
+local _antiAfkConn = nil
+local function disableIdledConnections()
     pcall(function()
+        local env = (type(getgenv) == "function" and getgenv()) or _G
+        local gc = getconnections or get_signal_cons or (env and (env.getconnections or env.get_signal_cons))
+        if type(gc) == "function" and LocalPlayer then
+            for _, conn in pairs(gc(LocalPlayer.Idled)) do
+                if conn ~= _antiAfkConn then
+                    if conn.Disable then
+                        conn:Disable()
+                    elseif conn.Disconnect then
+                        conn:Disconnect()
+                    end
+                end
+            end
+        end
+    end)
+end
+
+local function pulseAntiAfk()
+    pcall(function()
+        local cam = Workspace.CurrentCamera
+        local cf = (cam and cam.CFrame) or CFrame.new()
         VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.new(0, 0))
+        VirtualUser:Button2Down(Vector2.new(0, 0), cf)
     end)
     task.wait(1)
-end)
+    pcall(function()
+        local cam = Workspace.CurrentCamera
+        local cf = (cam and cam.CFrame) or CFrame.new()
+        VirtualUser:Button2Up(Vector2.new(0, 0), cf)
+        VirtualUser:ClickButton2(Vector2.new(0, 0), cf)
+    end)
+    pcall(function()
+        if VirtualInputManager then
+            VirtualInputManager:SendMouseMoveEvent(math.random(1, 5), math.random(1, 5), game)
+        end
+    end)
+end
 
--- Permanent Anti-AFK heartbeat (auto, no toggle)
+disableIdledConnections()
+if LocalPlayer then
+    _antiAfkConn = LocalPlayer.Idled:Connect(function()
+        disableIdledConnections()
+        pulseAntiAfk()
+    end)
+end
+
+-- Permanent Anti-AFK heartbeat (auto, no toggle, keeps minimized instances active)
 task.spawn(function()
     while true do
-        pcall(function()
-            VirtualUser:CaptureController()
-            VirtualUser:ClickButton2(Vector2.new(math.random(0, 100), math.random(0, 100)))
-        end)
-        task.wait(60)
+        disableIdledConnections()
+        pulseAntiAfk()
+        task.wait(45)
     end
 end)
 
@@ -172,14 +220,34 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     end)
 end)
 
--- 2. Teleport Auto-Execute Queue
+-- 2. Teleport Auto-Execute Queue (Auto-Inject on Script Startup & Teleport)
+_G._LianTeleportQueued = false
 local function setupAutoExecuteOnTeleport()
-    local qot = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
-    if qot then
-        pcall(function()
+    if _G._LianTeleportQueued then return end
+    local env = (type(getgenv) == "function" and getgenv()) or _G
+    local qot = queue_on_teleport
+        or queueonteleport
+        or (syn and syn.queue_on_teleport)
+        or (fluxus and fluxus.queue_on_teleport)
+        or (env and (env.queue_on_teleport or env.queueonteleport))
+    if type(qot) == "function" then
+        local ok = pcall(function()
             qot('loadstring(game:HttpGet("https://raw.githubusercontent.com/brilliantgibrann16/lian-hub/main/Loader.lua"))()')
         end)
+        if ok then
+            _G._LianTeleportQueued = true
+        end
     end
+end
+
+-- Auto-queue immediately when script starts running + hook OnTeleport for game-driven AFK hops
+setupAutoExecuteOnTeleport()
+if LocalPlayer then
+    pcall(function()
+        LocalPlayer.OnTeleport:Connect(function()
+            setupAutoExecuteOnTeleport()
+        end)
+    end)
 end
 
 -- 3. Thread Identity Dropper (Solara-Safe)
@@ -841,21 +909,41 @@ local function applyPotatoMode(enable)
     end
 end
 
--- 8. Auto-Reconnect Watcher
+-- 8. Auto-Reconnect Watcher (Case-Insensitive + Error 267 Idle Kick + Minimized Poll)
 local isReconnecting = false
-GuiService.ErrorMessageChanged:Connect(function(msg)
-    if _G.LianConfig.AutoReconnect and not isReconnecting then
-        if msg and (msg:find("disconnect") or msg:find("lost") or msg:find("error") or msg:find("277") or msg:find("268") or msg:find("529")) then
-            isReconnecting = true
-            setupAutoExecuteOnTeleport()
-            -- Schedule reset BEFORE teleport so a thrown Teleport cannot lock the watcher
-            task.spawn(function()
-                task.wait(10)
-                isReconnecting = false
-            end)
-            task.wait(5)
-            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+local function triggerAutoReconnect(msg)
+    if not _G.LianConfig.AutoReconnect or isReconnecting then return end
+    local lower = tostring(msg or ""):lower()
+    if lower == "" then return end
+    if lower:find("disconnect") or lower:find("lost") or lower:find("error")
+        or lower:find("kick") or lower:find("idle") or lower:find("afk")
+        or lower:find("connection") or lower:find("shut") or lower:find("267")
+        or lower:find("266") or lower:find("277") or lower:find("279")
+        or lower:find("268") or lower:find("529") then
+        isReconnecting = true
+        setupAutoExecuteOnTeleport()
+        task.spawn(function()
+            while isReconnecting and _G.LianConfig.AutoReconnect do
+                task.wait(4)
+                TeleportService:Teleport(game.PlaceId, LocalPlayer)
+                task.wait(6)
+            end
+            isReconnecting = false
+        end)
+    end
+end
+
+GuiService.ErrorMessageChanged:Connect(triggerAutoReconnect)
+
+task.spawn(function()
+    while true do
+        if _G.LianConfig.AutoReconnect and not isReconnecting then
+            local okMsg, errMsg = pcall(function() return GuiService:GetErrorMessage() end)
+            if okMsg and type(errMsg) == "string" and #errMsg > 0 then
+                triggerAutoReconnect(errMsg)
+            end
         end
+        task.wait(5)
     end
 end)
 

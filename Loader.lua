@@ -1237,7 +1237,7 @@ trackThread(task.spawn(function()
     end
 end))
 
-print("[Lian Hub v7.0] Starting... executor: " .. (identifyexecutor and identifyexecutor() or "unknown"))
+print("[Lian Hub v7.2] Starting... executor: " .. (identifyexecutor and identifyexecutor() or "unknown"))
 
 -- 9. Load Rayfield UI (Execute chunk & CreateWindow outside pcall — both yield internally!)
 local Rayfield
@@ -1269,9 +1269,9 @@ end
 local Window
 if Rayfield and Rayfield.CreateWindow then
     Window = Rayfield:CreateWindow({
-        Name = "⚡ Lian Hub v7.0 | Anime Dice Master Suite",
+        Name = "⚡ Lian Hub v7.2 | Anime Dice Master Suite",
         Icon = 0,
-        LoadingTitle = "Lian Hub v7.0 Rebuilt...",
+        LoadingTitle = "Lian Hub v7.2 Loading...",
         LoadingSubtitle = "by iannn (@brilliantgibrann16)",
         Theme = "Ocean",
         DisableRayfieldPrompts = true,
@@ -1355,7 +1355,7 @@ local function sendDiscordWebhook(title, desc, color)
             title = title,
             description = desc,
             color = color or 5814783,
-            footer = { text = "⚡ Lian Hub v7.0 | Anime Dice Telemetry" },
+            footer = { text = "⚡ Lian Hub v7.2 | Anime Dice Telemetry" },
             timestamp = DateTime.now():ToIsoDate()
         }}
     }
@@ -1401,7 +1401,124 @@ end
 if Window then
 local FarmTab = Window:CreateTab("Auto Farm", 4483362458)
 local PotionsTab = Window:CreateTab("Potion Stacking", 4483362458)
--- Trade Feeder Tab pruned (TradeService not in Anime Dice Network)
+local HalloweenTab = Window:CreateTab("Halloween Event", 4483362458)
+local TowerTab = Window:CreateTab("Towers", 4483362458)
+local PlotTab = Window:CreateTab("Plot & Quests", 4483362458)
+local RebirthTab = Window:CreateTab("Rebirth & Stats", 4483362458)
+local ServerTab = Window:CreateTab("Server Luck Hunter", 4483362458)
+local WebhookTab = Window:CreateTab("Discord Webhook", 4483362458)
+local PerfTab = Window:CreateTab("Potato & Botting", 4483362458)
+local PlayerTab = Window:CreateTab("Movement", 4483362458)
+local TeleportTab = Window:CreateTab("Teleport", 4483362458)
+local GradesTab = Window:CreateTab("Unit Grades", 4483362458)
+local ESPSettingsTab = Window:CreateTab("ESP & Visuals", 4483362458)
+
+-- TAB 1: AUTO FARM
+FarmTab:CreateSection("🎲 Dice Rolling Engine")
+
+FarmTab:CreateToggle({
+    Name = "Auto Roll Dice (Native + Non-blocking Fast Spam)",
+    CurrentValue = _G.LianConfig.AutoRoll,
+    Callback = function(Value)
+        _G.LianConfig.AutoRoll = Value
+        saveConfig()
+    end,
+})
+
+FarmTab:CreateToggle({
+    Name = "Fast Roll Mode (No Animation Delay)",
+    CurrentValue = _G.LianConfig.FastRoll,
+    Callback = function(Value)
+        _G.LianConfig.FastRoll = Value
+        saveConfig()
+    end,
+})
+
+FarmTab:CreateSection("✨ Quirk Reroll Hunter")
+
+FarmTab:CreateToggle({
+    Name = "Auto Reroll Quirk (Auto Stop Pas Target)",
+    CurrentValue = _G.LianConfig.AutoQuirk,
+    Callback = function(Value)
+        _G.LianConfig.AutoQuirk = Value
+        saveConfig()
+    end,
+})
+
+FarmTab:CreateToggle({
+    Name = "Auto Buy Dice (Beli dice terbaik otomatis)",
+    CurrentValue = _G.LianConfig.AutoBuyDice,
+    Callback = function(Value)
+        _G.LianConfig.AutoBuyDice = Value
+        saveConfig()
+    end,
+})
+
+-- TAB 2: POTION STACKING & SELECTOR
+PotionsTab:CreateSection("🧪 Potion Stacking & Category Filters")
+
+PotionsTab:CreateToggle({
+    Name = "Auto Drink & Stack Potions (Sesuai Kategori Pilihan)",
+    CurrentValue = _G.LianConfig.AutoPotions,
+    Callback = function(Value)
+        _G.LianConfig.AutoPotions = Value
+        saveConfig()
+    end,
+})
+
+PotionsTab:CreateToggle({
+    Name = "Minum Luck Potions (Luck I s/d IV)",
+    CurrentValue = _G.LianConfig.PotionUseLuck,
+    Callback = function(Value)
+        _G.LianConfig.PotionUseLuck = Value
+        saveConfig()
+    end,
+})
+
+PotionsTab:CreateToggle({
+    Name = "Minum Money / Income Potions (Income I s/d IV)",
+    CurrentValue = _G.LianConfig.PotionUseIncome,
+    Callback = function(Value)
+        _G.LianConfig.PotionUseIncome = Value
+        saveConfig()
+    end,
+})
+
+PotionsTab:CreateToggle({
+    Name = "Minum Damage Potions (Damage I s/d IV)",
+    CurrentValue = _G.LianConfig.PotionUseDamage,
+    Callback = function(Value)
+        _G.LianConfig.PotionUseDamage = Value
+        saveConfig()
+    end,
+})
+
+PotionsTab:CreateToggle({
+    Name = "Minum Speed Potions",
+    CurrentValue = _G.LianConfig.PotionUseSpeed,
+    Callback = function(Value)
+        _G.LianConfig.PotionUseSpeed = Value
+        saveConfig()
+    end,
+})
+
+PotionsTab:CreateToggle({
+    Name = "Minum Tower Drop Potions (Slayer, Shadow, Pirate, dll)",
+    CurrentValue = _G.LianConfig.PotionUseTower,
+    Callback = function(Value)
+        _G.LianConfig.PotionUseTower = Value
+        saveConfig()
+    end,
+})
+
+PotionsTab:CreateToggle({
+    Name = "Minum Halloween Potions (Haunted, Pumpkin, Candy Pot)",
+    CurrentValue = _G.LianConfig.PotionUseHalloween,
+    Callback = function(Value)
+        _G.LianConfig.PotionUseHalloween = Value
+        saveConfig()
+    end,
+})
 
 -- TAB 4: HALLOWEEN EVENT SUITE
 HalloweenTab:CreateSection("🎃 Pumpkin Dice Roll Engine")
@@ -2133,7 +2250,7 @@ do
                 pcall(function() _tg:Set(false) end)
             end)
             task.spawn(function()
-                sendDiscordWebhook("🔔 Test Webhook Lian Hub v7.0", "Koneksi webhook dari akun **" .. LocalPlayer.Name .. "** berhasil!", 65280)
+                sendDiscordWebhook("🔔 Test Webhook Lian Hub v7.2", "Koneksi webhook dari akun **" .. LocalPlayer.Name .. "** berhasil!", 65280)
                 pcall(function()
                     Rayfield:Notify({ Title = "Webhook Terkirim!", Content = "Cek channel Discord Bubu yaa!", Duration = 3 })
                 end)

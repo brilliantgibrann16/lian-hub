@@ -146,6 +146,7 @@ local R_SPECS = {
     SetAutoRoll    = { { "RollService", "RE", "SetAutoRoll" }, { "Rolling", "RE", "SetAutoRoll" } },
     UpdAutoSell    = { { "SellService", "RE", "UpdateAutoSell" }, { nil, "RE", "UpdateAutoSell" } },
     SellInventory  = { { "SellService", "RF", "SellInventory" } },
+    SellUnits      = { { "UnitService", "RE", "SellUnits" }, { "SellService", "RF", "SellInventory" } },
     BuyUpgrade     = { { nil, "RE", "BuyUpgrade" }, { "UpgradeService", "RE", "BuyUpgrade" } },
     BuyDice        = { { "DiceShopService", "RE", "BuyDice" }, { "DiceService", "RE", "BuyDice" } },
     EquipDice      = { { "DiceShopService", "RE", "EquipDice" }, { "DiceService", "RE", "EquipDice" } },
@@ -166,6 +167,7 @@ local R_SPECS = {
     QuestClaim     = { { "QuestService", "RE", "Claim" } },
     DailyClaim     = { { "DailyRewardService", "RE", "Claim" } },
     SpinUse        = { { "SpinService", "RE", "Use" } },
+    Spin           = { { "SpinService", "RE", "Use" } },
     RedeemCode     = { { "CodesService", "RE", "Redeem" } },
     ClaimOffline   = { { "OfflineEarningsService", "RE", "Claim" } },
     HalloweenRoll  = { { "PumpkinDiceService", "RF", "Roll" } },
@@ -306,6 +308,7 @@ _G.NyxConfig = {
     SmartBagAutoSell = false,
     BagSellThresholdPercent = 90,
     AutoSellMinMultiplier = "1sp",
+    AutoEquipBestUnit = true,
     ProtectShiny = true,
     ProtectHaunted = true,
     AutoFuseUnits = false,
@@ -611,6 +614,7 @@ if parentGui then
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "NyxHubFloatingBtn"
     ScreenGui.ResetOnSpawn = false
+    ScreenGui.DisplayOrder = 100
     ScreenGui.Parent = parentGui
 
     local Btn = Instance.new("TextButton")
@@ -740,6 +744,18 @@ PotionsTab:CreateToggle({
     CurrentValue = _G.NyxConfig.AntiWastePotionDuration,
     Callback = function(Value)
         _G.NyxConfig.AntiWastePotionDuration = Value
+        saveConfig()
+    end,
+})
+
+PotionsTab:CreateSlider({
+    Name = "Batas Target Potion (Target Counter)",
+    Range = {10, 500},
+    Increment = 10,
+    Suffix = " pcs",
+    CurrentValue = _G.NyxConfig.PotionTargetLimit or 100,
+    Callback = function(Value)
+        _G.NyxConfig.PotionTargetLimit = Value
         saveConfig()
     end,
 })
@@ -1045,6 +1061,17 @@ UnitsTab:CreateDropdown({
     end,
 })
 
+UnitsTab:CreateSection("⭐ Auto Equip Best Unit")
+UnitsTab:CreateToggle({
+    Name = "Auto Equip Best Units ke Plot Secara Berkala",
+    CurrentValue = _G.NyxConfig.AutoEquipBestUnit,
+    Callback = function(Value)
+        _G.NyxConfig.AutoEquipBestUnit = Value
+        saveConfig()
+        if Value and R.EquipBestUnit then fire(R.EquipBestUnit) end
+    end,
+})
+
 UnitsTab:CreateSection("🔒 Proteksi Unit Berharga")
 UnitsTab:CreateToggle({
     Name = "Protect Shiny Units (Jangan Pernah Dijual)",
@@ -1170,13 +1197,14 @@ local function toggleDarkGpuMode(enable)
                 darkOverlayGui = Instance.new("ScreenGui")
                 darkOverlayGui.Name = "NyxDarkOverlay"
                 darkOverlayGui.ResetOnSpawn = false
-                darkOverlayGui.DisplayOrder = 9999
+                darkOverlayGui.DisplayOrder = 0
                 darkOverlayGui.Parent = pg
                 
                 local frame = Instance.new("Frame")
                 frame.Size = UDim2.new(1, 0, 1, 0)
                 frame.BackgroundColor3 = Color3.fromRGB(11, 15, 23)
                 frame.BackgroundTransparency = 0.05
+                frame.Active = false
                 frame.Parent = darkOverlayGui
                 
                 local lbl = Instance.new("TextLabel")
@@ -1476,10 +1504,11 @@ end))
 -- 8. Main & Halloween Quests Claim Worker
 trackThread(task.spawn(function()
     while isAlive() do
+        local nowStamp = math.floor(Workspace:GetServerTimeNow())
         if _G.NyxConfig.AutoMainQuests and R.QuestClaim then
             for _, p in ipairs({"Daily", "Weekly"}) do
                 for qid = 1, 10 do
-                    fire(R.QuestClaim, p, qid, 0)
+                    fire(R.QuestClaim, p, qid, nowStamp)
                 end
             end
         end
@@ -1499,8 +1528,18 @@ trackThread(task.spawn(function()
         if _G.NyxConfig.AutoPumpkinPass and R.HalloweenPass then
             fire(R.HalloweenPass)
         end
-        if _G.NyxConfig.AutoLuckySpin and R.SpinUse then
-            fire(R.SpinUse)
+        if _G.NyxConfig.AutoLuckySpin and (R.SpinUse or R.Spin) then
+            fire(R.SpinUse or R.Spin)
+        end
+        if _G.NyxConfig.AutoRedeemCodes and R.RedeemCode then
+            local promoCodes = {"50KLikes", "Halloween", "TrickOrTreat", "Update2", "Quirks", "Dungeon", "Sub2Dev", "AnimeDice", "Pumpkin"}
+            for _, c in ipairs(promoCodes) do
+                fire(R.RedeemCode, c)
+                task.wait(0.2)
+            end
+        end
+        if _G.NyxConfig.AutoEquipBestUnit and R.EquipBestUnit then
+            fire(R.EquipBestUnit)
         end
         task.wait(10.0)
     end
@@ -1729,18 +1768,27 @@ trackThread(task.spawn(function()
     end
 end))
 
--- 14. Auto Fuse Units Worker
+-- 14. Auto Fuse Units Worker (Safe: Common, Rare, Epic only)
 trackThread(task.spawn(function()
     while isAlive() do
         if _G.NyxConfig.AutoFuseUnits and R.FuseUnits then
             local inv = readData("Inventory", {}) or {}
             local nameGroups = {}
             for key, item in pairs(inv) do
-                if type(item) == "table" and not item.locked then
-                    local name = tostring(item.name or "")
-                    if name ~= "" then
-                        nameGroups[name] = nameGroups[name] or {}
-                        table.insert(nameGroups[name], key)
+                if type(item) == "table" then
+                    local attrs = item.attributes or item
+                    local isLocked = (attrs.locked == true) or (item.locked == true)
+                    local isShiny = (attrs.shiny == true) or (item.shiny == true)
+                    local isHaunted = (attrs.haunted == true) or (item.haunted == true)
+                    local rarity = tostring(item.rarity or attrs.rarity or "")
+                    local safeToFuse = not isLocked and not isShiny and not isHaunted
+                        and not rarity:find("Secret") and not rarity:find("Mythic") and not rarity:find("Celestial")
+                    if safeToFuse then
+                        local name = tostring(item.name or "")
+                        if name ~= "" then
+                            nameGroups[name] = nameGroups[name] or {}
+                            table.insert(nameGroups[name], key)
+                        end
                     end
                 end
             end

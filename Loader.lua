@@ -156,7 +156,8 @@ local R_SPECS = {
     UseBoost       = { { "BoostService", "RE", "Use" } },
     Rebirth        = { { "RebirthService", "RE", "Rebirth" } },
     AddStat        = { { "RebirthService", "RE", "AddStat" } },
-    RerollQuirk    = { { "Quirks", "RF", "Reroll" }, { "QuirkService", "RF", "RollQuirk" } },
+    RerollQuirk    = { { "QuirkService", "RE", "Roll" }, { "Quirks", "RE", "Roll" }, { "Quirks", "RF", "Reroll" } },
+    ProtectQuirk   = { { "QuirkService", "RE", "SetQuirkProtected" } },
     FuseUnits      = { { "FusingService", "RE", "Fuse" }, { "UnitService", "RF", "Fuse" } },
     SetLocked      = { { "UnitService", "RE", "SetLocked" } },
     PlayTower      = { { "Towers", "RF", "PlayTower" } },
@@ -253,7 +254,8 @@ local function readData(key, default)
 end
 
 -- 6. Configuration Engine
-local CONFIG_FILE = "NyxHub_AnimeDice.json"
+local CONFIG_FILE = "NyxHub_" .. (LocalPlayer and tostring(LocalPlayer.UserId) or "shared") .. ".json"
+local LEGACY_CONFIG_FILE = "NyxHub_AnimeDice.json"
 
 _G.NyxConfig = {
     -- Auto Farm
@@ -340,8 +342,9 @@ end
 
 local function loadConfig()
     pcall(function()
-        if isfile and isfile(CONFIG_FILE) and readfile then
-            local data = HttpService:JSONDecode(readfile(CONFIG_FILE))
+        local fileToRead = (isfile and isfile(CONFIG_FILE) and CONFIG_FILE) or (isfile and isfile(LEGACY_CONFIG_FILE) and LEGACY_CONFIG_FILE)
+        if fileToRead and readfile then
+            local data = HttpService:JSONDecode(readfile(fileToRead))
             if type(data) == "table" then
                 for k, v in pairs(data) do
                     if _G.NyxConfig[k] ~= nil then
@@ -710,11 +713,25 @@ FarmTab:CreateToggle({
 })
 
 FarmTab:CreateDropdown({
-    Name = "Target Quirk Pilihan",
-    Options = {"Prodigy", "All For One", "One For All", "Godly", "Overpowered", "Any Secret"},
-    CurrentOption = _G.NyxConfig.QuirkTarget,
+    Name = "Target Quirk Pilihan (Real Anime Dice)",
+    Options = {
+        "Sovereign (1/37k - Top Tier)",
+        "Fortune's Favor (1/11k)",
+        "Midas Touch (1/5.5k)",
+        "Prodigy (1/2.7k - Rekomendasi)",
+        "Tycoon (1/2.2k)",
+        "Fortune III",
+        "Wealth III",
+        "Gifted III",
+        "Refined III",
+        "Swift III"
+    },
+    CurrentOption = _G.NyxConfig.QuirkTarget or "Prodigy (1/2.7k - Rekomendasi)",
     Callback = function(Option)
-        _G.NyxConfig.QuirkTarget = type(Option) == "table" and Option[1] or Option
+        local opt = type(Option) == "table" and Option[1] or Option
+        local cleanName = opt:match("^([%w%s%']+)") or opt
+        cleanName = cleanName:gsub("%s+$", "")
+        _G.NyxConfig.QuirkTarget = cleanName
         saveConfig()
     end,
 })
@@ -1748,19 +1765,53 @@ trackThread(task.spawn(function()
     end
 end))
 
--- 13. Auto Quirk Reroll Worker
+-- 13. Auto Quirk Reroll Worker (Real Anime Dice QuirkService Engine)
 trackThread(task.spawn(function()
     while isAlive() do
         if _G.NyxConfig.AutoQuirk and R.RerollQuirk then
-            local curQuirk = tostring(readData("Quirk", "") or "")
-            local target = _G.NyxConfig.QuirkTarget or "Prodigy"
-            if curQuirk:lower():find(target:lower()) then
-                _G.NyxConfig.AutoQuirk = false
-                saveConfig()
-                if Rayfield then Rayfield:Notify({ Title = "Quirk Didapat!", Content = "Target quirk " .. target .. " berhasil didapat!", Duration = 5 }) end
+            local targetRaw = _G.NyxConfig.QuirkTarget or "Prodigy"
+            local target = targetRaw:match("^([%w%s%']+)") or targetRaw
+            target = target:gsub("%s+$", "")
+            
+            -- Ensure player is standing near Quirks station (AntiCheatService.IsNearZone check)
+            local qStation = findZoneOrStation({"Quirks", "QuirkStation", "Quirk"})
+            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if qStation and hrp then
+                local dist = (hrp.Position - (qStation:IsA("BasePart") and qStation.Position or qStation:GetPivot().Position)).Magnitude
+                if dist > 35 then
+                    teleportToTarget(qStation)
+                    task.wait(1.0)
+                end
+            end
+            
+            -- Find first Common/available unit in inventory to roll quirk on
+            local inv = readData("Inventory", {}) or {}
+            local candidateKey, candidateQuirk = nil, ""
+            for key, item in pairs(inv) do
+                if type(item) == "table" and not item.locked then
+                    local attrs = item.attributes or item
+                    local curQ = tostring(attrs.quirk or item.quirk or "")
+                    if curQ:lower():find(target:lower()) then
+                        _G.NyxConfig.AutoQuirk = false
+                        saveConfig()
+                        if R.ProtectQuirk then fire(R.ProtectQuirk, target, true) end
+                        if Rayfield then Rayfield:Notify({ Title = "🎉 Quirk Didapat!", Content = "Unit berhasil mendapatkan " .. target .. "!", Duration = 5 }) end
+                        candidateKey = nil
+                        break
+                    end
+                    if candidateKey == nil then
+                        candidateKey = key
+                        candidateQuirk = curQ
+                    end
+                end
+            end
+            
+            if candidateKey and _G.NyxConfig.AutoQuirk then
+                if R.ProtectQuirk then fire(R.ProtectQuirk, target, true) end
+                fire(R.RerollQuirk, candidateKey)
+                task.wait(0.35)
             else
-                fire(R.RerollQuirk)
-                task.wait(0.3)
+                task.wait(1.0)
             end
         else
             task.wait(1.0)

@@ -90,11 +90,9 @@ trackThread(task.spawn(function()
     pcall(function() vu = game:GetService("VirtualUser") end)
     local idledConnection = LocalPlayer.Idled:Connect(function()
         if vu then
-            pcall(function()
-                vu:Button2Down(Vector2.new(0, 0), Workspace.CurrentCamera.CFrame)
-                task.wait(1)
-                vu:Button2Up(Vector2.new(0, 0), Workspace.CurrentCamera.CFrame)
-            end)
+            pcall(function() vu:Button2Down(Vector2.new(0, 0), Workspace.CurrentCamera.CFrame) end)
+            task.wait(1)
+            pcall(function() vu:Button2Up(Vector2.new(0, 0), Workspace.CurrentCamera.CFrame) end)
         end
     end)
     trackConn(idledConnection)
@@ -122,16 +120,11 @@ local function setupAutoExecuteOnTeleport()
 end
 setupAutoExecuteOnTeleport()
 
--- 3. Pure Native Safe Require (Zero Identity Poisoning)
+-- 3. Pure Native Safe Require (Zero getrenv / zero identity poisoning)
 local function safeRequire(mod)
     if not mod or not mod:IsA("ModuleScript") then return nil end
-    local renvReq = (type(getrenv) == "function" and getrenv().require) or nil
-    if type(renvReq) == "function" then
-        local ok, res = pcall(renvReq, mod)
-        if ok and res ~= nil then return res end
-    end
-    local ok2, res2 = pcall(require, mod)
-    if ok2 and res2 ~= nil then return res2 end
+    local ok, res = pcall(require, mod)
+    if ok and res ~= nil then return res end
     return nil
 end
 
@@ -178,6 +171,7 @@ local R_SPECS = {
     HalloweenRoll  = { { "PumpkinDiceService", "RF", "Roll" } },
     HalloweenClaim = { { "HalloweenQuestService", "RE", "Claim" } },
     HalloweenPass  = { { "HalloweenService", "RE", "ClaimAllPath" } },
+    BuyCandyUpg    = { { "HalloweenService", "RE", "BuyUpgrade" }, { "CandyShopService", "RE", "Buy" } },
     TrickKnock     = { { "TrickOrTreatService", "RE", "Knocked" }, { "HalloweenService", "RE", "TrickOrTreat" } }
 }
 
@@ -200,8 +194,10 @@ local function fire(remote, ...)
         local ok, err = pcall(remote.FireServer, remote, ...)
         return ok, err
     elseif remote:IsA("RemoteFunction") then
-        local ok, res = pcall(remote.InvokeServer, remote, ...)
-        return ok, res
+        task.spawn(function(...)
+            pcall(remote.InvokeServer, remote, ...)
+        end, ...)
+        return true, nil
     end
     return false
 end
@@ -438,14 +434,23 @@ local ALL_TREE_UPGRADES = {
     "Luck IX", "Luck X"
 }
 
+local function canAffordSpend(price)
+    price = price or 0
+    local curMoney = getPlayerCash()
+    if _G.NyxConfig.AutoRebirth then
+        local rbCost = getNextRebirthCost()
+        return (curMoney - price) >= rbCost
+    end
+    return curMoney >= price
+end
+
 local function buyUpgradesTree()
     if not R.BuyUpgrade then return end
-    local money = getPlayerCash()
     local owned = readData("Upgrades", {}) or {}
     for _, upg in ipairs(ALL_TREE_UPGRADES) do
-        if not owned[upg] then
+        if not owned[upg] and canAffordSpend(500) then
             fire(R.BuyUpgrade, upg)
-            task.wait(0.12)
+            task.wait(0.15)
         end
     end
 end
@@ -534,7 +539,37 @@ if Rayfield and Rayfield.CreateWindow then
         Icon = 0,
         LoadingTitle = "Nyx Hub v8.0 Loading...",
         LoadingSubtitle = "by iannn (@brilliantgibrann16) • Liquid Glass",
-        Theme = "Ocean",
+        Theme = {
+            TextColor = Color3.fromRGB(240, 245, 255),
+            Background = Color3.fromRGB(11, 15, 25),
+            Topbar = Color3.fromRGB(15, 23, 42),
+            Shadow = Color3.fromRGB(5, 8, 15),
+            NotificationBackground = Color3.fromRGB(15, 23, 42),
+            NotificationActionsBackground = Color3.fromRGB(30, 41, 59),
+            TabBackground = Color3.fromRGB(15, 23, 42),
+            TabStroke = Color3.fromRGB(30, 41, 59),
+            TabBackgroundSelected = Color3.fromRGB(30, 58, 110),
+            TabTextColor = Color3.fromRGB(148, 163, 184),
+            SelectedTabTextColor = Color3.fromRGB(56, 189, 248),
+            ElementBackground = Color3.fromRGB(18, 26, 46),
+            ElementBackgroundHover = Color3.fromRGB(24, 34, 60),
+            SecondaryElementBackground = Color3.fromRGB(15, 23, 42),
+            ElementStroke = Color3.fromRGB(30, 41, 59),
+            SecondaryElementStroke = Color3.fromRGB(30, 41, 59),
+            SliderBackground = Color3.fromRGB(30, 58, 110),
+            SliderProgress = Color3.fromRGB(56, 189, 248),
+            SliderStroke = Color3.fromRGB(56, 189, 248),
+            ToggleBackground = Color3.fromRGB(15, 23, 42),
+            ToggleEnabled = Color3.fromRGB(56, 189, 248),
+            ToggleDisabled = Color3.fromRGB(71, 85, 105),
+            ToggleCircle = Color3.fromRGB(255, 255, 255),
+            ToggleStroke = Color3.fromRGB(30, 41, 59),
+            DropdownSelected = Color3.fromRGB(30, 58, 110),
+            DropdownUnselected = Color3.fromRGB(18, 26, 46),
+            InputBackground = Color3.fromRGB(18, 26, 46),
+            InputStroke = Color3.fromRGB(30, 41, 59),
+            PlaceholderColor = Color3.fromRGB(100, 116, 139)
+        },
         DisableRayfieldPrompts = true,
         DisableBuildWarnings = true,
         ConfigurationSaving = { Enabled = false },
@@ -1263,16 +1298,19 @@ end
 local lastCashCollectTime = os.clock()
 
 -- 1. Auto Roll Dice Worker
+local lastAutoRollState = nil
 trackThread(task.spawn(function()
     while isAlive() do
+        if _G.NyxConfig.AutoRoll ~= lastAutoRollState then
+            lastAutoRollState = _G.NyxConfig.AutoRoll
+            if R.SetAutoRoll then fire(R.SetAutoRoll, _G.NyxConfig.AutoRoll) end
+        end
         if _G.NyxConfig.AutoRoll then
-            if R.SetAutoRoll then fire(R.SetAutoRoll, true) end
             if R.RollDice then
-                task.spawn(function() fire(R.RollDice) end)
+                fire(R.RollDice)
             end
             task.wait(_G.NyxConfig.FastRoll and 0.08 or 0.3)
         else
-            if R.SetAutoRoll then fire(R.SetAutoRoll, false) end
             task.wait(0.5)
         end
     end
@@ -1349,7 +1387,7 @@ trackThread(task.spawn(function()
                     for key, item in pairs(inv) do
                         local name = tostring(item.name or key):lower()
                         if name:find("lucky roll") or name:find("jackpot") or name:find("lucky bag") or name:find("clover") then
-                            if R.Spin then fire(R.Spin, key) end
+                            if R.SpinUse then fire(R.SpinUse, key) end
                             if R.UseBoost then fire(R.UseBoost, key) end
                             task.wait(0.2)
                         end
@@ -1377,12 +1415,20 @@ trackThread(task.spawn(function()
         if _G.NyxConfig.AutoAllocStats and R.AddStat then
             local prio = _G.NyxConfig.RebirthStatPriority or ""
             local stats = {"Money", "Luck", "Damage", "Health", "Trait Luck", "Grade Luck"}
-            if prio:find("Money") then stats = {"Money"}
-            elseif prio:find("Luck") then stats = {"Luck"}
-            elseif prio:find("Damage") then stats = {"Damage"}
-            elseif prio:find("Health") then stats = {"Health"}
-            elseif prio:find("Trait") then stats = {"Trait Luck"}
-            elseif prio:find("Grade") then stats = {"Grade Luck"}
+            if prio:find("Balance") then
+                stats = {"Money", "Luck", "Damage", "Health", "Trait Luck", "Grade Luck"}
+            elseif prio:find("Money") or prio:find("Income") then
+                stats = {"Money"}
+            elseif prio:find("Luck") and not prio:find("Trait") and not prio:find("Grade") then
+                stats = {"Luck"}
+            elseif prio:find("Damage") then
+                stats = {"Damage"}
+            elseif prio:find("Health") then
+                stats = {"Health"}
+            elseif prio:find("Trait") then
+                stats = {"Trait Luck"}
+            elseif prio:find("Grade") then
+                stats = {"Grade Luck"}
             end
             for _, s in ipairs(stats) do
                 fire(R.AddStat, s)
@@ -1464,6 +1510,8 @@ end))
 trackThread(task.spawn(function()
     local fpp = fireproximityprompt or (_ENV and _ENV.fireproximityprompt)
     local doorCooldowns = {}
+    local savedOriginCFrame = nil
+    local wasRunning = false
     
     local function getDoors()
         local list = {}
@@ -1486,6 +1534,10 @@ trackThread(task.spawn(function()
         if _G.NyxConfig.AutoTrickOrTreat then
             local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             if hrp then
+                if not wasRunning then
+                    savedOriginCFrame = hrp.CFrame
+                    wasRunning = true
+                end
                 local doors = getDoors()
                 if #doors == 0 then
                     goToHalloweenIsland()
@@ -1493,8 +1545,6 @@ trackThread(task.spawn(function()
                     doors = getDoors()
                 end
                 if #doors > 0 then
-                    local oldCF = hrp.CFrame
-                    local knockedAny = false
                     for _, door in ipairs(doors) do
                         if not _G.NyxConfig.AutoTrickOrTreat or not isAlive() then break end
                         local last = doorCooldowns[door] or 0
@@ -1517,7 +1567,6 @@ trackThread(task.spawn(function()
                                 end
                                 if R.TrickKnock then fire(R.TrickKnock, door.Name) end
                                 doorCooldowns[door] = os.clock()
-                                knockedAny = true
                                 task.wait(0.3)
                                 -- Step back 18 studs for server re-arm (> 17 studs)
                                 hrp.CFrame = pivot * CFrame.new(0, 1.5, 18)
@@ -1525,14 +1574,16 @@ trackThread(task.spawn(function()
                             end
                         end
                     end
-                    if knockedAny and isAlive() and _G.NyxConfig.AutoTrickOrTreat and oldCF then
-                        local curHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                        if curHrp then curHrp.CFrame = oldCF end
-                    end
                 end
             end
-            task.wait(5.0)
+            task.wait(4.0)
         else
+            if wasRunning and savedOriginCFrame then
+                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then hrp.CFrame = savedOriginCFrame end
+                savedOriginCFrame = nil
+                wasRunning = false
+            end
             task.wait(1.5)
         end
     end
@@ -1546,14 +1597,16 @@ trackThread(task.spawn(function()
             local count = 0
             for _ in pairs(inv) do count = count + 1 end
             local threshold = _G.NyxConfig.BagSellThresholdPercent or 90
-            local maxBag = 100
+            local maxBag = tonumber(readData("MaxInventory", 100)) or 100
             local slots = readData("Slots", {}) or {}
             local protectedUuids = {}
             for _, s in pairs(slots) do
                 if type(s) == "table" and s.unitId then protectedUuids[s.unitId] = true end
             end
+            
+            local thresholdMultiplier = parseFormattedNumber(_G.NyxConfig.AutoSellMinMultiplier or "1sp")
             if (count / maxBag) >= (threshold / 100) then
-                local sellList = {}
+                local candidateUnits = {}
                 for key, item in pairs(inv) do
                     if not protectedUuids[key] and type(item) == "table" then
                         local attrs = item.attributes or item
@@ -1564,10 +1617,23 @@ trackThread(task.spawn(function()
                         local keep = isLocked
                         if isShiny and _G.NyxConfig.ProtectShiny then keep = true end
                         if isHaunted and _G.NyxConfig.ProtectHaunted then keep = true end
-                        if rarity:find("Secret") or rarity:find("Mythic") then keep = true end
-                        if not keep then table.insert(sellList, key) end
+                        if rarity:find("Secret") or rarity:find("Mythic") or rarity:find("Celestial") then keep = true end
+                        
+                        local mult = parseFormattedNumber(item.multiplier or attrs.multiplier or attrs.rollChance or "1")
+                        if not keep and mult <= thresholdMultiplier then
+                            table.insert(candidateUnits, { key = key, mult = mult })
+                        end
                     end
                 end
+                
+                -- Sort ascending by multiplier: worst units sold first!
+                table.sort(candidateUnits, function(a, b) return a.mult < b.mult end)
+                
+                local sellList = {}
+                for _, u in ipairs(candidateUnits) do
+                    table.insert(sellList, u.key)
+                end
+                
                 if #sellList > 0 then
                     for i = 1, #sellList, 30 do
                         local batch = {}
@@ -1585,6 +1651,7 @@ trackThread(task.spawn(function()
 end))
 
 -- 11. WiFi Disconnect & Cash Freeze Watchdog
+local lastKnownCashBalance = getPlayerCash()
 trackThread(task.spawn(function()
     while isAlive() do
         -- 1. Error prompt overlay detection
@@ -1600,13 +1667,20 @@ trackThread(task.spawn(function()
                             if firesignal then firesignal(recBtn.MouseButton1Click) end
                         end)
                     end
-                    task.wait(2)
-                    TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+                    task.spawn(function()
+                        task.wait(2)
+                        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+                    end)
                 end
             end)
         end
         -- 2. Cash collection freeze watchdog (>120s with AutoCollectCash ON)
         if _G.NyxConfig.CashWatchdogRejoin and _G.NyxConfig.AutoCollectCash then
+            local curMoney = getPlayerCash()
+            if curMoney > lastKnownCashBalance then
+                lastCashCollectTime = os.clock()
+                lastKnownCashBalance = curMoney
+            end
             if (os.clock() - lastCashCollectTime) > 120 then
                 lastCashCollectTime = os.clock()
                 setupAutoExecuteOnTeleport()
@@ -1802,6 +1876,23 @@ trackThread(task.spawn(function()
             end
         end
         task.wait(2.0)
+    end
+end))
+
+
+-- 18. Auto Candy Upgrades Worker (Halloween Shop)
+trackThread(task.spawn(function()
+    while isAlive() do
+        if _G.NyxConfig.AutoCandyUpgrades and R.BuyCandyUpg then
+            local shopItems = {"Pumpkin Egg", "Ghost Dice", "Candy Potion", "Lucky Bag"}
+            for _, item in ipairs(shopItems) do
+                fire(R.BuyCandyUpg, item)
+                task.wait(0.2)
+            end
+            task.wait(6.0)
+        else
+            task.wait(2.0)
+        end
     end
 end))
 

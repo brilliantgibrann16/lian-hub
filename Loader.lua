@@ -284,6 +284,7 @@ _G.NyxConfig = {
     AutoHalloweenQuestClaim = false,
     AutoPumpkinPass = false,
     AutoCandyUpgrades = false,
+    AutoHalloweenTowers = false,
     
     -- Towers
     SmartTowerAI = false,
@@ -990,6 +991,16 @@ HalloweenTab:CreateToggle({
     end,
 })
 
+HalloweenTab:CreateSection("🏰 Halloween Event Towers (Dungeons)")
+HalloweenTab:CreateToggle({
+    Name = "Auto Attack Halloween Event Towers (The Abyss / Bell / Attic / Crypt)",
+    CurrentValue = _G.NyxConfig.AutoHalloweenTowers,
+    Callback = function(Value)
+        _G.NyxConfig.AutoHalloweenTowers = Value
+        saveConfig()
+    end,
+})
+
 -- TAB 4: TOWERS
 TowerTab:CreateSection("⚔️ Smart Tower AI Engine")
 TowerTab:CreateToggle({
@@ -1011,12 +1022,24 @@ TowerTab:CreateToggle({
 })
 
 TowerTab:CreateDropdown({
-    Name = "Pilihan Manual Tower (Real Anime Dice)",
-    Options = {"Dragon Tower", "Cursed Tower", "Pirate Tower", "Hidden Leaf Tower", "Infinity Tower (Best/No Cap)"},
-    CurrentOption = "Infinity Tower (Best/No Cap)",
+    Name = "Pilihan Manual Tower (Standard & Halloween Event)",
+    Options = {
+        "🎃 The Abyss (Halloween Event)",
+        "🎃 Bell Tower (Halloween Event)",
+        "🎃 Attic (Halloween Event)",
+        "🎃 Crypt (Halloween Event)",
+        "🎃 Foyer (Halloween Event)",
+        "🎃 Front Yard (Halloween Event)",
+        "⚔️ Infinity Tower (Best / No Cap)",
+        "⚔️ Hidden Leaf Tower (Extreme)",
+        "⚔️ Pirate Tower (Hard)",
+        "⚔️ Cursed Tower (Medium)",
+        "⚔️ Dragon Tower (Easy)"
+    },
+    CurrentOption = "🎃 The Abyss (Halloween Event)",
     Callback = function(Option)
         local opt = type(Option) == "table" and Option[1] or Option
-        local clean = opt:match("^([%w%s]+)") or opt
+        local clean = opt:gsub("^[🎃⚔️%s]+", ""):match("^([%w%s]+)") or opt
         clean = clean:gsub("%s+$", "")
         _G.NyxConfig.TowerType = clean
         saveConfig()
@@ -1964,24 +1987,31 @@ trackThread(task.spawn(function()
     end
 end))
 
--- 15. Smart Towers & Manual Tower AI Worker
+-- 15. Smart Towers, Manual Towers & Halloween Event Towers Worker
 trackThread(task.spawn(function()
     while isAlive() do
-        if (_G.NyxConfig.SmartTowerAI or _G.NyxConfig.AutoTower) and R.PlayTower then
+        local shouldRun = _G.NyxConfig.SmartTowerAI or _G.NyxConfig.AutoTower or _G.NyxConfig.AutoHalloweenTowers
+        if shouldRun and R.PlayTower then
             if _G.NyxConfig.AutoEquipTowerTeam and R.BestTeam then
                 fire(R.BestTeam)
                 task.wait(0.5)
             end
             local towerName = _G.NyxConfig.TowerType or "The Abyss"
-            if _G.NyxConfig.SmartTowerAI then
-                local allTowers = {"Infinity Tower", "Hidden Leaf Tower", "Pirate Tower", "Cursed Tower", "Dragon Tower"}
+            if _G.NyxConfig.AutoHalloweenTowers then
+                local hwTowers = {"The Abyss", "Bell Tower", "Attic", "Crypt", "Foyer", "Front Yard"}
+                towerName = hwTowers[math.random(1, #hwTowers)]
+            elseif _G.NyxConfig.SmartTowerAI then
+                local allTowers = {
+                    "The Abyss", "Bell Tower", "Attic", "Crypt",
+                    "Infinity Tower", "Hidden Leaf Tower", "Pirate Tower", "Cursed Tower", "Dragon Tower"
+                }
                 towerName = allTowers[math.random(1, #allTowers)]
             end
             local okStart, resStart = fire(R.PlayTower, towerName)
             if okStart and resStart then
                 task.wait(0.5)
                 for floor = 1, 50 do
-                    if not (_G.NyxConfig.SmartTowerAI or _G.NyxConfig.AutoTower) or not isAlive() then break end
+                    if not (_G.NyxConfig.SmartTowerAI or _G.NyxConfig.AutoTower or _G.NyxConfig.AutoHalloweenTowers) or not isAlive() then break end
                     local okFloor, resSeq = fire(R.CompTowerFloor)
                     if not okFloor or resSeq == "destroyed" then break end
                     if type(resSeq) == "table" then

@@ -430,14 +430,112 @@ local function canAffordRebirth()
     return curCash >= cost, curCash, cost
 end
 
+-- 74 Verified Ground-Truth Upgrades (ordered from cheapest to most expensive)
 local ALL_TREE_UPGRADES = {
-    "Money Multiplier I", "Luck I", "Money Multiplier II", "Luck II",
-    "Roll Duration I", "Unit Storage I", "Money Multiplier III", "Luck III",
-    "Unlock Index", "Roll Duration II", "Luck IV", "Money Multiplier IV",
-    "Unit Storage II", "Luck V", "Roll Duration III", "Unlock Auto Roll",
-    "Money Multiplier V", "Luck VI", "Unit Storage III", "Roll Duration IV",
-    "Luck VII", "Luck VIII", "Unit Storage IV", "Roll Duration V",
-    "Luck IX", "Luck X"
+    { name = "Money I", price = 250 },
+    { name = "Luck I", price = 500 },
+    { name = "Damage I", price = 1000 },
+    { name = "Health I", price = 1000 },
+    { name = "Unit Storage I", price = 2500 },
+    { name = "Money II", price = 5000 },
+    { name = "Luck II", price = 10000 },
+    { name = "Health II", price = 20000 },
+    { name = "Damage II", price = 20000 },
+    { name = "Unit Storage II", price = 50000 },
+    { name = "Money III", price = 100000 },
+    { name = "Luck III", price = 200000 },
+    { name = "Walkspeed I", price = 250000 },
+    { name = "Damage III", price = 400000 },
+    { name = "Health III", price = 400000 },
+    { name = "Sell I", price = 500000 },
+    { name = "Unit Storage III", price = 1000000 },
+    { name = "Roll Speed I", price = 1000000 },
+    { name = "Money IV", price = 2000000 },
+    { name = "Luck IV", price = 4000000 },
+    { name = "Walkspeed II", price = 5000000 },
+    { name = "Health IV", price = 8000000 },
+    { name = "Damage IV", price = 8000000 },
+    { name = "Sell II", price = 10000000 },
+    { name = "Unit Storage IV", price = 20000000 },
+    { name = "Money V", price = 40000000 },
+    { name = "Luck V", price = 80000000 },
+    { name = "Walkspeed III", price = 100000000 },
+    { name = "Roll Speed II", price = 100000000 },
+    { name = "Damage V", price = 160000000 },
+    { name = "Health V", price = 160000000 },
+    { name = "Sell III", price = 200000000 },
+    { name = "Unit Storage V", price = 400000000 },
+    { name = "Money VI", price = 800000000 },
+    { name = "Luck VI", price = 1500000000 },
+    { name = "Walkspeed IV", price = 2000000000 },
+    { name = "Damage VI", price = 3000000000 },
+    { name = "Health VI", price = 3000000000 },
+    { name = "Sell IV", price = 4000000000 },
+    { name = "Unit Storage VI", price = 8000000000 },
+    { name = "Roll Speed III", price = 10000000000 },
+    { name = "Money VII", price = 15000000000 },
+    { name = "Luck VII", price = 30000000000 },
+    { name = "Walkspeed V", price = 40000000000 },
+    { name = "Health VII", price = 60000000000 },
+    { name = "Damage VII", price = 60000000000 },
+    { name = "Sell V", price = 80000000000 },
+    { name = "Unit Storage VII", price = 160000000000 },
+    { name = "Money VIII", price = 300000000000 },
+    { name = "Luck VIII", price = 600000000000 },
+    { name = "Walkspeed VI", price = 800000000000 },
+    { name = "Roll Speed IV", price = 1000000000000 },
+    { name = "Health VIII", price = 1200000000000 },
+    { name = "Damage VIII", price = 1200000000000 },
+    { name = "Sell VI", price = 1500000000000 },
+    { name = "Unit Storage VIII", price = 3000000000000 },
+    { name = "Money IX", price = 6000000000000 },
+    { name = "Luck IX", price = 12000000000000 },
+    { name = "Damage IX", price = 25000000000000 },
+    { name = "Roll Speed V", price = 100000000000000 },
+    { name = "Money X", price = 120000000000000 },
+    { name = "Luck X", price = 250000000000000 },
+    { name = "Money XI", price = 2500000000000000 },
+    { name = "Luck XI", price = 5000000000000000 },
+    { name = "Roll Speed VI", price = 10000000000000000 },
+    { name = "Fortune I", price = 10000000000000000 },
+    { name = "Money XII", price = 50000000000000000 },
+    { name = "Luck XII", price = 100000000000000000 },
+    { name = "Fortune II", price = 250000000000000000 },
+    { name = "Fortune III", price = 1000000000000000000 },
+    { name = "Fortune IV", price = 20000000000000000000 },
+    { name = "Fortune V", price = 500000000000000000000 },
+    { name = "Fortune VI", price = 1e+22 },
+    { name = "Fortune VII", price = 2e+23 },
+}
+
+-- 26 Verified Ground-Truth Dice Ladder (ordered by luck, low to high)
+local DICE_LADDER = {
+    { name = "Basic", price = 0, luck = 1 },
+    { name = "Normal", price = 1, luck = 2 },
+    { name = "Fire", price = 2500, luck = 5 },
+    { name = "Water", price = 10000, luck = 10 },
+    { name = "Nature", price = 75000, luck = 20 },
+    { name = "Lightning", price = 500000, luck = 42.5 },
+    { name = "Ice", price = 4000000, luck = 100 },
+    { name = "Magma", price = 30000000, luck = 200 },
+    { name = "Storm", price = 200000000, luck = 400 },
+    { name = "Shadow", price = 1500000000, luck = 750 },
+    { name = "Light", price = 12000000000, luck = 1500 },
+    { name = "Blood Moon", price = 100000000000, luck = 3000 },
+    { name = "Void", price = 750000000000, luck = 6000 },
+    { name = "Solar", price = 5000000000000, luck = 12500 },
+    { name = "Lunar", price = 37500000000000, luck = 25000 },
+    { name = "Galaxy", price = 150000000000000, luck = 50000 },
+    { name = "Black Hole", price = 1000000000000000, luck = 100000 },
+    { name = "Dragon", price = 8500000000000000, luck = 200000 },
+    { name = "Royal", price = 100000000000000000, luck = 400000 },
+    { name = "Prismatic", price = 1000000000000000000, luck = 1000000 },
+    { name = "Arcane", price = 1.2e19, luck = 2000000 },
+    { name = "Corrupted", price = 1.5e20, luck = 5000000 },
+    { name = "Titan", price = 1e21, luck = 10000000 },
+    { name = "Chrono", price = 1.5e22, luck = 25000000 },
+    { name = "Cyber", price = 1e23, luck = 62500000 },
+    { name = "Toxic", price = 7.5e23, luck = 150000000 }
 }
 
 local function canAffordSpend(price)
@@ -453,10 +551,12 @@ end
 local function buyUpgradesTree()
     if not R.BuyUpgrade then return end
     local owned = readData("Upgrades", {}) or {}
-    for _, upg in ipairs(ALL_TREE_UPGRADES) do
-        if not owned[upg] and canAffordSpend(500) then
-            fire(R.BuyUpgrade, upg)
-            task.wait(0.15)
+    for _, node in ipairs(ALL_TREE_UPGRADES) do
+        local name = node.name
+        local price = node.price
+        if not owned[name] and canAffordSpend(price) then
+            fire(R.BuyUpgrade, name)
+            task.wait(0.12)
         end
     end
 end
@@ -911,11 +1011,14 @@ TowerTab:CreateToggle({
 })
 
 TowerTab:CreateDropdown({
-    Name = "Pilihan Manual Tower Tertentu",
-    Options = {"The Abyss", "Bell Tower", "Attic", "Crypt", "Foyer", "Front Yard", "Shadow Tower", "Infinity Tower"},
-    CurrentOption = _G.NyxConfig.TowerType,
+    Name = "Pilihan Manual Tower (Real Anime Dice)",
+    Options = {"Dragon Tower", "Cursed Tower", "Pirate Tower", "Hidden Leaf Tower", "Infinity Tower (Best/No Cap)"},
+    CurrentOption = "Infinity Tower (Best/No Cap)",
     Callback = function(Option)
-        _G.NyxConfig.TowerType = type(Option) == "table" and Option[1] or Option
+        local opt = type(Option) == "table" and Option[1] or Option
+        local clean = opt:match("^([%w%s]+)") or opt
+        clean = clean:gsub("%s+$", "")
+        _G.NyxConfig.TowerType = clean
         saveConfig()
     end,
 })
@@ -1748,17 +1851,22 @@ trackThread(task.spawn(function()
 end))
 
 
--- 12. Auto Buy Best Dice Worker
+-- 12. Auto Buy Best Dice Worker (Verified Ground-Truth Dice Ladder)
 trackThread(task.spawn(function()
     while isAlive() do
         if _G.NyxConfig.AutoBuyDice and R.BuyDice then
-            local diceList = {"Basic Dice", "Golden Dice", "Diamond Dice", "Rainbow Dice", "Galaxy Dice", "Celestial Dice"}
-            for _, dName in ipairs(diceList) do
-                fire(R.BuyDice, dName)
-                if R.EquipDice then fire(R.EquipDice, dName) end
-                task.wait(0.2)
+            local money = getPlayerCash()
+            local bestAffordable = nil
+            for _, d in ipairs(DICE_LADDER) do
+                if d.price <= money and canAffordSpend(d.price) then
+                    bestAffordable = d.name
+                end
             end
-            task.wait(5.0)
+            if bestAffordable then
+                fire(R.BuyDice, bestAffordable)
+                if R.EquipDice then fire(R.EquipDice, bestAffordable) end
+            end
+            task.wait(4.0)
         else
             task.wait(1.5)
         end
@@ -1866,7 +1974,7 @@ trackThread(task.spawn(function()
             end
             local towerName = _G.NyxConfig.TowerType or "The Abyss"
             if _G.NyxConfig.SmartTowerAI then
-                local allTowers = {"The Abyss", "Bell Tower", "Attic", "Crypt", "Foyer", "Front Yard", "Shadow Tower", "Infinity Tower"}
+                local allTowers = {"Infinity Tower", "Hidden Leaf Tower", "Pirate Tower", "Cursed Tower", "Dragon Tower"}
                 towerName = allTowers[math.random(1, #allTowers)]
             end
             local okStart, resStart = fire(R.PlayTower, towerName)

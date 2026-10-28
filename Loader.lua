@@ -630,74 +630,119 @@ local function goToHalloweenIsland()
 end
 
 -- 8. Liquid Glass Rayfield UI Setup (Yield-safe game:HttpGet outside pcall for Solara/Xeno)
-local Rayfield
-local rawRay
+local Rayfield = nil
+local rawRay = nil
 local rayUrls = {
     "https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua",
-    "https://raw.githubusercontent.com/UI-Libraries/Rayfield/main/source.lua"
+    "https://sirius.menu/rayfield"
 }
 for _, url in ipairs(rayUrls) do
-    local raw = game:HttpGet(url)
-    if type(raw) == "string" and #raw > 100 then
-        rawRay = raw
+    local ok, res = pcall(function() return game:HttpGet(url) end)
+    if ok and type(res) == "string" and #res > 100 then
+        rawRay = res
         break
     end
-    task.wait(0.5)
+    -- Fallback via executor request if game:HttpGet is restricted
+    if not rawRay then
+        local req = (syn and syn.request) or (http and http.request) or http_request or request
+        if type(req) == "function" then
+            pcall(function()
+                local r = req({ Url = url, Method = "GET" })
+                if r and type(r.Body) == "string" and #r.Body > 100 then
+                    rawRay = r.Body
+                end
+            end)
+            if rawRay then break end
+        end
+    end
+    task.wait(0.3)
 end
+
 if rawRay and #rawRay > 100 then
     local okCompile, rayChunk = pcall(loadstring, rawRay)
     if okCompile and type(rayChunk) == "function" then
-        Rayfield = rayChunk()
+        local okExec, resLib = pcall(rayChunk)
+        if okExec and resLib then
+            Rayfield = resLib
+        end
     end
 end
 
 if not Rayfield then
+    warn("[Nyx Hub] Gagal memuat Rayfield dari remote. Memakai fallback headless.")
     Rayfield = { Notify = function() end, CreateWindow = function() return nil end, Destroy = function() end }
 end
 
+-- 31-Key Complete Liquid Glass Theme Table (100% Rayfield compatible — zero nil UIStroke crash)
+local LiquidGlassTheme = {
+    TextColor = Color3.fromRGB(240, 245, 255),
+    Background = Color3.fromRGB(11, 15, 25),
+    Topbar = Color3.fromRGB(15, 23, 42),
+    Shadow = Color3.fromRGB(5, 8, 15),
+    NotificationBackground = Color3.fromRGB(15, 23, 42),
+    NotificationActionsBackground = Color3.fromRGB(30, 41, 59),
+    TabBackground = Color3.fromRGB(15, 23, 42),
+    TabStroke = Color3.fromRGB(30, 41, 59),
+    TabBackgroundSelected = Color3.fromRGB(30, 58, 110),
+    TabTextColor = Color3.fromRGB(148, 163, 184),
+    SelectedTabTextColor = Color3.fromRGB(56, 189, 248),
+    ElementBackground = Color3.fromRGB(18, 26, 46),
+    ElementBackgroundHover = Color3.fromRGB(24, 34, 60),
+    SecondaryElementBackground = Color3.fromRGB(15, 23, 42),
+    ElementStroke = Color3.fromRGB(30, 41, 59),
+    SecondaryElementStroke = Color3.fromRGB(30, 41, 59),
+    SliderBackground = Color3.fromRGB(30, 58, 110),
+    SliderProgress = Color3.fromRGB(56, 189, 248),
+    SliderStroke = Color3.fromRGB(56, 189, 248),
+    ToggleBackground = Color3.fromRGB(15, 23, 42),
+    ToggleEnabled = Color3.fromRGB(56, 189, 248),
+    ToggleDisabled = Color3.fromRGB(71, 85, 105),
+    ToggleEnabledStroke = Color3.fromRGB(56, 189, 248),
+    ToggleDisabledStroke = Color3.fromRGB(71, 85, 105),
+    ToggleEnabledOuterStroke = Color3.fromRGB(30, 58, 110),
+    ToggleDisabledOuterStroke = Color3.fromRGB(30, 41, 59),
+    DropdownSelected = Color3.fromRGB(30, 58, 110),
+    DropdownUnselected = Color3.fromRGB(18, 26, 46),
+    InputBackground = Color3.fromRGB(18, 26, 46),
+    InputStroke = Color3.fromRGB(30, 41, 59),
+    PlaceholderColor = Color3.fromRGB(100, 116, 139)
+}
+
 local Window = nil
 if Rayfield and Rayfield.CreateWindow then
-    Window = Rayfield:CreateWindow({
-        Name = "🌙 Nyx Hub | Anime Dice Master Suite",
-        Icon = 0,
-        LoadingTitle = "Nyx Hub v8.0 Loading...",
-        LoadingSubtitle = "by iannn (@brilliantgibrann16) • Liquid Glass",
-        Theme = {
-            TextColor = Color3.fromRGB(240, 245, 255),
-            Background = Color3.fromRGB(11, 15, 25),
-            Topbar = Color3.fromRGB(15, 23, 42),
-            Shadow = Color3.fromRGB(5, 8, 15),
-            NotificationBackground = Color3.fromRGB(15, 23, 42),
-            NotificationActionsBackground = Color3.fromRGB(30, 41, 59),
-            TabBackground = Color3.fromRGB(15, 23, 42),
-            TabStroke = Color3.fromRGB(30, 41, 59),
-            TabBackgroundSelected = Color3.fromRGB(30, 58, 110),
-            TabTextColor = Color3.fromRGB(148, 163, 184),
-            SelectedTabTextColor = Color3.fromRGB(56, 189, 248),
-            ElementBackground = Color3.fromRGB(18, 26, 46),
-            ElementBackgroundHover = Color3.fromRGB(24, 34, 60),
-            SecondaryElementBackground = Color3.fromRGB(15, 23, 42),
-            ElementStroke = Color3.fromRGB(30, 41, 59),
-            SecondaryElementStroke = Color3.fromRGB(30, 41, 59),
-            SliderBackground = Color3.fromRGB(30, 58, 110),
-            SliderProgress = Color3.fromRGB(56, 189, 248),
-            SliderStroke = Color3.fromRGB(56, 189, 248),
-            ToggleBackground = Color3.fromRGB(15, 23, 42),
-            ToggleEnabled = Color3.fromRGB(56, 189, 248),
-            ToggleDisabled = Color3.fromRGB(71, 85, 105),
-            ToggleCircle = Color3.fromRGB(255, 255, 255),
-            ToggleStroke = Color3.fromRGB(30, 41, 59),
-            DropdownSelected = Color3.fromRGB(30, 58, 110),
-            DropdownUnselected = Color3.fromRGB(18, 26, 46),
-            InputBackground = Color3.fromRGB(18, 26, 46),
-            InputStroke = Color3.fromRGB(30, 41, 59),
-            PlaceholderColor = Color3.fromRGB(100, 116, 139)
-        },
-        DisableRayfieldPrompts = true,
-        DisableBuildWarnings = true,
-        ConfigurationSaving = { Enabled = false },
-        KeySystem = false
-    })
+    local okW, resW = pcall(function()
+        return Rayfield:CreateWindow({
+            Name = "🌙 Nyx Hub | Anime Dice Master Suite",
+            Icon = 0,
+            LoadingTitle = "Nyx Hub v8.0 Loading...",
+            LoadingSubtitle = "by iannn (@brilliantgibrann16) • Liquid Glass",
+            Theme = LiquidGlassTheme,
+            ToggleUIKeybind = Enum.KeyCode.RightControl,
+            DisableRayfieldPrompts = true,
+            DisableBuildWarnings = true,
+            ConfigurationSaving = { Enabled = false },
+            KeySystem = false
+        })
+    end)
+    if okW and resW then
+        Window = resW
+    else
+        warn("[Nyx Hub] Custom theme failed, falling back to Ocean:", resW)
+        pcall(function()
+            Window = Rayfield:CreateWindow({
+                Name = "🌙 Nyx Hub | Anime Dice Master Suite",
+                Icon = 0,
+                LoadingTitle = "Nyx Hub v8.0 Loading...",
+                LoadingSubtitle = "by iannn (@brilliantgibrann16)",
+                Theme = "Ocean",
+                ToggleUIKeybind = Enum.KeyCode.RightControl,
+                DisableRayfieldPrompts = true,
+                DisableBuildWarnings = true,
+                ConfigurationSaving = { Enabled = false },
+                KeySystem = false
+            })
+        end)
+    end
 end
 
 -- Teardown Hook
@@ -710,11 +755,17 @@ _ENV.__NyxHubCleanup = function()
     for _, cn in ipairs(activeConnections) do
         pcall(function() cn:Disconnect() end)
     end
-    local pg = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui")
-    local oldBtn = pg and pg:FindFirstChild("NyxHubFloatingBtn")
-    if oldBtn then oldBtn:Destroy() end
-    local darkOv = pg and pg:FindFirstChild("NyxDarkOverlay")
-    if darkOv then darkOv:Destroy() end
+    local destroyGui = function(parent)
+        if parent then
+            local oldBtn = parent:FindFirstChild("NyxHubFloatingBtn")
+            if oldBtn then oldBtn:Destroy() end
+            local darkOv = parent:FindFirstChild("NyxDarkOverlay")
+            if darkOv then darkOv:Destroy() end
+        end
+    end
+    if type(gethui) == "function" then pcall(function() destroyGui(gethui()) end) end
+    pcall(function() destroyGui(game:GetService("CoreGui")) end)
+    if LocalPlayer then pcall(function() destroyGui(LocalPlayer:FindFirstChild("PlayerGui")) end) end
     pcall(function() RunService:Set3dRenderingEnabled(true) end)
     if Rayfield and type(Rayfield.Destroy) == "function" then
         pcall(function() Rayfield:Destroy() end)
@@ -761,17 +812,36 @@ if parentGui then
     Stroke.Transparency = 0.2
     Stroke.Parent = Btn
 
-    trackConn(Btn.MouseButton1Click:Connect(function()
-        pcall(function()
-            local rMain = parentGui:FindFirstChild("Rayfield")
-            if rMain then rMain.Enabled = not rMain.Enabled end
-        end)
-    end))
+    local function toggleNyxMenu()
+        if Rayfield and type(Rayfield.SetVisibility) == "function" and type(Rayfield.IsVisible) == "function" then
+            pcall(function()
+                Rayfield:SetVisibility(not Rayfield:IsVisible())
+            end)
+        end
+        local checked = {}
+        local function checkP(p)
+            if p and not checked[p] then
+                checked[p] = true
+                local r = p:FindFirstChild("Rayfield")
+                if r and r:IsA("ScreenGui") then
+                    r.Enabled = not r.Enabled
+                    local m = r:FindFirstChild("Main")
+                    if m then m.Visible = r.Enabled end
+                end
+            end
+        end
+        if type(gethui) == "function" then pcall(function() checkP(gethui()) end) end
+        pcall(function() checkP(game:GetService("CoreGui")) end)
+        pcall(function() checkP(game:GetService("CoreGui"):FindFirstChild("RobloxGui")) end)
+        if LocalPlayer then pcall(function() checkP(LocalPlayer:FindFirstChild("PlayerGui")) end) end
+    end
+
+    trackConn(Btn.MouseButton1Click:Connect(toggleNyxMenu))
+    trackConn(Btn.Activated:Connect(toggleNyxMenu))
 
     trackConn(UserInputService.InputBegan:Connect(function(input, gpe)
         if not gpe and (input.KeyCode == Enum.KeyCode.RightControl or input.KeyCode == Enum.KeyCode.Insert) then
-            local rMain = parentGui:FindFirstChild("Rayfield")
-            if rMain then rMain.Enabled = not rMain.Enabled end
+            toggleNyxMenu()
         end
     end))
 end

@@ -1500,13 +1500,18 @@ trackThread(task.spawn(function()
     end
 end))
 
--- 3. Auto Potions Stacker Worker (7 Tiers Multiplicative Stacking)
+-- 3. Auto Potions Stacker Worker (7 Tiers Multiplicative Stacking with Anti-Waste Buff Check)
 trackThread(task.spawn(function()
     while isAlive() do
         if _G.NyxConfig.AutoPotions and R.UseBoost then
             local inv = readData("Inventory", {}) or {}
+            local activeBuffs = readData("Buffs", {}) or {}
+            local targetLimit = _G.NyxConfig.PotionTargetLimit or 100
             local drinkQueue = {}
+            local nowTime = Workspace:GetServerTimeNow()
+            
             for key, item in pairs(inv) do
+                if #drinkQueue >= targetLimit then break end
                 if type(item) == "table" and (tonumber(item.amount) or 1) > 0 then
                     local name = tostring(item.name or key):lower()
                     local shouldDrink = false
@@ -1517,9 +1522,28 @@ trackThread(task.spawn(function()
                     elseif _G.NyxConfig.PotionUseTower and (name:find("shadow") or name:find("pirate") or name:find("abyss")) then shouldDrink = true
                     elseif _G.NyxConfig.PotionUseHalloween and (name:find("pumpkin") or name:find("candy") or name:find("haunted")) then shouldDrink = true
                     end
-                    if shouldDrink then table.insert(drinkQueue, key) end
+                    
+                    if shouldDrink then
+                        -- Check Anti-Waste Buff Duration: if buff still active > 10s, don't waste another potion!
+                        local isAlreadyActive = false
+                        if _G.NyxConfig.AntiWastePotionDuration and type(activeBuffs) == "table" then
+                            for bName, bData in pairs(activeBuffs) do
+                                if name:find(tostring(bName):lower()) then
+                                    local exp = (type(bData) == "table" and (bData.expiresAt or bData.endTime)) or 0
+                                    if exp > (nowTime + 10) then
+                                        isAlreadyActive = true
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                        if not isAlreadyActive then
+                            table.insert(drinkQueue, key)
+                        end
+                    end
                 end
             end
+            
             for _, pKey in ipairs(drinkQueue) do
                 if not _G.NyxConfig.AutoPotions or not isAlive() then break end
                 fire(R.UseBoost, pKey)
@@ -1629,7 +1653,6 @@ trackThread(task.spawn(function()
             for slot = 1, 12 do
                 if not _G.NyxConfig.AutoCollectCash or not isAlive() then break end
                 fire(R.CollectBalance, slot)
-                lastCashCollectTime = os.clock()
                 task.wait(0.08)
             end
         end
@@ -1859,7 +1882,8 @@ trackThread(task.spawn(function()
         -- 2. Cash collection freeze watchdog (>120s with AutoCollectCash ON)
         if _G.NyxConfig.CashWatchdogRejoin and _G.NyxConfig.AutoCollectCash then
             local curMoney = getPlayerCash()
-            if curMoney > lastKnownCashBalance then
+            if curMoney ~= lastKnownCashBalance then
+                -- Any balance change (collecting or deliberate spending) confirms an active, responsive connection
                 lastCashCollectTime = os.clock()
                 lastKnownCashBalance = curMoney
             end
@@ -1916,13 +1940,18 @@ trackThread(task.spawn(function()
             end
             
             -- Find first Common/available unit in inventory to roll quirk on
+            -- SAFEGUARD: Never reroll units that already possess rare/god-tier quirks!
+            local RARE_QUIRKS_BLACKLIST = {
+                ["sovereign"] = true, ["fortune's favor"] = true,
+                ["midas touch"] = true, ["prodigy"] = true, ["tycoon"] = true
+            }
             local inv = readData("Inventory", {}) or {}
             local candidateKey, candidateQuirk = nil, ""
             for key, item in pairs(inv) do
                 if type(item) == "table" and not item.locked then
                     local attrs = item.attributes or item
-                    local curQ = tostring(attrs.quirk or item.quirk or "")
-                    if curQ:lower():find(target:lower()) then
+                    local curQ = tostring(attrs.quirk or item.quirk or ""):lower()
+                    if curQ:find(target:lower()) then
                         _G.NyxConfig.AutoQuirk = false
                         saveConfig()
                         if R.ProtectQuirk then fire(R.ProtectQuirk, target, true) end
@@ -1930,7 +1959,11 @@ trackThread(task.spawn(function()
                         candidateKey = nil
                         break
                     end
-                    if candidateKey == nil then
+                    local isRare = false
+                    for rk in pairs(RARE_QUIRKS_BLACKLIST) do
+                        if curQ:find(rk) then isRare = true break end
+                    end
+                    if not isRare and candidateKey == nil then
                         candidateKey = key
                         candidateQuirk = curQ
                     end
@@ -2007,22 +2040,33 @@ trackThread(task.spawn(function()
                 }
                 towerName = allTowers[math.random(1, #allTowers)]
             end
-            local okStart, resStart = fire(R.PlayTower, towerName)
-            if okStart and resStart then
-                task.wait(0.5)
-                for floor = 1, 50 do
-                    if not (_G.NyxConfig.SmartTowerAI or _G.NyxConfig.AutoTower or _G.NyxConfig.AutoHalloweenTowers) or not isAlive() then break end
-                    local okFloor, resSeq = fire(R.CompTowerFloor)
-                    if not okFloor or resSeq == "destroyed" then break end
-                    if type(resSeq) == "table" then
-                        local ended = false
-                        for _, a in ipairs(resSeq) do
-                            if a.action == "ended" then ended = true end
+            
+            -- Try native TowerController first, otherwise invoke PlayTower in dedicated coroutine
+            local okCtrl, TowerController = pcall(function()
+                return require(RS.Framework.Features.Towers.TowerController)
+            end)
+            if okCtrl and TowerController and type(TowerController.startTower) == "function" then
+                pcall(TowerController.startTower, towerName)
+            else
+                task.spawn(function()
+                    local okStart, resStart = pcall(R.PlayTower.InvokeServer, R.PlayTower, towerName)
+                    if okStart and (resStart == true or type(resStart) == "table") and R.CompTowerFloor then
+                        task.wait(0.6)
+                        for floor = 1, 60 do
+                            if not isAlive() then break end
+                            local okFloor, resSeq = pcall(R.CompTowerFloor.InvokeServer, R.CompTowerFloor)
+                            if not okFloor or resSeq == "destroyed" then break end
+                            if type(resSeq) == "table" then
+                                local ended = false
+                                for _, a in ipairs(resSeq) do
+                                    if type(a) == "table" and a.action == "ended" then ended = true break end
+                                end
+                                if ended then break end
+                            end
+                            task.wait(0.25)
                         end
-                        if ended then break end
                     end
-                    task.wait(0.25)
-                end
+                end)
             end
             task.wait(5.5)
         else

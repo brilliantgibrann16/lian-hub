@@ -2832,50 +2832,141 @@ trackThread(task.spawn(function()
     end
 end))
 
--- 14. Trick-or-Treat Doors (Workspace.TrickOrTreat.Doors ProximityPrompt Bypass + Remote Fallback)
+-- 14. Trick-or-Treat Doors Auto-Tour & Knock Worker
 trackThread(task.spawn(function()
     local fpp = fireproximityprompt or (_ENV and _ENV.fireproximityprompt)
+    local doorCooldowns = {}
+    
+    local function getDoorsList()
+        local list = {}
+        -- 1. CollectionService Tag (Authoritative standard in Anime Dice)
+        local tagged = CollectionService:GetTagged("TrickOrTreatDoor")
+        if type(tagged) == "table" and #tagged > 0 then
+            for _, inst in ipairs(tagged) do
+                if inst:IsA("BasePart") or inst:IsA("Model") then
+                    table.insert(list, inst)
+                end
+            end
+        end
+        -- 2. Workspace Containers & Map Fallbacks
+        if #list == 0 then
+            local mapContainers = {
+                Workspace:FindFirstChild("TrickOrTreat") and Workspace.TrickOrTreat:FindFirstChild("Doors"),
+                Workspace:FindFirstChild("Halloween") and Workspace.Halloween:FindFirstChild("Doors"),
+                Workspace:FindFirstChild("Halloween") and Workspace.Halloween:FindFirstChild("TrickOrTreat"),
+                Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Halloween") and Workspace.Map.Halloween:FindFirstChild("Doors"),
+                Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Doors"),
+                Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("TrickOrTreat"),
+            }
+            for _, container in ipairs(mapContainers) do
+                if container then
+                    for _, child in ipairs(container:GetChildren()) do
+                        if child:IsA("BasePart") or child:IsA("Model") then
+                            table.insert(list, child)
+                        end
+                    end
+                    if #list > 0 then break end
+                end
+            end
+        end
+        -- 3. Recursive fallback under Halloween folders
+        if #list == 0 then
+            local hw = Workspace:FindFirstChild("Halloween", true)
+            if hw then
+                for _, inst in ipairs(hw:GetDescendants()) do
+                    if inst:IsA("BasePart") and inst.Name:lower():find("door") then
+                        table.insert(list, inst)
+                    end
+                end
+            end
+        end
+        return list
+    end
+
     while isAlive() do
         if _G.LianConfig.AutoTrickOrTreat then
-            local totFolder = (Workspace:FindFirstChild("TrickOrTreat") and Workspace.TrickOrTreat:FindFirstChild("Doors"))
-                or (Workspace:FindFirstChild("Halloween") and Workspace.Halloween:FindFirstChild("Doors"))
-            local hrp = LocalPlayer and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if totFolder and hrp then
-                local nowServer = 0
-                pcall(function() nowServer = Workspace:GetServerTimeNow() end)
-                for _, door in ipairs(totFolder:GetChildren()) do
-                    if not isAlive() or not _G.LianConfig.AutoTrickOrTreat then break end
-                    local unavail = tonumber(door:GetAttribute("UnavailableUntil")) or 0
-                    if unavail <= nowServer then
-                        local rootPart = door:FindFirstChild("Root") or door:FindFirstChildWhichIsA("BasePart", true)
-                        local prompt = door:FindFirstChildOfClass("ProximityPrompt") or (rootPart and rootPart:FindFirstChildOfClass("ProximityPrompt"))
-                        if rootPart then
-                            pcall(function()
-                                hrp.CFrame = rootPart.CFrame * CFrame.new(0, 3, 0)
-                            end)
-                            task.wait(0.25)
-                            if prompt and prompt.Enabled then
-                                pcall(function()
-                                    prompt.HoldDuration = 0
-                                    prompt.RequiresLineOfSight = false
-                                    prompt.MaxActivationDistance = 25
-                                end)
-                                if type(fpp) == "function" then
-                                    pcall(fpp, prompt)
-                                end
-                                pcall(function() prompt:InputHoldBegin() end)
-                                task.wait(0.05)
-                                pcall(function() prompt:InputHoldEnd() end)
+            local char = LocalPlayer and LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local doors = getDoorsList()
+                if #doors > 0 then
+                    local oldCFrame = hrp.CFrame
+                    local now = os.clock()
+                    local knockedAny = false
+                    
+                    for _, door in ipairs(doors) do
+                        if not isAlive() or not _G.LianConfig.AutoTrickOrTreat then break end
+                        local lastKnock = doorCooldowns[door] or 0
+                        if (now - lastKnock) >= 28 then
+                            local pivot = nil
+                            if door:IsA("BasePart") then
+                                pivot = door.CFrame
+                            elseif door:IsA("Model") then
+                                pivot = door:GetPivot()
                             end
-                            -- Knocked and Landed are server-to-client events; door interaction is handled via ProximityPrompt
-                            task.wait(0.4)
+                            
+                            if pivot then
+                                -- Stand 3.5 studs in front of door, 1.5 studs up
+                                local frontCF = pivot * CFrame.new(0, 1.5, 3.5)
+                                hrp.CFrame = frontCF
+                                task.wait(0.35)
+                                
+                                -- 1. Trigger ProximityPrompt if available
+                                local prompt = door:FindFirstChildOfClass("ProximityPrompt") 
+                                    or door:FindFirstChildWhichIsA("ProximityPrompt", true)
+                                if prompt and prompt.Enabled then
+                                    pcall(function()
+                                        prompt.HoldDuration = 0
+                                        prompt.RequiresLineOfSight = false
+                                        prompt.MaxActivationDistance = 30
+                                    end)
+                                    if type(fpp) == "function" then
+                                        pcall(fpp, prompt)
+                                    end
+                                    pcall(function() prompt:InputHoldBegin() end)
+                                    task.wait(0.05)
+                                    pcall(function() prompt:InputHoldEnd() end)
+                                end
+                                
+                                -- 2. Remote Fire Fallback (Knit Network)
+                                pcall(function()
+                                    local net = RS:FindFirstChild("Network")
+                                    if net then
+                                        local hwSvc = net:FindFirstChild("HalloweenService")
+                                        if hwSvc and hwSvc:FindFirstChild("RE") and hwSvc.RE:FindFirstChild("TrickOrTreat") then
+                                            hwSvc.RE.TrickOrTreat:FireServer(door.Name)
+                                        end
+                                        local totSvc = net:FindFirstChild("TrickOrTreatService")
+                                        if totSvc and totSvc:FindFirstChild("RE") and totSvc.RE:FindFirstChild("Knock") then
+                                            totSvc.RE.Knock:FireServer(door.Name)
+                                        end
+                                    end
+                                end)
+                                
+                                doorCooldowns[door] = os.clock()
+                                knockedAny = true
+                                task.wait(0.4)
+                                
+                                -- 3. Step back 18 studs to satisfy server re-arm distance (> 17 studs)
+                                hrp.CFrame = pivot * CFrame.new(0, 1.5, 18)
+                                task.wait(0.2)
+                            end
+                        end
+                    end
+                    
+                    -- Restore player back to original spot if finished a tour
+                    if knockedAny and isAlive() and _G.LianConfig.AutoTrickOrTreat then
+                        local curChar = LocalPlayer and LocalPlayer.Character
+                        local curHrp = curChar and curChar:FindFirstChild("HumanoidRootPart")
+                        if curHrp and oldCFrame then
+                            curHrp.CFrame = oldCFrame
                         end
                     end
                 end
             end
-            task.wait(3.0)
+            task.wait(5.0)
         else
-            task.wait(1.0)
+            task.wait(1.5)
         end
     end
 end))

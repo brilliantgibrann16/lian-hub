@@ -264,6 +264,7 @@ _G.NyxConfig = {
     AutoBuyDice = false,
     AutoQuirk = false,
     QuirkTarget = "Prodigy",
+    QuirkMaxRolls = 100,
     
     -- Potions Stacker
     AutoPotions = false,
@@ -833,6 +834,18 @@ FarmTab:CreateDropdown({
         local cleanName = opt:match("^([%w%s%']+)") or opt
         cleanName = cleanName:gsub("%s+$", "")
         _G.NyxConfig.QuirkTarget = cleanName
+        saveConfig()
+    end,
+})
+
+FarmTab:CreateSlider({
+    Name = "Batas Maksimal Roll Quirk (Stop Limit)",
+    Range = {10, 500},
+    Increment = 10,
+    Suffix = " rolls",
+    CurrentValue = _G.NyxConfig.QuirkMaxRolls or 100,
+    Callback = function(Value)
+        _G.NyxConfig.QuirkMaxRolls = Value
         saveConfig()
     end,
 })
@@ -1920,64 +1933,124 @@ trackThread(task.spawn(function()
     end
 end))
 
--- 13. Auto Quirk Reroll Worker (Real Anime Dice QuirkService Engine)
+-- 13. Auto Quirk Reroll Worker (Cheap No-Quirk Unit Prioritizer + Max Rolls Stop Limit)
 trackThread(task.spawn(function()
+    local quirkRollCounter = 0
     while isAlive() do
         if _G.NyxConfig.AutoQuirk and R.RerollQuirk then
             local targetRaw = _G.NyxConfig.QuirkTarget or "Prodigy"
             local target = targetRaw:match("^([%w%s%']+)") or targetRaw
             target = target:gsub("%s+$", "")
+            local maxRolls = _G.NyxConfig.QuirkMaxRolls or 100
             
-            -- Ensure player is standing near Quirks station (AntiCheatService.IsNearZone check)
-            local qStation = findZoneOrStation({"Quirks", "QuirkStation", "Quirk"})
-            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if qStation and hrp then
-                local dist = (hrp.Position - (qStation:IsA("BasePart") and qStation.Position or qStation:GetPivot().Position)).Magnitude
-                if dist > 35 then
-                    teleportToTarget(qStation)
-                    task.wait(1.0)
+            -- Stop Limit Guard: stop when roll limit is reached!
+            if quirkRollCounter >= maxRolls then
+                _G.NyxConfig.AutoQuirk = false
+                saveConfig()
+                quirkRollCounter = 0
+                if Rayfield then
+                    Rayfield:Notify({
+                        Title = "Quirk Stop Limit!",
+                        Content = "Batas maksimal (" .. maxRolls .. " roll) telah tercapai. Auto Quirk dinonaktifkan.",
+                        Duration = 6
+                    })
                 end
-            end
-            
-            -- Find first Common/available unit in inventory to roll quirk on
-            -- SAFEGUARD: Never reroll units that already possess rare/god-tier quirks!
-            local RARE_QUIRKS_BLACKLIST = {
-                ["sovereign"] = true, ["fortune's favor"] = true,
-                ["midas touch"] = true, ["prodigy"] = true, ["tycoon"] = true
-            }
-            local inv = readData("Inventory", {}) or {}
-            local candidateKey, candidateQuirk = nil, ""
-            for key, item in pairs(inv) do
-                if type(item) == "table" and not item.locked then
-                    local attrs = item.attributes or item
-                    local curQ = tostring(attrs.quirk or item.quirk or ""):lower()
-                    if curQ:find(target:lower()) then
-                        _G.NyxConfig.AutoQuirk = false
-                        saveConfig()
-                        if R.ProtectQuirk then fire(R.ProtectQuirk, target, true) end
-                        if Rayfield then Rayfield:Notify({ Title = "🎉 Quirk Didapat!", Content = "Unit berhasil mendapatkan " .. target .. "!", Duration = 5 }) end
-                        candidateKey = nil
-                        break
-                    end
-                    local isRare = false
-                    for rk in pairs(RARE_QUIRKS_BLACKLIST) do
-                        if curQ:find(rk) then isRare = true break end
-                    end
-                    if not isRare and candidateKey == nil then
-                        candidateKey = key
-                        candidateQuirk = curQ
-                    end
-                end
-            end
-            
-            if candidateKey and _G.NyxConfig.AutoQuirk then
-                if R.ProtectQuirk then fire(R.ProtectQuirk, target, true) end
-                fire(R.RerollQuirk, candidateKey)
-                task.wait(0.35)
-            else
                 task.wait(1.0)
+            else
+                -- Ensure player is standing near Quirks station (AntiCheatService.IsNearZone check)
+                local qStation = findZoneOrStation({"Quirks", "QuirkStation", "Quirk"})
+                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if qStation and hrp then
+                    local dist = (hrp.Position - (qStation:IsA("BasePart") and qStation.Position or qStation:GetPivot().Position)).Magnitude
+                    if dist > 35 then
+                        teleportToTarget(qStation)
+                        task.wait(1.0)
+                    end
+                end
+                
+                local RARE_QUIRKS_BLACKLIST = {
+                    ["sovereign"] = true, ["fortune's favor"] = true,
+                    ["midas touch"] = true, ["prodigy"] = true, ["tycoon"] = true
+                }
+                local RARITY_TIERS = {
+                    ["common"] = 1, ["uncommon"] = 2, ["rare"] = 3, ["epic"] = 4
+                }
+                
+                local inv = readData("Inventory", {}) or {}
+                local candidates = {}
+                
+                for key, item in pairs(inv) do
+                    if type(item) == "table" and not item.locked then
+                        local attrs = item.attributes or item
+                        local curQ = tostring(attrs.quirk or item.quirk or ""):lower()
+                        
+                        -- Target hit check on ANY unit in inventory
+                        if curQ:find(target:lower()) then
+                            _G.NyxConfig.AutoQuirk = false
+                            saveConfig()
+                            quirkRollCounter = 0
+                            if R.ProtectQuirk then fire(R.ProtectQuirk, target, true) end
+                            if Rayfield then
+                                Rayfield:Notify({
+                                    Title = "🎉 Quirk Berhasil Didapat!",
+                                    Content = "Unit berhasil mendapatkan " .. target .. "! Auto Quirk dihentikan.",
+                                    Duration = 6
+                                })
+                            end
+                            candidates = {}
+                            break
+                        end
+                        
+                        -- Never touch units holding rare quirks
+                        local isRare = false
+                        for rk in pairs(RARE_QUIRKS_BLACKLIST) do
+                            if curQ:find(rk) then isRare = true break end
+                        end
+                        
+                        local isShiny = (attrs.shiny == true) or (item.shiny == true)
+                        local isHaunted = (attrs.haunted == true) or (item.haunted == true)
+                        local rarity = tostring(item.rarity or attrs.rarity or ""):lower()
+                        local rTier = RARITY_TIERS[rarity] or 99
+                        
+                        -- Select cheap units (Common/Uncommon/Rare), unlocked, not shiny/haunted, no rare quirk
+                        if not isRare and not isShiny and not isHaunted and rTier <= 3 then
+                            local hasNoQuirk = (curQ == "" or curQ == "none" or curQ == "nil")
+                            local mult = parseFormattedNumber(item.multiplier or attrs.multiplier or "1")
+                            table.insert(candidates, {
+                                key = key,
+                                hasNoQuirk = hasNoQuirk,
+                                rTier = rTier,
+                                mult = mult
+                            })
+                        end
+                    end
+                end
+                
+                if not _G.NyxConfig.AutoQuirk then
+                    task.wait(1.0)
+                elseif #candidates > 0 then
+                    -- Priority sorting: Units with NO quirk first, then lowest rarity (Common first), then lowest multiplier!
+                    table.sort(candidates, function(a, b)
+                        if a.hasNoQuirk ~= b.hasNoQuirk then
+                            return a.hasNoQuirk == true
+                        end
+                        if a.rTier ~= b.rTier then
+                            return a.rTier < b.rTier
+                        end
+                        return a.mult < b.mult
+                    end)
+                    
+                    local chosenKey = candidates[1].key
+                    if R.ProtectQuirk then fire(R.ProtectQuirk, target, true) end
+                    fire(R.RerollQuirk, chosenKey)
+                    quirkRollCounter = quirkRollCounter + 1
+                    task.wait(0.35)
+                else
+                    task.wait(1.5)
+                end
             end
         else
+            quirkRollCounter = 0
             task.wait(1.0)
         end
     end

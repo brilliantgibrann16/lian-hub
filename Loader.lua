@@ -330,7 +330,6 @@ _G.NyxConfig = {
     TargetFPS = 30,
     PlayerESP = false,
     Fullbright = false,
-    JumpPowerValue = 50,
     JumpPowerValue = 50
 }
 
@@ -1470,6 +1469,26 @@ ESPSettingsTab:CreateToggle({
     Callback = function(Value)
         _G.NyxConfig.Fullbright = Value
         saveConfig()
+    end,
+})
+
+ESPSettingsTab:CreateSection("🏃 Movement Enhancements")
+ESPSettingsTab:CreateSlider({
+    Name = "JumpPower",
+    Range = {50, 250},
+    Increment = 5,
+    Suffix = " jp",
+    CurrentValue = _G.NyxConfig.JumpPowerValue or 50,
+    Callback = function(Value)
+        _G.NyxConfig.JumpPowerValue = Value
+        saveConfig()
+        pcall(function()
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum.UseJumpPower = true
+                hum.JumpPower = Value
+            end
+        end)
     end,
 })
 end

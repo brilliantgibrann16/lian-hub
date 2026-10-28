@@ -96,6 +96,20 @@ trackThread(task.spawn(function()
         end
     end)
     trackConn(idledConnection)
+    
+    -- Background 45s heartbeat for minimized RAM accounts (keeps input active even when Idled signal lags)
+    trackThread(task.spawn(function()
+        while isAlive() do
+            task.wait(45)
+            if vu and LocalPlayer and LocalPlayer.Character then
+                pcall(function() vu:CaptureController() end)
+                pcall(function() vu:Button2Down(Vector2.new(0, 0), Workspace.CurrentCamera.CFrame) end)
+                task.wait(0.5)
+                pcall(function() vu:Button2Up(Vector2.new(0, 0), Workspace.CurrentCamera.CFrame) end)
+                pcall(function() vu:ClickButton2(Vector2.new(0, 0), Workspace.CurrentCamera.CFrame) end)
+            end
+        end
+    end))
 end))
 
 -- 2. Teleport & Auto-Execute Setup
@@ -615,15 +629,17 @@ local function goToHalloweenIsland()
     return false
 end
 
--- 8. Liquid Glass Rayfield UI Setup
+-- 8. Liquid Glass Rayfield UI Setup (Yield-safe game:HttpGet outside pcall for Solara/Xeno)
 local Rayfield
 local rawRay
-for attempt = 1, 3 do
-    local ok, res = pcall(function()
-        return game:HttpGet('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua')
-    end)
-    if ok and type(res) == "string" and #res > 100 then
-        rawRay = res
+local rayUrls = {
+    "https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua",
+    "https://raw.githubusercontent.com/UI-Libraries/Rayfield/main/source.lua"
+}
+for _, url in ipairs(rayUrls) do
+    local raw = game:HttpGet(url)
+    if type(raw) == "string" and #raw > 100 then
+        rawRay = raw
         break
     end
     task.wait(0.5)
@@ -1491,6 +1507,19 @@ ESPSettingsTab:CreateSlider({
         end)
     end,
 })
+
+local function applyJumpPowerOnSpawn(char)
+    if not char then return end
+    task.spawn(function()
+        local hum = char:WaitForChild("Humanoid", 4) or char:FindFirstChildOfClass("Humanoid")
+        if hum and _G.NyxConfig.JumpPowerValue and _G.NyxConfig.JumpPowerValue ~= 50 then
+            hum.UseJumpPower = true
+            hum.JumpPower = _G.NyxConfig.JumpPowerValue
+        end
+    end)
+end
+if LocalPlayer.Character then task.spawn(applyJumpPowerOnSpawn, LocalPlayer.Character) end
+trackConn(LocalPlayer.CharacterAdded:Connect(applyJumpPowerOnSpawn))
 end
 
 -- ═════════════════════════════════════════════════════════════════════
@@ -2086,7 +2115,6 @@ trackThread(task.spawn(function()
                     end)
                     
                     local chosenKey = candidates[1].key
-                    if R.ProtectQuirk then fire(R.ProtectQuirk, target, true) end
                     fire(R.RerollQuirk, chosenKey)
                     quirkRollCounter = quirkRollCounter + 1
                     task.wait(0.35)
@@ -2167,18 +2195,12 @@ trackThread(task.spawn(function()
                 pcall(TowerController.startTower, towerName)
             else
                 task.spawn(function()
-                    local resStart = nil
-                    pcall(function()
-                        resStart = R.PlayTower:InvokeServer(towerName)
-                    end)
+                    local resStart = R.PlayTower:InvokeServer(towerName)
                     if (resStart == true or type(resStart) == "table") and R.CompTowerFloor then
                         task.wait(0.6)
                         for floor = 1, 60 do
                             if not isAlive() then break end
-                            local resSeq = nil
-                            pcall(function()
-                                resSeq = R.CompTowerFloor:InvokeServer()
-                            end)
+                            local resSeq = R.CompTowerFloor:InvokeServer()
                             if not resSeq or resSeq == "destroyed" then break end
                             if type(resSeq) == "table" then
                                 local ended = false

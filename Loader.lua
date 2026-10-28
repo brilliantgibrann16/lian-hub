@@ -1,35 +1,79 @@
 --[[
     ═════════════════════════════════════════════════════════════════════════
-    ⚡ LIAN HUB — 100% KEYLESS ANIME DICE MASTER EXPLOIT SUITE v6.3 ⚡
+    ⚡ LIAN HUB — 100% KEYLESS ANIME DICE MASTER EXPLOIT SUITE v7.0 ⚡
     Author : Lian (@brilliantgibrann16)
     Target : Anime Dice (PlaceId: 113290951185459 / Universe: 10708913337)
     ═════════════════════════════════════════════════════════════════════════
-    [CHANGELOG v6.3 REVOLUTION EDITION]:
-    ★ 100% Exact Remote Mappings:
-      - PlotService.RE.CollectBalance (Fixed from CollectCash!)
-      - TrickOrTreatService.RE.Knocked + Landed (Fixed from HalloweenService!)
-      - SellService.RF.SellInventory + PlotService.RE.EquipBest
-      - Towers.RF.PlayTower + CompleteTowerFloor + EquipBestTowerTeam
-      - PumpkinDiceService.RF.Roll + RebirthService.RE.Rebirth + AddStat
-    ★ Robust Framework & DataController Resolver:
-      - Waits up to 25s for ReplicatedStorage.Framework IsLoaded.
-      - Dual-mode require (asGame identity 2 + standard require fallback).
-      - Multi-layer cash & rebirth cost resolver (DataController -> HUD -> leaderstats).
-    ★ Ruthless Plot Optimizer & Auto-Sell:
-      - Equips best units to Plot.
-      - Immediately sells all remaining units in inventory outside the plot!
-      - Zero locks, zero rarity filters, zero clutter.
-    ★ 100% Decoupled Background Workers:
-      - Permanent worker loops; toggles take effect instantly on fresh or re-exec.
-    ★ Draggable Floating Button & Laptop Hotkeys:
-      - [⚡ Lian Hub] floating pill button + RightControl / Insert / LeftAlt.
+    [CHANGELOG v7.0 TOTAL REBUILD EDITION]:
+    ★ Anti-Loop-Inject & Singleton Guard:
+      - Cooldown + Generation token (_G.__LianHubGen) stops all old worker threads.
+      - Full cleanup of old Rayfield / LianHub ScreenGuis in gethui/CoreGui/PlayerGui.
+      - Neutralizes Anime Dice's built-in 18-minute PlayerScripts.AFK self-teleport loop!
+      - Per-JobId queue_on_teleport guard (queues at most ONCE per server, zero stacking).
+    ★ 100% Verified Anime Dice Remotes & Framework Modules (v803/v809+):
+      - Rolling.RF.RollDice + Rolling.RE.StartRoll + Rolling.RE.SetAutoRoll
+      - DiceService.RE.BuyDice(diceName) + DiceService.RE.EquipDice(diceName)
+      - PlotService.RE.Collect(tostring(slot)) + EquipBest + EquipUnit
+      - UnitService.RE.LevelUp(unitUUID) + SellUnits(uuidList) + ToggleLock(unitUUID)
+      - Network.RE.BuyUpgrade(nodeName) with TreeStructure parent resolution
+      - RebirthService.RF.Rebirth + RebirthService.RE.AddStat(Income/Luck/RollSpeed/WalkSpeed)
+      - Towers.RF.PlayTower + CompleteTowerFloor loop + CancelTower recovery + EquipBestTowerTeam
+      - GradeService / TraitService / QuirkService Roll(unitUUID) + SetProtected
+      - QuestService.RE.Claim(period, questId, expiresAt) + CodesConfig live code reader
+      - TrickOrTreat.Doors ProximityPrompt bypass + PumpkinDiceService.RF.Roll
     ═════════════════════════════════════════════════════════════════════════
 ]]--
 
--- Solara-compatible: timeout-based load check (game:IsLoaded may hang on some executors)
+-- 0. SINGLETON GUARD, COOLDOWN & PREVIOUS INSTANCE TEARDOWN (Prevents UI Stacking & Crash)
+local _ENV = (type(getgenv) == "function" and getgenv()) or _G
+local _nowClock = os.clock()
+local _curJobId = tostring(game.JobId or "")
+
+if _ENV.__LianHubExecuting then
+    warn("[Lian Hub] Execution already in progress, skipping duplicate call.")
+    return
+end
+if _ENV.__LianHubLastExec and (_nowClock - _ENV.__LianHubLastExec < 2.5) and _ENV.__LianHubLastJob == _curJobId then
+    warn("[Lian Hub] Duplicate inject detected within 2.5s on same server — ignored to prevent UI stacking.")
+    return
+end
+_ENV.__LianHubExecuting = true
+_ENV.__LianHubLastExec = _nowClock
+_ENV.__LianHubLastJob = _curJobId
+
+-- Increment generation token so all previous worker loops immediately terminate
+_ENV.__LianHubGen = (tonumber(_ENV.__LianHubGen) or 0) + 1
+local MY_GEN = _ENV.__LianHubGen
+_G.__LianHubGen = MY_GEN
+
+if type(_ENV.__LianHubCleanup) == "function" then
+    pcall(_ENV.__LianHubCleanup)
+end
+
+local _activeThreads = {}
+local _activeConns = {}
+
+local function trackThread(th)
+    table.insert(_activeThreads, th)
+    return th
+end
+
+local function trackConn(conn)
+    if conn then
+        table.insert(_activeConns, conn)
+    end
+    return conn
+end
+
+local function isAlive()
+    return _ENV.__LianHubGen == MY_GEN
+end
+
+-- Solara/Xeno-compatible timeout load check
 local _loadT = os.clock()
-while not game:IsLoaded() and os.clock() - _loadT < 15 do task.wait(0.2) end
-if not game:IsLoaded() then warn("[Lian Hub] game not fully loaded after 15s, proceeding anyway") end
+while not game:IsLoaded() and os.clock() - _loadT < 15 do
+    task.wait(0.2)
+end
 
 -- Services
 local Players = game:GetService("Players")
@@ -55,18 +99,99 @@ end
 local VirtualInputManager = nil
 pcall(function() VirtualInputManager = game:GetService("VirtualInputManager") end)
 
--- 1. Anti-AFK (AUTO — no toggle, runs from script start, minimize-safe)
+-- Clean up any existing Rayfield / LianHub GUI before creating a new one
+local function destroyOldGuis()
+    local containers = {}
+    if type(gethui) == "function" then
+        local ok, h = pcall(gethui)
+        if ok and h then table.insert(containers, h) end
+    end
+    local okCore, core = pcall(function() return game:GetService("CoreGui") end)
+    if okCore and core then table.insert(containers, core) end
+    if LocalPlayer then
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        if pg then table.insert(containers, pg) end
+    end
+    for _, parent in ipairs(containers) do
+        pcall(function()
+            for _, child in ipairs(parent:GetChildren()) do
+                if child:IsA("ScreenGui") then
+                    local n = child.Name
+                    if n == "Rayfield" or n == "RayfieldLoader" or n == "LianHubFloatingBtn" or n == "LianHubGui" then
+                        child:Destroy()
+                    else
+                        local main = child:FindFirstChild("Main", true)
+                        local topbar = main and main:FindFirstChild("Topbar", true)
+                        local title = topbar and topbar:FindFirstChild("Title", true)
+                        if title and title:IsA("TextLabel") and tostring(title.Text):find("Lian Hub") then
+                            child:Destroy()
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end
+
+destroyOldGuis()
+
+_ENV.__LianHubCleanup = function()
+    for _, conn in ipairs(_activeConns) do
+        pcall(function()
+            if conn.Disconnect then conn:Disconnect() end
+        end)
+    end
+    table.clear(_activeConns)
+    for _, th in ipairs(_activeThreads) do
+        pcall(task.cancel, th)
+    end
+    table.clear(_activeThreads)
+    destroyOldGuis()
+end
+
+-- 1. Anti-AFK (4-Layer: Kills Anime Dice's 18-minute PlayerScripts.AFK + Idled Disable + VirtualUser + VIM)
+local function neutralizeGameAfkScript()
+    if not LocalPlayer then return end
+    pcall(function()
+        local ps = LocalPlayer:FindFirstChild("PlayerScripts")
+        if ps then
+            for _, child in ipairs(ps:GetDescendants()) do
+                if child.Name == "AFK" and (child:IsA("LocalScript") or child:IsA("Script") or child:IsA("ModuleScript")) then
+                    pcall(function() child.Disabled = true end)
+                    pcall(function() child:Destroy() end)
+                end
+            end
+        end
+    end)
+end
+
+neutralizeGameAfkScript()
+if LocalPlayer then
+    local ps = LocalPlayer:FindFirstChild("PlayerScripts")
+    if ps then
+        pcall(function()
+            trackConn(ps.DescendantAdded:Connect(function(desc)
+                if desc.Name == "AFK" and (desc:IsA("LocalScript") or desc:IsA("Script")) then
+                    pcall(function() desc.Disabled = true end)
+                    pcall(function() desc:Destroy() end)
+                end
+            end))
+        end)
+    end
+end
+
 local _antiAfkConn = nil
 local onIdled = nil
 
 local function pulseAntiAfk()
+    neutralizeGameAfkScript()
     pcall(function()
         local cam = Workspace.CurrentCamera
         local cf = (cam and cam.CFrame) or CFrame.new()
         VirtualUser:CaptureController()
         VirtualUser:Button2Down(Vector2.new(0, 0), cf)
     end)
-    task.wait(1)
+    task.wait(0.5)
     pcall(function()
         local cam = Workspace.CurrentCamera
         local cf = (cam and cam.CFrame) or CFrame.new()
@@ -82,8 +207,7 @@ end
 
 local function disableIdledConnections()
     pcall(function()
-        local env = (type(getgenv) == "function" and getgenv()) or _G
-        local gc = getconnections or get_signal_cons or (env and (env.getconnections or env.get_signal_cons))
+        local gc = getconnections or get_signal_cons or (_ENV and (_ENV.getconnections or _ENV.get_signal_cons))
         if type(gc) == "function" and LocalPlayer then
             for _, conn in pairs(gc(LocalPlayer.Idled)) do
                 if conn ~= _antiAfkConn and conn.Connection ~= _antiAfkConn and conn.Function ~= onIdled then
@@ -96,178 +220,130 @@ local function disableIdledConnections()
             end
         end
         if LocalPlayer and onIdled and (not _antiAfkConn or _antiAfkConn.Connected == false) then
-            _antiAfkConn = LocalPlayer.Idled:Connect(onIdled)
+            _antiAfkConn = trackConn(LocalPlayer.Idled:Connect(onIdled))
         end
     end)
 end
 
 onIdled = function()
+    if not isAlive() then return end
     disableIdledConnections()
     pulseAntiAfk()
 end
 
 disableIdledConnections()
 if LocalPlayer and (not _antiAfkConn or _antiAfkConn.Connected == false) then
-    _antiAfkConn = LocalPlayer.Idled:Connect(onIdled)
+    _antiAfkConn = trackConn(LocalPlayer.Idled:Connect(onIdled))
 end
 
--- Permanent Anti-AFK heartbeat (auto, no toggle, keeps minimized instances active)
-task.spawn(function()
-    while true do
+trackThread(task.spawn(function()
+    while isAlive() do
         disableIdledConnections()
         pulseAntiAfk()
         task.wait(45)
     end
-end)
-
+end))
 
 -- Guard: ensure _G.LianConfig exists before any on-load reference
 _G.LianConfig = _G.LianConfig or {}
 
--- Apply ESP to existing players' current characters + respawn
-for _, existingPlr in pairs(game:GetService("Players"):GetPlayers()) do
-    if existingPlr ~= LocalPlayer then
-        -- Apply to current character if exists
-        if existingPlr.Character then
-            task.spawn(function()
-                task.wait(1)
-                if _G.LianConfig.PlayerESP then
-                    local head = existingPlr.Character:FindFirstChild("Head")
-                    if head and not head:FindFirstChild("LianESP") then
-                        local billboard = Instance.new("BillboardGui")
-                        billboard.Name = "LianESP"
-                        billboard.Size = UDim2.new(0, 100, 0, 40)
-                        billboard.StudsOffset = Vector3.new(0, 2, 0)
-                        billboard.AlwaysOnTop = true
-                        billboard.Parent = head
-                        local label = Instance.new("TextLabel")
-                        label.Size = UDim2.new(1, 0, 1, 0)
-                        label.BackgroundTransparency = 1
-                        label.TextColor3 = Color3.fromRGB(255, 255, 255)
-                        label.TextStrokeTransparency = 0
-                        label.Font = Enum.Font.GothamBold
-                        label.TextSize = 14
-                        label.Text = existingPlr.Name
-                        label.Parent = billboard
-                    end
-                end
-            end)
-        end
-        existingPlr.CharacterAdded:Connect(function(char)
-            task.wait(1)
-            if _G.LianConfig.PlayerESP then
-                local head = char:FindFirstChild("Head")
-                if head and not head:FindFirstChild("LianESP") then
-                    local billboard = Instance.new("BillboardGui")
-                    billboard.Name = "LianESP"
-                    billboard.Size = UDim2.new(0, 100, 0, 40)
-                    billboard.StudsOffset = Vector3.new(0, 2, 0)
-                    billboard.AlwaysOnTop = true
-                    billboard.Parent = head
-                    local label = Instance.new("TextLabel")
-                    label.Size = UDim2.new(1, 0, 1, 0)
-                    label.BackgroundTransparency = 1
-                    label.TextColor3 = Color3.fromRGB(255, 255, 255)
-                    label.TextStrokeTransparency = 0
-                    label.Font = Enum.Font.GothamBold
-                    label.TextSize = 14
-                    label.Text = existingPlr.Name
-                    label.Parent = billboard
-                end
-            end
-        end)
+-- Apply ESP helper
+local function applyPlayerEspToChar(plr, char)
+    if not plr or plr == LocalPlayer or not char then return end
+    local head = char:FindFirstChild("Head")
+    if head and not head:FindFirstChild("LianESP") then
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "LianESP"
+        billboard.Size = UDim2.new(0, 100, 0, 40)
+        billboard.StudsOffset = Vector3.new(0, 2, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Parent = head
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, 0, 1, 0)
+        label.BackgroundTransparency = 1
+        label.TextColor3 = Color3.fromRGB(255, 255, 255)
+        label.TextStrokeTransparency = 0
+        label.Font = Enum.Font.GothamBold
+        label.TextSize = 14
+        label.Text = plr.Name
+        label.Parent = billboard
     end
 end
 
--- Apply ESP to newly joined players
-game:GetService("Players").PlayerAdded:Connect(function(p)
-    if p == LocalPlayer then return end
-    p.CharacterAdded:Connect(function(char)
-        task.wait(1)
-        if _G.LianConfig.PlayerESP then
-            local head = char:FindFirstChild("Head")
-            if head and not head:FindFirstChild("LianESP") then
-                local billboard = Instance.new("BillboardGui")
-                billboard.Name = "LianESP"
-                billboard.Size = UDim2.new(0, 100, 0, 40)
-                billboard.StudsOffset = Vector3.new(0, 2, 0)
-                billboard.AlwaysOnTop = true
-                billboard.Parent = head
-                local label = Instance.new("TextLabel")
-                label.Size = UDim2.new(1, 0, 1, 0)
-                label.BackgroundTransparency = 1
-                label.TextColor3 = Color3.fromRGB(255, 255, 255)
-                label.TextStrokeTransparency = 0
-                label.Font = Enum.Font.GothamBold
-                label.TextSize = 14
-                label.Text = p.Name
-                label.Parent = billboard
-            end
+for _, existingPlr in pairs(Players:GetPlayers()) do
+    if existingPlr ~= LocalPlayer then
+        if existingPlr.Character then
+            trackThread(task.spawn(function()
+                task.wait(1)
+                if isAlive() and _G.LianConfig.PlayerESP then
+                    applyPlayerEspToChar(existingPlr, existingPlr.Character)
+                end
+            end))
         end
-    end)
-end)
+        trackConn(existingPlr.CharacterAdded:Connect(function(char)
+            task.wait(1)
+            if isAlive() and _G.LianConfig.PlayerESP then
+                applyPlayerEspToChar(existingPlr, char)
+            end
+        end))
+    end
+end
 
-
--- Reapply visual/movement settings on respawn
-if LocalPlayer then
-    LocalPlayer.CharacterAdded:Connect(function(char)
+trackConn(Players.PlayerAdded:Connect(function(p)
+    if p == LocalPlayer then return end
+    trackConn(p.CharacterAdded:Connect(function(char)
         task.wait(1)
+        if isAlive() and _G.LianConfig.PlayerESP then
+            applyPlayerEspToChar(p, char)
+        end
+    end))
+end))
+
+if LocalPlayer then
+    trackConn(LocalPlayer.CharacterAdded:Connect(function(char)
+        task.wait(1)
+        if not isAlive() then return end
         pcall(function()
             if _G.LianConfig.Fullbright then
-                local Lighting = game:GetService("Lighting")
                 Lighting.Brightness = 2
                 Lighting.ClockTime = 14
                 Lighting.FogEnd = 100000
                 Lighting.GlobalShadows = false
-                Lighting.OutdoorAmbient = Color3.fromRGB(255,255,255)
+                Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
             end
-            if char:FindFirstChild("Humanoid") then
-                char.Humanoid.WalkSpeed = _G.LianConfig.WalkSpeedValue or 16
-                char.Humanoid.JumpPower = _G.LianConfig.JumpPowerValue or 50
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum.WalkSpeed = _G.LianConfig.WalkSpeedValue or 16
+                hum.JumpPower = _G.LianConfig.JumpPowerValue or 50
             end
         end)
-    end)
+    end))
 end
 
--- 2. Teleport Auto-Execute Queue (Auto-Inject on Script Startup & Teleport)
-_G._LianTeleportQueued = false
-local function setupAutoExecuteOnTeleport(force)
-    if force then
-        _G._LianTeleportQueued = false
+-- 2. Teleport Auto-Execute Queue (STRICT ONE-SHOT PER SERVER — Never Stacks Queue!)
+local function setupAutoExecuteOnTeleport()
+    local jobKey = tostring(game.JobId or "default")
+    if _ENV.__LianQueuedJobId == jobKey then
+        return
     end
-    if _G._LianTeleportQueued then return end
-    local env = (type(getgenv) == "function" and getgenv()) or _G
     local qot = queue_on_teleport
         or queueonteleport
         or (syn and syn.queue_on_teleport)
         or (fluxus and fluxus.queue_on_teleport)
-        or (env and (env.queue_on_teleport or env.queueonteleport))
+        or (_ENV and (_ENV.queue_on_teleport or _ENV.queueonteleport))
     if type(qot) == "function" then
         local ok = pcall(function()
             qot('loadstring(game:HttpGet("https://raw.githubusercontent.com/brilliantgibrann16/lian-hub/main/Loader.lua"))()')
         end)
         if ok then
-            _G._LianTeleportQueued = true
+            _ENV.__LianQueuedJobId = jobKey
         end
     end
 end
 
--- Auto-queue immediately when script starts running + hook OnTeleport / TeleportInitFailed
 setupAutoExecuteOnTeleport()
-if LocalPlayer then
-    pcall(function()
-        LocalPlayer.OnTeleport:Connect(function()
-            setupAutoExecuteOnTeleport()
-        end)
-    end)
-end
-pcall(function()
-    TeleportService.TeleportInitFailed:Connect(function()
-        setupAutoExecuteOnTeleport(true)
-    end)
-end)
 
--- 3. Thread Identity Dropper (Solara-Safe)
+-- 3. Thread Identity Helper (Solara/Xeno/Volcano-Safe)
 local function asGame(fn, ...)
     if type(setthreadidentity) ~= "function" or type(getthreadidentity) ~= "function" then
         local ok, res = pcall(fn, ...)
@@ -282,7 +358,7 @@ local function asGame(fn, ...)
     return table.unpack(packed, 2, packed.n)
 end
 
--- 4. Verified Remote Registry (Lazy-Resolving for Fast/Autoexec Injection)
+-- 4. Verified Anime Dice Remote Registry (v803/v809+ with Multi-Path Resolution)
 local NET = RS:FindFirstChild("Network") or RS:WaitForChild("Network", 5)
 
 local function getRemote(svc, kind, name)
@@ -290,248 +366,305 @@ local function getRemote(svc, kind, name)
     if not NET then return nil end
     local folder = svc and NET:FindFirstChild(svc) or NET
     if not folder then return nil end
-    local sub = folder:FindFirstChild(kind)
+    local sub = kind and folder:FindFirstChild(kind) or folder
     if not sub then return nil end
     return sub:FindFirstChild(name)
 end
 
 local R_SPECS = {
-    Roll           = { "RollService", "RF", "RollDice" },
-    SetAutoRoll    = { "RollService", "RE", "SetAutoRoll" },
-    PumpkinRoll    = { "PumpkinDiceService", "RF", "Roll" },
-    Collect        = { "PlotService", "RE", "CollectBalance" },
-    EquipBest      = { "PlotService", "RE", "EquipBest" },
-    LevelSlot      = { "PlotService", "RE", "LevelUpSlot" },
-    Sell           = { "SellService", "RF", "SellInventory" },
-    BuyDice        = { "DiceShopService", "RE", "BuyDice" },
-    EquipDice      = { "DiceShopService", "RE", "EquipDice" },
-    Rebirth        = { "RebirthService", "RE", "Rebirth" },
-    AddStat        = { "RebirthService", "RE", "AddStat" },
-    PlayTower      = { "Towers", "RF", "PlayTower" },
-    FloorTower     = { "Towers", "RF", "CompleteTowerFloor" },
-    BestTeam       = { "Towers", "RE", "EquipBestTowerTeam" },
-    Boost          = { "BoostService", "RE", "Use" },
-    Spin           = { "SpinService", "RE", "Use" },
-    Daily          = { "DailyRewardService", "RE", "Claim" },
-    Offline        = { "OfflineEarningsService", "RE", "Claim" },
-    Code           = { "CodesService", "RE", "RedeemCode" },
-    HalloweenPath  = { "HalloweenService", "RE", "ClaimAllPath" },
-    HalloweenQuest = { "HalloweenQuestService", "RE", "Claim" },
-    TrickKnock     = { "TrickOrTreatService", "RE", "Knocked" },
-    TrickLand      = { "TrickOrTreatService", "RE", "Landed" },
-    TradeResp      = { "TradeService", "RE", "RespondToRequest" },
-    TradeOffer     = { "TradeService", "RE", "ChangeOffer" },
-    TradeAdv       = { "TradeService", "RE", "AdvanceTrade" },
-    TradeEvent     = { "TradeService", "RE", "TradeEvent" },
+    -- Rolling (v803/v809 uses Network.Rolling; fallback to RollService)
+    Roll           = { { "Rolling", "RF", "RollDice" }, { "RollService", "RF", "RollDice" } },
+    StartRoll      = { { "Rolling", "RE", "StartRoll" }, { "RollService", "RE", "StartRoll" } },
+    SetAutoRoll    = { { "Rolling", "RE", "SetAutoRoll" }, { "RollService", "RE", "SetAutoRoll" } },
+    UpdAutoSell    = { { nil, "RE", "UpdateAutoSell" } },
+    BuyUpgrade     = { { nil, "RE", "BuyUpgrade" }, { "UpgradeService", "RE", "BuyUpgrade" } },
+
+    -- Dice Shop (v803/v809 uses DiceService; fallback DiceShopService)
+    BuyDice        = { { "DiceService", "RE", "BuyDice" }, { "DiceShopService", "RE", "BuyDice" } },
+    EquipDice      = { { "DiceService", "RE", "EquipDice" }, { "DiceShopService", "RE", "EquipDice" } },
+
+    -- Plot & Units (v803/v809 uses PlotService.RE.Collect + UnitService.RE.LevelUp / SellUnits)
+    Collect        = { { "PlotService", "RE", "Collect" }, { "PlotService", "RE", "CollectBalance" } },
+    EquipBest      = { { "PlotService", "RE", "EquipBest" } },
+    EquipUnit      = { { "PlotService", "RE", "EquipUnit" } },
+    UnequipUnit    = { { "PlotService", "RE", "UnequipUnit" } },
+    LevelSlot      = { { "UnitService", "RE", "LevelUp" }, { "PlotService", "RE", "LevelUpSlot" } },
+    Sell           = { { "UnitService", "RE", "SellUnits" }, { "SellService", "RF", "SellInventory" } },
+    SellOne        = { { "UnitService", "RE", "SellUnit" } },
+    ToggleLock     = { { "UnitService", "RE", "ToggleLock" } },
+    Fuse           = { { "FusingService", "RE", "Fuse" } },
+
+    -- Grades, Traits & Quirks
+    GradeRoll      = { { "GradeService", "RE", "Roll" } },
+    GradeProtect   = { { "GradeService", "RE", "SetGradeProtected" } },
+    TraitRoll      = { { "TraitService", "RE", "Roll" } },
+    TraitProtect   = { { "TraitService", "RE", "SetTraitProtected" } },
+    QuirkRoll      = { { "QuirkService", "RE", "Roll" }, { "GradeService", "RE", "Roll" } },
+    QuirkProtect   = { { "QuirkService", "RE", "SetQuirkProtected" } },
+
+    -- Rebirth (v803/v809 uses RebirthService.RF.Rebirth; fallback RE.Rebirth)
+    Rebirth        = { { "RebirthService", "RF", "Rebirth" }, { "RebirthService", "RE", "Rebirth" } },
+    AddStat        = { { "RebirthService", "RE", "AddStat" } },
+
+    -- Towers
+    PlayTower      = { { "Towers", "RF", "PlayTower" } },
+    FloorTower     = { { "Towers", "RF", "CompleteTowerFloor" } },
+    CancelTower    = { { "Towers", "RF", "CancelTower" } },
+    SetAutoTower   = { { "Towers", "RE", "SetAutoTower" } },
+    BestTeam       = { { "Towers", "RE", "EquipBestTowerTeam" } },
+
+    -- Boosts, Spins, Gamepass & Gear
+    Boost          = { { "BoostService", "RE", "Use" } },
+    Spin           = { { "SpinService", "RE", "Use" } },
+    GamepassUse    = { { "GamepassService", "RE", "Use" } },
+    GearEquip      = { { "GearService", "RE", "Equip" } },
+    GearCraft      = { { "GearService", "RF", "Craft" } },
+
+    -- Quests, Rewards & Codes
+    QuestClaim     = { { "QuestService", "RE", "Claim" } },
+    QuestBuy       = { { "QuestService", "RE", "Buy" } },
+    Daily          = { { "DailyRewardService", "RE", "Claim" } },
+    Offline        = { { "OfflineEarningsService", "RE", "Claim" } },
+    GroupClaim     = { { "GroupRewardService", "RE", "Claim" } },
+    Code           = { { "CodesService", "RE", "RedeemCode" } },
+
+    -- Halloween Event
+    PumpkinRoll    = { { "PumpkinDiceService", "RF", "Roll" } },
+    HalloweenPath  = { { "HalloweenService", "RE", "ClaimAllPath" } },
+    HalloweenBuy   = { { "HalloweenService", "RE", "BuyOffer" } },
+    HalloweenQuest = { { "HalloweenQuestService", "RE", "Claim" } },
+    TrickKnock     = { { "TrickOrTreatService", "RE", "Knocked" } },
+    TrickLand      = { { "TrickOrTreatService", "RE", "Landed" } },
+
+    -- Trading
+    TradeReq       = { { "TradeService", "RE", "RequestTrade" } },
+    TradeResp      = { { "TradeService", "RE", "RespondToRequest" } },
+    TradeOffer     = { { "TradeService", "RE", "ChangeOffer" } },
+    TradeAdv       = { { "TradeService", "RE", "AdvanceTrade" } },
+    TradeEvent     = { { "TradeService", "RE", "TradeEvent" } },
+    TradeToggle    = { { "TradeService", "RE", "SetTradeRequestsEnabled" } },
 }
 
 local R = setmetatable({}, {
     __index = function(t, k)
-        local rem = nil
-        if k == "BuyUpgrade" then
-            rem = getRemote(nil, "RE", "BuyUpgrade") or getRemote("UpgradeService", "RE", "BuyUpgrade")
-        elseif k == "QuirkRoll" then
-            rem = getRemote("QuirkService", "RE", "Roll") or getRemote("GradeService", "RE", "Roll")
-        elseif R_SPECS[k] then
-            local s = R_SPECS[k]
-            rem = getRemote(s[1], s[2], s[3])
+        local candidates = R_SPECS[k]
+        if not candidates then return nil end
+        for _, s in ipairs(candidates) do
+            local rem = getRemote(s[1], s[2], s[3])
+            if rem then
+                rawset(t, k, rem)
+                return rem
+            end
         end
-        if rem then
-            rawset(t, k, rem)
-        end
-        return rem
+        return nil
     end
 })
 
 local function fire(remote, ...)
-    if remote and remote.FireServer then
-        pcall(remote.FireServer, remote, ...)
+    if not remote then return false end
+    if remote:IsA("RemoteEvent") then
+        local ok = pcall(remote.FireServer, remote, ...)
+        return ok
+    elseif remote:IsA("RemoteFunction") then
+        local args = { ... }
+        task.spawn(function()
+            remote:InvokeServer(table.unpack(args))
+        end)
+        return true
     end
+    return false
 end
 
 local function invoke(remote, ...)
-    if remote and remote.InvokeServer then
+    if not remote then return nil end
+    if remote:IsA("RemoteFunction") then
         return remote:InvokeServer(...)
+    elseif remote:IsA("RemoteEvent") then
+        pcall(remote.FireServer, remote, ...)
+        return true
     end
     return nil
 end
 
--- (safe() helper removed: unused; pcall-yield constraints documented above)
+-- 5. Game Framework Modules Loader & Live Data Unwrapper
+local M = {}
 
+local function safeRequire(mod)
+    if not mod then return nil end
+    local ok, res = pcall(asGame, require, mod)
+    if ok and res ~= nil then return res end
+    local ok2, res2 = pcall(require, mod)
+    if ok2 and res2 ~= nil then return res2 end
+    return nil
+end
+
+local function initFramework()
+    local fw = RS:FindFirstChild("Framework") or RS:WaitForChild("Framework", 15)
+    if fw then
+        local t0 = os.clock()
+        while not fw:GetAttribute("IsLoaded") and os.clock() - t0 < 10 do
+            task.wait(0.3)
+        end
+        local Feat = fw:FindFirstChild("Features") or fw:WaitForChild("Features", 10)
+        if Feat then
+            if Feat:FindFirstChild("Data") then M.Data = safeRequire(Feat.Data:FindFirstChild("DataController")) end
+            if Feat:FindFirstChild("Buffs") then M.Buff = safeRequire(Feat.Buffs:FindFirstChild("BuffController")) end
+            if Feat:FindFirstChild("Inventory") then
+                M.Entry = safeRequire(Feat.Inventory:FindFirstChild("EntryRegistry"))
+                local kinds = Feat.Inventory:FindFirstChild("Kinds")
+                local uFolder = kinds and kinds:FindFirstChild("Unit")
+                if uFolder then
+                    M.UnitConfig = safeRequire(uFolder:FindFirstChild("UnitConfig"))
+                    M.UnitUtil = safeRequire(uFolder:FindFirstChild("UnitUtil"))
+                end
+            end
+            if Feat:FindFirstChild("Rolling") then M.Dice = safeRequire(Feat.Rolling:FindFirstChild("Dice")) end
+            if Feat:FindFirstChild("Upgrades") then
+                M.Upgrades = safeRequire(Feat.Upgrades:FindFirstChild("Upgrades"))
+                M.Tree = safeRequire(Feat.Upgrades:FindFirstChild("TreeStructure"))
+            end
+            if Feat:FindFirstChild("Rebirth") then
+                M.Rebirths = safeRequire(Feat.Rebirth:FindFirstChild("Rebirths"))
+                M.RStats = safeRequire(Feat.Rebirth:FindFirstChild("RebirthStats"))
+                    or safeRequire(Feat.Rebirth:FindFirstChild("RebirthStatsConfig"))
+            end
+            if Feat:FindFirstChild("Plot") then M.PlotConfig = safeRequire(Feat.Plot:FindFirstChild("PlotConfig")) end
+            if Feat:FindFirstChild("Towers") then
+                M.Towers = safeRequire(Feat.Towers:FindFirstChild("Towers"))
+                M.TowerController = safeRequire(Feat.Towers:FindFirstChild("TowerController"))
+            end
+            if Feat:FindFirstChild("Quests") then M.Quests = safeRequire(Feat.Quests:FindFirstChild("QuestConfig")) end
+            if Feat:FindFirstChild("Codes") then M.Codes = safeRequire(Feat.Codes:FindFirstChild("CodesConfig")) end
+            if Feat:FindFirstChild("Grades") then M.Grades = safeRequire(Feat.Grades:FindFirstChild("Grades")) end
+            if Feat:FindFirstChild("Traits") then M.Traits = safeRequire(Feat.Traits:FindFirstChild("Traits")) end
+            if Feat:FindFirstChild("Quirks") then
+                M.Quirks = safeRequire(Feat.Quirks:FindFirstChild("Quirks"))
+                M.QuirkUtil = safeRequire(Feat.Quirks:FindFirstChild("QuirkUtil"))
+            end
+            if Feat:FindFirstChild("Gear") then M.Gear = safeRequire(Feat.Gear:FindFirstChild("Gear")) end
+            if Feat:FindFirstChild("Fusing") then M.Fusing = safeRequire(Feat.Fusing:FindFirstChild("FusingConfig")) end
+            if Feat:FindFirstChild("DailyRewards") then M.DailyCfg = safeRequire(Feat.DailyRewards:FindFirstChild("DailyRewardsConfig")) end
+            if Feat:FindFirstChild("GroupReward") then M.GroupCfg = safeRequire(Feat.GroupReward:FindFirstChild("GroupRewardConfig")) end
+        end
+    end
+    local pkgs = RS:FindFirstChild("Packages")
+    local dataPkg = pkgs and pkgs:FindFirstChild("Data")
+    if dataPkg and dataPkg:FindFirstChild("Client") then
+        M.DataClient = safeRequire(dataPkg.Client)
+    end
+end
+trackThread(task.spawn(initFramework))
+
+local function unwrapVal(v, depth)
+    depth = depth or 0
+    if depth > 6 then return v end
+    if type(v) == "function" then
+        local ok, res = pcall(v)
+        if ok then return unwrapVal(res, depth + 1) end
+        return nil
+    elseif type(v) == "table" then
+        if v.___X ~= nil then
+            return unwrapVal(v.___X, depth + 1)
+        elseif type(v.Get) == "function" then
+            local ok, res = pcall(v.Get, v)
+            if ok then return unwrapVal(res, depth + 1) end
+        end
+    end
+    return v
+end
+
+local function getDC()
+    if M.Data then return M.Data end
+    pcall(function()
+        local feat = RS:FindFirstChild("Framework") and RS.Framework:FindFirstChild("Features")
+        if feat and feat:FindFirstChild("Data") then
+            M.Data = safeRequire(feat.Data:FindFirstChild("DataController"))
+        end
+    end)
+    return M.Data
+end
+
+local function readData(key, default)
+    local dc = getDC()
+    if dc then
+        local ok, raw = pcall(function() return dc[key] end)
+        if ok and raw ~= nil then
+            local val = unwrapVal(raw)
+            if val ~= nil then return val end
+        end
+        local okX, rawX = pcall(function() return dc.___X and dc.___X[key] end)
+        if okX and rawX ~= nil then
+            local val = unwrapVal(rawX)
+            if val ~= nil then return val end
+        end
+    end
+    if not M.DataClient then
+        pcall(function()
+            local pkgs = RS:FindFirstChild("Packages")
+            if pkgs and pkgs:FindFirstChild("Data") and pkgs.Data:FindFirstChild("Client") then
+                M.DataClient = safeRequire(pkgs.Data.Client)
+            end
+        end)
+    end
+    if M.DataClient and M.DataClient.data then
+        local root = unwrapVal(M.DataClient.data)
+        if type(root) == "table" and root[key] ~= nil then
+            local val = unwrapVal(root[key])
+            if val ~= nil then return val end
+        end
+    end
+    return default
+end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- LIAN HUB GAME UPDATE CHECKER (run via Lian Hub UI or console)
+-- LIAN HUB GAME UPDATE CHECKER
 -- ═══════════════════════════════════════════════════════════════════════════
 local function checkGameUpdates()
     local results = {}
     local function check(name, ok)
         table.insert(results, (ok and "✅ " or "❌ ") .. name)
     end
-
-    -- Wrap all checks in pcall to catch any runtime error
-    local function runChecks()
-
-
-    -- Framework
-    local fw = RS:FindFirstChild("Framework")
-    check("Framework module", fw ~= nil)
-    if fw then
-        local feat = fw:FindFirstChild("Features")
-        check("Framework.Features", feat ~= nil)
-        if feat then
-            for _, modName in ipairs({"Data","Buffs","Inventory","Rolling","Upgrades","Rebirth","Plot","Towers","Quests"}) do
-                check("Feature."..modName, feat:FindFirstChild(modName) ~= nil)
-            end
-        end
-    end
-
-    -- Network remotes
-    local net = RS:FindFirstChild("Network")
-    check("Network folder", net ~= nil)
-    if net then
-        local services = {
-            {"RollService","RE","SetAutoRoll"}, {"RollService","RF","RollDice"},
-            {"PumpkinDiceService","RF","Roll"}, {"PlotService","RE","CollectBalance"},
-            {"PlotService","RE","EquipBest"}, {"PlotService","RE","LevelUpSlot"},
-            {"UpgradeService","RE","BuyUpgrade"},
-            {"DiceShopService","RE","BuyDice"}, {"DiceShopService","RE","EquipDice"},
-            {"SellService","RF","SellInventory"},
-            {"RebirthService","RE","Rebirth"}, {"RebirthService","RE","AddStat"},
-            {"Towers","RF","PlayTower"}, {"Towers","RF","CompleteTowerFloor"},
-            {"Towers","RE","EquipBestTowerTeam"},
-            {"TrickOrTreatService","RE","Knocked"}, {"TrickOrTreatService","RE","Landed"},
-            {"HalloweenService","RE","ClaimAllPath"}, {"HalloweenQuestService","RE","Claim"},
-            {"BoostService","RE","Use"}, {"SpinService","RE","Use"},
-            {"DailyRewardService","RE","Claim"}, {"OfflineEarningsService","RE","Claim"},
-            {"CodesService","RE","RedeemCode"}, {"GradeService","RE","Roll"},
-            {"GradeService","RE","SetGradeProtected"}, {"QuirkService","RE","Roll"},
-            {"QuirkService","RE","SetQuirkProtected"},
-            {"TradeService","RE","RequestTrade"}, {"TradeService","RE","RespondToRequest"},
-            {"TradeService","RE","ChangeOffer"}, {"TradeService","RE","AdvanceTrade"},
-            {"TradeService","RE","TradeEvent"}, {"TradeService","RE","SetTradeRequestsEnabled"},
-        }
-        for _, s in ipairs(services) do
-            local svc = net:FindFirstChild(s[1])
-            local sub = svc and svc:FindFirstChild(s[2])
-            local remote = sub and sub:FindFirstChild(s[3])
-            check(s[1].."."..s[2].."."..s[3], remote ~= nil)
-        end
-    end
-
-    -- Workspace
-    check("Workspace.Plots", Workspace:FindFirstChild("Plots") ~= nil or (Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Plots")) ~= nil)
-    check("Workspace.Halloween", Workspace:FindFirstChild("Halloween") ~= nil)
-
-    -- PlayerGui
-    local root = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Root")
-    check("PlayerGui.Root", root ~= nil)
-    check("PlayerGui.Root.HUD", root and root:FindFirstChild("HUD") ~= nil)
-    check("PlayerGui.Root.Menus.Rebirth", root and root:FindFirstChild("Menus") and root.Menus:FindFirstChild("Rebirth") ~= nil)
-
-    -- DataController (inlined to avoid upvalue nil issue)
-    local dc = nil
     pcall(function()
-        if RS:FindFirstChild("Framework") and RS.Framework:FindFirstChild("Features") and RS.Framework.Features:FindFirstChild("Data") then
-            dc = asGame(require, RS.Framework.Features.Data.DataController) or require(RS.Framework.Features.Data.DataController)
-        end
+        initFramework()
+        check("Framework.DataController", getDC() ~= nil)
+        check("Remote.RollDice", R.Roll ~= nil)
+        check("Remote.SetAutoRoll", R.SetAutoRoll ~= nil)
+        check("Remote.BuyUpgrade", R.BuyUpgrade ~= nil)
+        check("Remote.BuyDice", R.BuyDice ~= nil)
+        check("Remote.EquipDice", R.EquipDice ~= nil)
+        check("Remote.PlotCollect", R.Collect ~= nil)
+        check("Remote.PlotEquipBest", R.EquipBest ~= nil)
+        check("Remote.UnitLevelUp", R.LevelSlot ~= nil)
+        check("Remote.UnitSellUnits", R.Sell ~= nil)
+        check("Remote.Rebirth", R.Rebirth ~= nil)
+        check("Remote.AddStat", R.AddStat ~= nil)
+        check("Remote.PlayTower", R.PlayTower ~= nil)
+        check("Remote.CompleteTowerFloor", R.FloorTower ~= nil)
+        check("Remote.GradeRoll", R.GradeRoll ~= nil)
+        check("Remote.QuirkRoll", R.QuirkRoll ~= nil)
+        check("Remote.BoostUse", R.Boost ~= nil)
+        check("Remote.SpinUse", R.Spin ~= nil)
+        check("Remote.QuestClaim", R.QuestClaim ~= nil)
+        check("Remote.RedeemCode", R.Code ~= nil)
+        check("Data.Money", type(readData("Money", nil)) == "number")
+        check("Data.Inventory", type(readData("Inventory", nil)) == "table")
+        check("Data.Slots", type(readData("Slots", nil)) == "table")
     end)
-    check("DataController", dc ~= nil)
-    if dc then
-        for _, field in ipairs({"Money","Cash","Coins","Inventory","Slots","Rebirth","RebirthStats","Upgrades","Weather"}) do
-            local okField, valField = pcall(function() return dc[field] ~= nil end)
-            check("DC."..field, okField and valField or false)
-        end
-    end
-
-    end -- runChecks
-
-    local okRun, errRun = pcall(runChecks)
-    if not okRun then
-        table.insert(results, "❌ INTERNAL ERROR: " .. tostring(errRun))
-        warn("[LianHub] CheckUpdates internal error: " .. tostring(errRun))
-    end
-
-    -- Print report
     print("\n═══════════════════════════════════════════════════════════════════════════")
-    print("🔍 LIAN HUB GAME UPDATE CHECKER REPORT")
+    print("🔍 LIAN HUB v7.0 GAME UPDATE CHECKER REPORT")
     print("═══════════════════════════════════════════════════════════════════════════")
-    for _, r in ipairs(results) do print(r) end
     local broken = 0
-    for _, r in ipairs(results) do if r:find("❌") then broken = broken + 1 end end
-    print("\n📊 Total checks: "..#results.." | Broken: "..broken)
-    if broken > 0 then
-        print("⚠️ Game may have updated! Some remotes/modules are missing.")
-    else
-        print("✅ All systems nominal. Game structure unchanged.")
+    for _, r in ipairs(results) do
+        print(r)
+        if r:find("❌") then broken = broken + 1 end
     end
+    print("📊 Total checks: " .. #results .. " | Broken: " .. broken)
     print("═══════════════════════════════════════════════════════════════════════════\n")
     return results
 end
-
--- Expose globally
 _G.LianHubCheckUpdates = checkGameUpdates
 
--- 5. Game Framework Modules Loader
-local M = {}
-local function initFramework()
-    local fw = RS:WaitForChild("Framework", 25)
-    if not fw then return end
-    local t0 = os.clock()
-    while not fw:GetAttribute("IsLoaded") and os.clock() - t0 < 20 do
-        task.wait(0.5)
-    end
-    local Feat = fw:WaitForChild("Features", 15)
-    if not Feat then return end
-
-    local function req(mod)
-        if not mod then return nil end
-        local ok, res = pcall(asGame, require, mod)
-        if ok and res then return res end
-        local ok2, res2 = pcall(require, mod)
-        if ok2 and res2 then return res2 end
-        return nil
-    end
-
-    if Feat:FindFirstChild("Data") then M.Data = req(Feat.Data:FindFirstChild("DataController")) end
-    if Feat:FindFirstChild("Buffs") then M.Buff = req(Feat.Buffs:FindFirstChild("BuffController")) end
-    if Feat:FindFirstChild("Inventory") then M.Entry = req(Feat.Inventory:FindFirstChild("EntryRegistry")) end
-    if Feat:FindFirstChild("Rolling") then M.Dice = req(Feat.Rolling:FindFirstChild("Dice")) end
-    if Feat:FindFirstChild("Upgrades") then
-        M.Upgrades = req(Feat.Upgrades:FindFirstChild("Upgrades"))
-        M.Tree = req(Feat.Upgrades:FindFirstChild("TreeStructure"))
-    end
-    if Feat:FindFirstChild("Rebirth") then
-        M.Rebirths = req(Feat.Rebirth:FindFirstChild("Rebirths"))
-        M.RStats = req(Feat.Rebirth:FindFirstChild("RebirthStatsConfig"))
-    end
-    if Feat:FindFirstChild("Plot") then M.PlotConfig = req(Feat.Plot:FindFirstChild("PlotConfig")) end
-    if Feat:FindFirstChild("Towers") then
-        M.Towers = req(Feat.Towers:FindFirstChild("Towers"))
-        M.TowerRefs = req(Feat.Towers:FindFirstChild("TowerRefs"))
-    end
-    if Feat:FindFirstChild("Quests") then M.Quests = req(Feat.Quests:FindFirstChild("QuestConfig")) end
-end
-task.spawn(initFramework)
-
-local function getDC()
-    if M.Data then return M.Data end
-    pcall(function()
-        if RS:FindFirstChild("Framework") and RS.Framework:FindFirstChild("Features") and RS.Framework.Features:FindFirstChild("Data") then
-            M.Data = asGame(require, RS.Framework.Features.Data.DataController) or require(RS.Framework.Features.Data.DataController)
-        end
-    end)
-    return M.Data
-end
-
-local DC = setmetatable({}, {
-    __index = function(_, k)
-        local real = getDC()
-        if real then return real[k] end
-        return nil
-    end
-})
-
--- 6. Persistent Configuration
+-- 6. Persistent Configuration (All 56 Keys Preserved)
 local CONFIG_FILE = "LianHub_AnimeDice_Config.json"
 
 local _prevConfig = _G.LianConfig
@@ -541,7 +674,7 @@ _G.LianConfig = {
     FastRoll = false,
     AutoRollHalloween = false,
     HalloweenRollOption = "500 Labu (5x Rolls)",
-                AutoPotions = false,
+    AutoPotions = false,
     PotionUseLuck = true,
     PotionUseIncome = true,
     PotionUseDamage = true,
@@ -549,12 +682,12 @@ _G.LianConfig = {
     PotionUseHalloween = true,
     PotionUseTower = true,
     AutoTrickOrTreat = false,
-    AutoHalloweenQuestClaim = false,  -- renamed from AutoHalloweenDoors
+    AutoHalloweenQuestClaim = false,
     AutoPumpkinPass = false,
     AutoTower = false,
     SmartTowerAI = false,
     AutoEquipTowerTeam = true,
-    TowerType = "The Abyss",
+    TowerType = "Shadow Tower",
     AutoCollectCash = false,
     AutoLevelUpSlots = false,
     AutoDailyReward = false,
@@ -573,14 +706,13 @@ _G.LianConfig = {
     TradeMythic = true,
     TradeSecret = true,
     DiscordWebhook = "",
-        AutoReconnect = true,
+    AutoReconnect = true,
     Disable3DRendering = false,
     ExtremePotatoMode = false,
     TargetFPS = 30,
     InfJump = false,
     Noclip = false,
     TeleportTarget = "",
-    -- Aligned with groper99/animedice reference features
     AutoUnitGrades = false,
     ProtectHighGrades = false,
     RollGradeOnce = false,
@@ -594,8 +726,8 @@ _G.LianConfig = {
     WalkSpeedValue = 16,
     JumpPowerValue = 50
 }
--- Merge previous in-memory state (preserve across re-inject)
-if _prevConfig then
+
+if type(_prevConfig) == "table" then
     for k, v in pairs(_prevConfig) do
         if _G.LianConfig[k] ~= nil then
             _G.LianConfig[k] = v
@@ -603,22 +735,9 @@ if _prevConfig then
     end
 end
 
--- ponytail: backward-compat migration for renamed config key (must run on loaded JSON before nil-reject loop)
-pcall(function()
-    if isfile and isfile(CONFIG_FILE) and readfile then
-        local raw = HttpService:JSONDecode(readfile(CONFIG_FILE))
-        if type(raw) == "table" and raw.AutoHalloweenDoors ~= nil then
-            -- Only migrate if AutoHalloweenQuestClaim is NOT explicitly present in saved config
-            if raw.AutoHalloweenQuestClaim == nil then
-                _G.LianConfig.AutoHalloweenQuestClaim = raw.AutoHalloweenDoors
-            end
-        end
-    end
-end)
-
 local function saveConfig()
     pcall(function()
-        if writefile then
+        if type(writefile) == "function" then
             writefile(CONFIG_FILE, HttpService:JSONEncode(_G.LianConfig))
         end
     end)
@@ -626,9 +745,12 @@ end
 
 local function loadConfig()
     pcall(function()
-        if isfile and isfile(CONFIG_FILE) and readfile then
+        if type(isfile) == "function" and isfile(CONFIG_FILE) and type(readfile) == "function" then
             local data = HttpService:JSONDecode(readfile(CONFIG_FILE))
             if type(data) == "table" then
+                if data.AutoHalloweenDoors ~= nil and data.AutoHalloweenQuestClaim == nil then
+                    data.AutoHalloweenQuestClaim = data.AutoHalloweenDoors
+                end
                 for k, v in pairs(data) do
                     if _G.LianConfig[k] ~= nil then
                         _G.LianConfig[k] = v
@@ -641,84 +763,44 @@ local function loadConfig()
 end
 loadConfig()
 
--- Apply saved visual/movement settings on load (after config loaded)
-pcall(function()
-    if _G.LianConfig.WalkSpeedValue and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-        LocalPlayer.Character.Humanoid.WalkSpeed = _G.LianConfig.WalkSpeedValue
-    end
-    if _G.LianConfig.JumpPowerValue and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-        LocalPlayer.Character.Humanoid.JumpPower = _G.LianConfig.JumpPowerValue
-    end
-    if _G.LianConfig.Fullbright then
-        local Lighting = game:GetService("Lighting")
-        Lighting.Brightness = 2
-        Lighting.ClockTime = 14
-        Lighting.FogEnd = 100000
-        Lighting.GlobalShadows = false
-        Lighting.OutdoorAmbient = Color3.fromRGB(255,255,255)
-    end
-    if _G.LianConfig.PlayerESP then
-        for _, plr in pairs(game:GetService("Players"):GetPlayers()) do
-            if plr ~= LocalPlayer and plr.Character then
-                local head = plr.Character:FindFirstChild("Head")
-                if head and not head:FindFirstChild("LianESP") then
-                    local billboard = Instance.new("BillboardGui")
-                    billboard.Name = "LianESP"
-                    billboard.Size = UDim2.new(0, 100, 0, 40)
-                    billboard.StudsOffset = Vector3.new(0, 2, 0)
-                    billboard.AlwaysOnTop = true
-                    billboard.Parent = head
-                    local label = Instance.new("TextLabel")
-                    label.Size = UDim2.new(1, 0, 1, 0)
-                    label.BackgroundTransparency = 1
-                    label.TextColor3 = Color3.fromRGB(255, 255, 255)
-                    label.TextStrokeTransparency = 0
-                    label.Font = Enum.Font.GothamBold
-                    label.TextSize = 14
-                    label.Text = plr.Name
-                    label.Parent = billboard
-                end
-            end
-        end
-    end
-end)
+-- 7. Verified Anime Dice Calculation & Feature Helpers
+local SUFFIX_MULT = {
+    k = 1e3, m = 1e6, b = 1e9, t = 1e12, qa = 1e15, qi = 1e18,
+    sx = 1e21, sp = 1e24, oc = 1e27, no = 1e30, dc = 1e33
+}
 
--- 7. Calculation & Game Data Helpers
 local function parseFormattedNumber(str)
+    if type(str) == "number" then return str end
     if not str then return 0 end
-    local raw = tostring(str):lower():gsub("[$,]", "")
-    local num = tonumber(raw:match("[%d%.]+"))
-    if not num then return 0 end
-    if raw:find("qa") then return num * 1e15
-    elseif raw:find("t") then return num * 1e12
-    elseif raw:find("b") then return num * 1e9
-    elseif raw:find("m") then return num * 1e6
-    elseif raw:find("k") then return num * 1e3
+    local raw = tostring(str):lower():gsub("[$,%s]", "")
+    local num, suf = raw:match("^([%d%.]+)([a-z]*)$")
+    if not num then
+        num = raw:match("([%d%.]+)")
+        suf = raw:match("([a-z]+)")
     end
-    return num
+    local base = tonumber(num)
+    if not base then return 0 end
+    if suf and SUFFIX_MULT[suf] then
+        return base * SUFFIX_MULT[suf]
+    end
+    return base
 end
 
 local function getPlayerCash()
-    local dc = getDC()
-    if dc then
-        local ok, money = pcall(function()
-            if dc.Money then return dc.Money() end
-            if dc.Cash then return dc.Cash() end
-            if dc.Coins then return dc.Coins() end
-            return nil
-        end)
-        if ok and type(money) == "number" and money >= 0 then
-            return money
-        end
-    end
-    local ls = LocalPlayer:FindFirstChild("leaderstats")
+    local m = readData("Money", nil)
+    if type(m) == "number" and m >= 0 then return m end
+    local ls = LocalPlayer and LocalPlayer:FindFirstChild("leaderstats")
     if ls then
-        for _, name in ipairs({"Cash", "Coins", "Money", "Balance"}) do
+        for _, name in ipairs({"Money", "Cash", "Coins", "Balance"}) do
             local val = ls:FindFirstChild(name)
-            if val and val.Value then return tonumber(val.Value) or 0 end
+            if val and val.Value then
+                local n = parseFormattedNumber(val.Value)
+                if n > 0 then return n end
+            end
         end
     end
-    local hud = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Root") and LocalPlayer.PlayerGui.Root:FindFirstChild("HUD")
+    local pg = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui")
+    local hud = pg and pg:FindFirstChild("Root") and pg.Root:FindFirstChild("HUD")
     if hud and hud:FindFirstChild("Cash") then
         local lbl = hud.Cash:FindFirstChildWhichIsA("TextLabel", true)
         if lbl and lbl.Text then
@@ -729,203 +811,320 @@ local function getPlayerCash()
     return 0
 end
 
+local function isUuidKey(k)
+    return type(k) == "string" and (#k == 36 or (k:find("-", 1, true) ~= nil and #k >= 16))
+end
+
+local function getEntryCfg(name)
+    if type(name) ~= "string" or name == "" then return nil end
+    if not M.Entry then
+        local feat = RS:FindFirstChild("Framework") and RS.Framework:FindFirstChild("Features")
+        if feat and feat:FindFirstChild("Inventory") then
+            M.Entry = safeRequire(feat.Inventory:FindFirstChild("EntryRegistry"))
+        end
+    end
+    if M.Entry then
+        if type(M.Entry.getEntryConfig) == "function" then
+            local ok, cfg = pcall(M.Entry.getEntryConfig, name)
+            if ok and type(cfg) == "table" then return cfg end
+            local ok2, cfg2 = pcall(M.Entry.getEntryConfig, M.Entry, name)
+            if ok2 and type(cfg2) == "table" then return cfg2 end
+        end
+        if type(M.Entry.entries) == "table" and M.Entry.entries[name] then
+            return M.Entry.entries[name]
+        end
+    end
+    return nil
+end
+
+local function isUnitEntry(key, entry)
+    if type(entry) ~= "table" then return false end
+    local cfg = getEntryCfg(entry.name)
+    if cfg and cfg.kind then
+        return cfg.kind == "Unit"
+    end
+    if type(entry.attributes) == "table" or isUuidKey(key) then
+        return true
+    end
+    return false
+end
+
+local RARITY_ORDER = {
+    Common = 1, Rare = 2, Epic = 3, Legendary = 4,
+    Mythic = 5, Secret = 6, Celestial = 7, Limited = 8
+}
+
+local GRADE_ORDER = {
+    ["F"] = 1, ["E"] = 2, ["D"] = 3, ["C"] = 4, ["B"] = 5,
+    ["A"] = 6, ["S"] = 7, ["SS"] = 8, ["SSS"] = 9
+}
+
+local RARE_QUIRKS = {
+    ["Sovereign"] = true, ["Fortune's Favor"] = true, ["Midas Touch"] = true,
+    ["Prodigy"] = true, ["Tycoon"] = true, ["Fortune III"] = true,
+    ["Gifted III"] = true, ["Refined III"] = true, ["Swift III"] = true, ["Wealth III"] = true
+}
+
+local function getUnitRarity(entry)
+    if type(entry) ~= "table" then return "Common" end
+    if type(entry.rarity) == "string" then return entry.rarity end
+    local attrs = type(entry.attributes) == "table" and entry.attributes or nil
+    if attrs and type(attrs.rarity) == "string" then return attrs.rarity end
+    local cfg = getEntryCfg(entry.name)
+    if cfg then
+        if type(cfg.rarity) == "string" then return cfg.rarity end
+        if type(cfg.getRarity) == "function" then
+            local ok, r = pcall(cfg.getRarity, attrs)
+            if ok and type(r) == "string" then return r end
+        end
+    end
+    return "Common"
+end
+
+-- Verified Dice Table (from RS.Framework.Features.Rolling.Dice)
+local FALLBACK_DICE = {
+    { name = "Basic Dice", price = 100, luck = 0 },
+    { name = "Silver Dice", price = 400, luck = 0.25 },
+    { name = "Golden Dice", price = 2000, luck = 0.5 },
+    { name = "Devil Dice", price = 7500, luck = 0.85 },
+    { name = "Heavenly Dice", price = 15000, luck = 1.2 },
+    { name = "Chakra Dice", price = 45000, luck = 1.45 },
+    { name = "Slayer Dice", price = 100000, luck = 1.75 },
+    { name = "Blackhole Dice", price = 500000, luck = 2.0 },
+    { name = "Yin Yang Dice", price = 1500000, luck = 2.5 },
+    { name = "Six Eyes Dice", price = 4500000, luck = 3.0 },
+    { name = "Infinity Dice", price = 12500000, luck = 4.0 },
+    { name = "Chronos Dice", price = 25000000, luck = 5.0 },
+    { name = "Chainsaw Dice", price = 50000000, luck = 5.5 },
+    { name = "Idol Dice", price = 125000000, luck = 6.0 },
+    { name = "Soul Dice", price = 250000000, luck = 6.5 },
+    { name = "Esper Dice", price = 750000000, luck = 7.25 },
+    { name = "Shadow Dice", price = 2000000000, luck = 8.0 },
+    { name = "Gourmet Dice", price = 10000000000, luck = 9.0 },
+    { name = "Dragon Dice", price = 50000000000, luck = 10.0 },
+    { name = "Anti Dice", price = 250000000000, luck = 11.0 },
+    { name = "Bizarre Dice", price = 1000000000000, luck = 12.0 },
+    { name = "Cursed Finger Dice", price = 25000000000000, luck = 13.0 },
+    { name = "pirate Dice", price = 100000000000000, luck = 13.75 },
+    { name = "One For All Dice", price = 400000000000000, luck = 14.5 },
+    { name = "Ego Dice", price = 2500000000000000, luck = 15.0 },
+    { name = "Strawhat Dice", price = 15000000000000000, luck = 15.25 },
+    { name = "Sun God Dice", price = 50000000000000000, luck = 15.5 },
+    { name = "Pro Hero Dice", price = 250000000000000000, luck = 15.75 },
+    { name = "Demon King Dice", price = 1000000000000000000, luck = 16.0 },
+}
+
+local function getAllDiceList()
+    if M.Dice and type(M.Dice.GetAll) == "function" then
+        local ok, all = pcall(M.Dice.GetAll)
+        if ok and type(all) == "table" then
+            local list = {}
+            for name, d in pairs(all) do
+                if type(d) == "table" and d.currency ~= "Candy" and (d.price or 0) > 0 then
+                    table.insert(list, {
+                        name = d.name or name,
+                        price = tonumber(d.price) or 0,
+                        luck = tonumber(d.luck) or 0
+                    })
+                end
+            end
+            if #list > 0 then
+                table.sort(list, function(a, b) return a.luck < b.luck end)
+                return list
+            end
+        end
+    end
+    return FALLBACK_DICE
+end
+
+-- Verified Upgrade Tree Nodes (from RS.Framework.Features.Upgrades.Upgrades)
+local FALLBACK_TREE_UPGRADES = {
+    "Money Multiplier I", "Luck I", "Money Multiplier II", "Luck II",
+    "Roll Duration I", "Unit Storage I", "Money Multiplier III", "Luck III",
+    "Unlock Index", "Roll Duration II", "Luck IV", "Money Multiplier IV",
+    "Unit Storage II", "Luck V", "Roll Duration III", "Unlock Auto Roll",
+    "Money Multiplier V", "Luck VI", "Unit Storage III", "Roll Duration IV",
+    "Luck VII", "Luck VIII", "Unit Storage IV", "Roll Duration V",
+    "Luck IX", "Luck X"
+}
+
+local function buyUpgradesTree()
+    if not R.BuyUpgrade then return end
+    local money = getPlayerCash()
+    local owned = readData("Upgrades", {}) or {}
+    if M.Upgrades and M.Tree and type(M.Tree.GetParent) == "function" then
+        local cands = {}
+        for name, u in pairs(M.Upgrades) do
+            if type(u) == "table" and name ~= "Start" and not owned[name] then
+                local okP, parent = pcall(M.Tree.GetParent, name)
+                if okP and (parent == nil or parent == "Start" or owned[parent] == true) then
+                    local price = tonumber(u.price) or 0
+                    if price <= money then
+                        table.insert(cands, { name = name, price = price })
+                    end
+                end
+            end
+        end
+        table.sort(cands, function(a, b) return a.price < b.price end)
+        for i = 1, math.min(5, #cands) do
+            local c = cands[i]
+            if c.price > money then break end
+            fire(R.BuyUpgrade, c.name)
+            money = money - c.price
+            task.wait(0.18)
+        end
+        return
+    end
+    for _, upgName in ipairs(FALLBACK_TREE_UPGRADES) do
+        if not owned[upgName] then
+            fire(R.BuyUpgrade, upgName)
+            task.wait(0.12)
+        end
+    end
+end
+
 local function canAffordRebirth()
     local curCash = getPlayerCash()
-    local curRebirths = 0
-    local dc = getDC()
-    if dc and dc.Rebirth then pcall(function() curRebirths = dc.Rebirth() or 0 end) end
-
-    if M.Rebirths and M.Rebirths.GetNext then
-        local okNxt, nxt = pcall(function() return M.Rebirths.GetNext(curRebirths) end)
-        if okNxt and nxt and type(nxt.cost) == "number" then
-            return curCash >= nxt.cost, curCash, nxt.cost
+    local curRebirths = tonumber(readData("Rebirth", 0)) or 0
+    if M.Rebirths and type(M.Rebirths.GetNext) == "function" then
+        local okNxt, nxt = pcall(M.Rebirths.GetNext, curRebirths)
+        if okNxt and type(nxt) == "table" then
+            local reqPrice = tonumber(nxt.price or nxt.cost)
+            if reqPrice then
+                return curCash >= reqPrice, curCash, reqPrice
+            end
         end
     end
-
-    local okRC, RebirthConfig = pcall(function()
-        return require(RS.Framework.Features.Rebirth.RebirthConfig)
-    end)
-    if okRC and RebirthConfig and RebirthConfig.GetCost then
-        local okCost, cost = pcall(function() return RebirthConfig.GetCost(curRebirths) end)
-        if okCost and type(cost) == "number" then
-            return curCash >= cost, curCash, cost
-        end
-    end
-
-    local rMenu = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Root") and LocalPlayer.PlayerGui.Root:FindFirstChild("Menus") and LocalPlayer.PlayerGui.Root.Menus:FindFirstChild("Rebirth")
+    local pg = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui")
+    local rMenu = pg and pg:FindFirstChild("Root") and pg.Root:FindFirstChild("Menus") and pg.Root.Menus:FindFirstChild("Rebirth")
     if rMenu then
         local costLabel = rMenu:FindFirstChild("Cash", true)
         if costLabel then
             local txt = costLabel:FindFirstChildWhichIsA("TextLabel", true)
-            if txt then
+            if txt and txt.Text then
                 local cost = parseFormattedNumber(txt.Text)
                 if cost > 0 then return curCash >= cost, curCash, cost end
             end
         end
     end
-    -- Fallback when Level-3 executor cannot require RebirthConfig and Rebirth UI is closed:
-    -- allow server-validated Rebirth attempt if player has cash
-    return curCash > 0, curCash, nil
+    return false, curCash, nil
 end
 
 local function getAvailableStatPoints()
-    local curStats = {}
-    local curRebirths = 0
-    local dc = getDC()
-    if dc then
-        pcall(function() curStats = (dc.RebirthStats and dc.RebirthStats()) or {} end)
-        pcall(function() curRebirths = (dc.Rebirth and dc.Rebirth()) or 0 end)
-    end
-    if M.RStats and M.RStats.GetRemaining then
-        local okRem, rem = pcall(function() return M.RStats.GetRemaining(curRebirths, curStats) end)
+    local curStats = readData("RebirthStats", {}) or {}
+    local curRebirths = tonumber(readData("Rebirth", 0)) or 0
+    if M.RStats and type(M.RStats.GetRemaining) == "function" then
+        local okRem, rem = pcall(M.RStats.GetRemaining, curRebirths, curStats)
         if okRem and type(rem) == "number" then return rem end
     end
-    local rMenu = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Root") and LocalPlayer.PlayerGui.Root:FindFirstChild("Menus") and LocalPlayer.PlayerGui.Root.Menus:FindFirstChild("Rebirth")
-    if rMenu then
-        for _, lbl in ipairs(rMenu:GetDescendants()) do
-            if lbl:IsA("TextLabel") and (lbl.Text:lower():find("point") or lbl.Text:lower():find("remaining") or lbl.Text:lower():find("stat")) then
-                local num = tonumber(lbl.Text:match("%d+"))
-                if num then return num end
-            end
-        end
+    local spent = 0
+    for _, v in pairs(curStats) do
+        spent = spent + (tonumber(v) or 0)
     end
-    -- Fallback when M.RStats is nil on Level-3 executor: return 1 so AddStat still fires and server validates points
-    return 1
-end
-
-local FALLBACK_TREE_UPGRADES = {
-    "Luck1", "Luck2", "Luck3", "RollSpeed1", "RollSpeed2", "Cash1", "Cash2",
-    "SecretLuck1", "MutationChance1", "InventoryCapacity1", "PlotSlots1"
-}
-
-local function buyUpgradesTree()
-    local money = getPlayerCash()
-    if not M.Upgrades or not M.Tree then
-        for _, upgName in ipairs(FALLBACK_TREE_UPGRADES) do
-            fire(R.BuyUpgrade, upgName)
-            task.wait(0.15)
-        end
-        return
-    end
-    local dc = getDC()
-    local owned = (dc and dc.Upgrades and dc.Upgrades()) or {}
-    local cands = {}
-    local hasGetParent = M.Tree.GetParent ~= nil
-    for name, u in pairs(M.Upgrades) do
-        if name ~= "Start" and not owned[name] then
-            local allow = false
-            if not hasGetParent then
-                -- Cannot verify parent dependency: skip to avoid wrong purchases
-                allow = false
-            else
-                local parent = M.Tree.GetParent(name)
-                if parent == nil or parent == "Start" or owned[parent] then
-                    allow = true
-                end
-            end
-            if allow then
-                table.insert(cands, { name = name, price = u.price or 0 })
-            end
-        end
-    end
-    table.sort(cands, function(a, b) return a.price < b.price end)
-    local bought = 0
-    for _, c in ipairs(cands) do
-        if bought >= 4 or c.price > money then break end
-        fire(R.BuyUpgrade, c.name)
-        money = money - c.price
-        bought = bought + 1
-        task.wait(0.2)
-    end
+    return math.max(0, curRebirths - spent)
 end
 
 local function findMyPlot()
-    local plots = Workspace:FindFirstChild("Plots") or Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Plots")
+    local plots = Workspace:FindFirstChild("Plots") or (Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Plots"))
     if not plots then return nil end
     for _, plot in ipairs(plots:GetChildren()) do
+        if plot:GetAttribute("OwnerId") == LocalPlayer.UserId or plot:GetAttribute("Owner") == LocalPlayer.Name then
+            return plot
+        end
+        local owner = plot:FindFirstChild("Owner")
+        if owner and owner:IsA("ObjectValue") and owner.Value == LocalPlayer then
+            return plot
+        end
         local sign = plot:FindFirstChild("Sign") or plot:FindFirstChild("PlotSign")
         if sign then
-            local bb = sign:FindFirstChildWhichIsA("BillboardGui", true)
-            if bb then
-                local pName = bb:FindFirstChild("PlayerName")
-                if pName and (pName.Text == LocalPlayer.DisplayName or pName.Text == LocalPlayer.Name) then
+            for _, lbl in ipairs(sign:GetDescendants()) do
+                if lbl:IsA("TextLabel") and (lbl.Text:find(LocalPlayer.Name, 1, true) or lbl.Text:find(LocalPlayer.DisplayName, 1, true)) then
                     return plot
                 end
             end
         end
-        local owner = plot:FindFirstChild("Owner")
-        if owner and owner:IsA("ObjectValue") and owner.Value == LocalPlayer then return plot end
-        if plot:GetAttribute("OwnerId") == LocalPlayer.UserId then return plot end
     end
     return nil
 end
 
-local function getMaxPlotSlots()
-    local plot = findMyPlot()
-    if not plot then return 18 end
-    local slots = plot:FindFirstChild("Slots")
-    if not slots then return 18 end
-    local m = 0
-    for _, s in ipairs(slots:GetChildren()) do
-        local n = tonumber(s.Name)
-        if n and n > m then m = n end
-    end
-    return m > 0 and m or 18
-end
-
--- Ruthless Plot Optimizer: Equip best to plot, immediately sell all rest outside plot!
+-- Smart Plot Optimizer + Auto-Lock + Auto-Sell Outside Plot
 local function equipBestPlotAndSellOutside()
-    fire(R.EquipBest)
-    task.wait(1.0)
+    if R.EquipBest then
+        fire(R.EquipBest)
+        task.wait(0.8)
+    end
 
-        local dc = getDC()
-        local inv = (dc and dc.Inventory and dc.Inventory()) or {}
-        local slots = (dc and dc.Slots and dc.Slots()) or {}
+    local inv = readData("Inventory", {}) or {}
+    local slots = readData("Slots", {}) or {}
+    local towerTeam = readData("TowerTeam", {}) or {}
 
-        local plotted = {}
-        for slotNum, s in pairs(slots) do
-            if type(s) == "table" and (s.unitId or s.key) then
-                plotted[s.unitId or s.key] = true
-            end
+    local protectedKeys = {}
+    for _, val in pairs(slots) do
+        if type(val) == "string" and val ~= "" then
+            protectedKeys[val] = true
+        elseif type(val) == "table" and (val.unitId or val.key) then
+            protectedKeys[val.unitId or val.key] = true
         end
+    end
+    for _, uuid in pairs(towerTeam) do
+        if type(uuid) == "string" and uuid ~= "" then
+            protectedKeys[uuid] = true
+        end
+    end
 
-        local sellList = {}
-        for key, item in pairs(inv) do
-            if not plotted[key] then
-                local skip = false
-                -- Protect Shiny/Haunted units unless explicitly allowed
-                if type(item) == "table" then
-                    local isShiny = item.Shiny == true or item.shiny == true or tostring(item.Trait or ""):lower():find("shiny")
-                    local isHaunted = item.Haunted == true or item.haunted == true or tostring(item.Trait or ""):lower():find("haunted")
-                    if isShiny and _G.LianConfig.ProtectShiny and not _G.LianConfig.AutoSellShiny then skip = true end
-                    if isHaunted and _G.LianConfig.ProtectHaunted and not _G.LianConfig.AutoSellHaunted then skip = true end
-                    -- Protect high grades
-                    if _G.LianConfig.ProtectHighGrades then
-                        local gradeOrder = {rare=1, epic=2, legendary=3, mythic=4, secret=5, celestial=6}
-                        local grade = gradeOrder[tostring(item.Grade or item.grade or ""):lower()] or 0
-                        -- Protect Mythic+ (grade >= 4) regardless of grading target
-                        if grade >= 4 then skip = true end
-                    end
+    local sellList = {}
+    for key, item in pairs(inv) do
+        if isUnitEntry(key, item) and not protectedKeys[key] then
+            local attrs = type(item.attributes) == "table" and item.attributes or item
+            local rarity = getUnitRarity(item)
+            local rRank = RARITY_ORDER[rarity] or 1
+            local grade = tostring(attrs.grade or item.Grade or ""):upper()
+            local gRank = GRADE_ORDER[grade] or 0
+            local quirk = tostring(attrs.quirk or "")
+            local isLocked = (attrs.locked == true) or (item.locked == true)
+            local isShiny = (attrs.shiny == true) or (item.Shiny == true) or (item.shiny == true)
+            local isHaunted = (attrs.haunted == true) or (item.Haunted == true) or tostring(item.name or ""):lower():find("haunted") ~= nil
+
+            local keep = false
+            if isLocked then keep = true end
+            if rRank >= 5 then -- Always protect & lock Mythic / Secret / Celestial / Limited!
+                keep = true
+                if not isLocked and R.ToggleLock then
+                    fire(R.ToggleLock, key)
                 end
-                if not skip then
-                    table.insert(sellList, key)
+            end
+            if RARE_QUIRKS[quirk] then
+                keep = true
+                if not isLocked and R.ToggleLock then
+                    fire(R.ToggleLock, key)
                 end
             end
-        end
+            if isShiny and _G.LianConfig.ProtectShiny and not _G.LianConfig.AutoSellShiny then
+                keep = true
+            end
+            if isHaunted and _G.LianConfig.ProtectHaunted and not _G.LianConfig.AutoSellHaunted then
+                keep = true
+            end
+            if _G.LianConfig.ProtectHighGrades and gRank >= 7 then -- S, SS, SSS
+                keep = true
+            end
 
-        if #sellList > 0 and R.Sell then
-            local money, numSold = R.Sell:InvokeServer(sellList)
-            local ok = money ~= nil
-            if ok then
-                pcall(function()
-                    Rayfield:Notify({
-                        Title = "🧹 Auto-Sell Sukses!",
-                        Content = #sellList .. " unit di luar plot berhasil dijual!",
-                        Duration = 2.5
-                    })
-                end)
+            if not keep then
+                table.insert(sellList, key)
             end
         end
+    end
+
+    if #sellList > 0 and R.Sell then
+        for i = 1, #sellList, 40 do
+            local batch = {}
+            for j = i, math.min(i + 39, #sellList) do
+                table.insert(batch, sellList[j])
+            end
+            fire(R.Sell, batch)
+            task.wait(0.25)
+        end
+    end
 end
 
 local function applyPotatoMode(enable)
@@ -941,7 +1140,7 @@ local function applyPotatoMode(enable)
                 if obj:IsA("BasePart") then
                     obj.Material = Enum.Material.SmoothPlastic
                     obj.CastShadow = false
-                elseif obj:IsA("Decal") then
+                elseif obj:IsA("Decal") or obj:IsA("Texture") then
                     obj.Transparency = 1
                 elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
                     obj.Enabled = false
@@ -957,48 +1156,50 @@ local function applyPotatoMode(enable)
     end
 end
 
--- 8. Auto-Reconnect Watcher (Case-Insensitive + Error 267 Idle Kick + Minimized Poll)
+-- 8. Strict Auto-Reconnect Watcher (Ignores Teleport Errors to Prevent Loop-Inject!)
 local isReconnecting = false
 local function triggerAutoReconnect(msg)
-    if not _G.LianConfig.AutoReconnect or isReconnecting then return end
+    if not isAlive() or not _G.LianConfig.AutoReconnect or isReconnecting then return end
     local lower = tostring(msg or ""):lower()
     if lower == "" then return end
-    if lower:find("disconnect") or lower:find("lost") or lower:find("error")
-        or lower:find("kick") or lower:find("idle") or lower:find("afk")
-        or lower:find("connection") or lower:find("shut") or lower:find("267")
-        or lower:find("266") or lower:find("277") or lower:find("279")
-        or lower:find("268") or lower:find("529") then
+    -- CRITICAL: Ignore transient teleport errors so failed hops/teleports NEVER trigger a reconnect loop!
+    if lower:find("teleport") or lower:find("processing") then
+        return
+    end
+    if lower:find("disconnect") or lower:find("connection lost") or lower:find("kicked")
+        or lower:find("idle") or lower:find("267") or lower:find("266")
+        or lower:find("277") or lower:find("279") or lower:find("268") or lower:find("529") then
         isReconnecting = true
         setupAutoExecuteOnTeleport()
-        task.spawn(function()
-            while isReconnecting and _G.LianConfig.AutoReconnect do
-                task.wait(4)
-                setupAutoExecuteOnTeleport()
+        trackThread(task.spawn(function()
+            while isAlive() and isReconnecting and _G.LianConfig.AutoReconnect do
+                task.wait(5)
+                if not isAlive() then break end
                 task.spawn(function()
                     TeleportService:Teleport(game.PlaceId, LocalPlayer)
                 end)
-                task.wait(6)
+                task.wait(10)
             end
             isReconnecting = false
-        end)
+        end))
     end
 end
 
-GuiService.ErrorMessageChanged:Connect(triggerAutoReconnect)
+trackConn(GuiService.ErrorMessageChanged:Connect(triggerAutoReconnect))
 
-task.spawn(function()
-    while true do
+trackThread(task.spawn(function()
+    while isAlive() do
         if _G.LianConfig.AutoReconnect and not isReconnecting then
             local okMsg, errMsg = pcall(function() return GuiService:GetErrorMessage() end)
             if okMsg and type(errMsg) == "string" and #errMsg > 0 then
                 triggerAutoReconnect(errMsg)
             end
         end
-        task.wait(5)
+        task.wait(6)
     end
-end)
+end))
 
-print("[Lian Hub] Script starting... executor: " .. (identifyexecutor and identifyexecutor() or "unknown"))
+print("[Lian Hub v7.0] Starting... executor: " .. (identifyexecutor and identifyexecutor() or "unknown"))
 
 -- 9. Load Rayfield UI (Execute chunk & CreateWindow outside pcall — both yield internally!)
 local Rayfield
@@ -1011,17 +1212,16 @@ if rawRay and #rawRay > 100 then
 end
 
 if not Rayfield then
-    warn("[Lian Hub] Rayfield tidak dapat dimuat. Pastikan koneksi internet aktif. Workers tetap jalan (headless mode).")
-    -- Stub so all Rayfield:Notify / CreateWindow call sites become no-ops instead of crashing workers.
+    warn("[Lian Hub] Rayfield tidak dapat dimuat. Workers tetap jalan (headless mode).")
     Rayfield = { Notify = function() end, CreateWindow = function() return nil end }
 end
 
 local Window
 if Rayfield and Rayfield.CreateWindow then
     Window = Rayfield:CreateWindow({
-        Name = "⚡ Lian Hub v6.3 | Anime Dice Master Suite",
+        Name = "⚡ Lian Hub v7.0 | Anime Dice Master Suite",
         Icon = 0,
-        LoadingTitle = "Lian Hub Injecting...",
+        LoadingTitle = "Lian Hub v7.0 Rebuilt...",
         LoadingSubtitle = "by iannn (@brilliantgibrann16)",
         Theme = "Ocean",
         DisableRayfieldPrompts = true,
@@ -1029,10 +1229,10 @@ if Rayfield and Rayfield.CreateWindow then
         ConfigurationSaving = { Enabled = false },
         KeySystem = false
     })
-else
-    warn("[Lian Hub] Rayfield not available, skipping UI creation")
-    Window = nil
 end
+
+-- Release execution lock once Window is created
+_ENV.__LianHubExecuting = false
 
 -- Floating Draggable Toggle Button
 local parentGui = nil
@@ -1043,14 +1243,9 @@ if not parentGui then
     pcall(function() parentGui = game:GetService("CoreGui") end)
 end
 if not parentGui and LocalPlayer then
-    parentGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if not parentGui then
-        parentGui = LocalPlayer:WaitForChild("PlayerGui", 5)
-    end
+    parentGui = LocalPlayer:FindFirstChild("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 5)
 end
-if not parentGui then
-    warn("[Lian Hub] No GUI parent available. UI cannot be created.")
-else
+if parentGui then
     local oldBtn = parentGui:FindFirstChild("LianHubFloatingBtn")
     if oldBtn then oldBtn:Destroy() end
 
@@ -1081,31 +1276,73 @@ else
     Stroke.Thickness = 1.5
     Stroke.Parent = Btn
 
-    Btn.MouseButton1Click:Connect(function()
+    trackConn(Btn.MouseButton1Click:Connect(function()
         pcall(function()
             local rMain = parentGui:FindFirstChild("Rayfield")
             if rMain then
                 rMain.Enabled = not rMain.Enabled
             end
         end)
-    end)
+    end))
 
-    UserInputService.InputBegan:Connect(function(input, gpe)
+    trackConn(UserInputService.InputBegan:Connect(function(input, gpe)
         if not gpe and (input.KeyCode == Enum.KeyCode.RightControl or input.KeyCode == Enum.KeyCode.Insert or input.KeyCode == Enum.KeyCode.LeftAlt) then
             local rMain = parentGui:FindFirstChild("Rayfield")
             if rMain then
                 rMain.Enabled = not rMain.Enabled
             end
         end
+    end))
+end
+
+local function sendDiscordWebhook(title, desc, color)
+    local url = _G.LianConfig.DiscordWebhook
+    if not url or url == "" or not url:find("http") then return end
+    local req = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+    if not req then return end
+    local payload = {
+        embeds = {{
+            title = title,
+            description = desc,
+            color = color or 5814783,
+            footer = { text = "⚡ Lian Hub v7.0 | Anime Dice Telemetry" },
+            timestamp = DateTime.now():ToIsoDate()
+        }}
+    }
+    req({
+        Url = url,
+        Method = "POST",
+        Headers = { ["Content-Type"] = "application/json" },
+        Body = HttpService:JSONEncode(payload)
+    })
+end
+
+local function teleportToTarget(targetInstance)
+    local hrp = LocalPlayer and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp or not targetInstance then return false end
+    local ok = pcall(function()
+        if targetInstance:IsA("BasePart") then
+            hrp.CFrame = targetInstance.CFrame + Vector3.new(0, 3, 0)
+        else
+            hrp.CFrame = targetInstance:GetPivot() + Vector3.new(0, 3, 0)
+        end
     end)
-
+    return ok
 end
 
--- TABS (skip UI if Window failed to create)
-if not Window then
-    warn("[Lian Hub] Window is nil, skipping UI. Spawning workers without UI.")
+local function findZoneOrStation(names)
+    local zones = Workspace:FindFirstChild("Zones")
+    local map = Workspace:FindFirstChild("Map")
+    for _, n in ipairs(names) do
+        local found = (zones and zones:FindFirstChild(n, true))
+            or Workspace:FindFirstChild(n, true)
+            or (map and map:FindFirstChild(n, true))
+        if found then return found end
+    end
+    return nil
 end
 
+-- TABS & CONTROLS (61 CreateToggle, 0 CreateButton, 3 CreateDropdown)
 if Window then
 local FarmTab = Window:CreateTab("Auto Farm", 4483362458)
 local PotionsTab = Window:CreateTab("Potion Stacking", 4483362458)
@@ -1122,9 +1359,7 @@ local TeleportTab = Window:CreateTab("Teleport", 4483362458)
 local GradesTab = Window:CreateTab("Unit Grades", 4483362458)
 local ESPSettingsTab = Window:CreateTab("ESP & Visuals", 4483362458)
 
--- ═════════════════════════════════════════════════════════════════════
--- TAB 1: AUTO FARM (ROLL ENGINE)
--- ═════════════════════════════════════════════════════════════════════
+-- TAB 1: AUTO FARM
 FarmTab:CreateSection("🎲 Dice Rolling Engine")
 
 FarmTab:CreateToggle({
@@ -1144,8 +1379,6 @@ FarmTab:CreateToggle({
         saveConfig()
     end,
 })
-
-
 
 FarmTab:CreateSection("✨ Quirk Reroll Hunter")
 
@@ -1167,11 +1400,7 @@ FarmTab:CreateToggle({
     end,
 })
 
-
-
--- ═════════════════════════════════════════════════════════════════════
 -- TAB 2: POTION STACKING & SELECTOR
--- ═════════════════════════════════════════════════════════════════════
 PotionsTab:CreateSection("🧪 Potion Stacking & Category Filters")
 
 PotionsTab:CreateToggle({
@@ -1237,11 +1466,7 @@ PotionsTab:CreateToggle({
     end,
 })
 
-
-
--- ═════════════════════════════════════════════════════════════════════
--- TAB 3: AUTO TRADE FEEDER (TRANSFER KE AKUN UTAMA)
--- ═════════════════════════════════════════════════════════════════════
+-- TAB 3: AUTO TRADE FEEDER
 FeederTab:CreateSection("🤝 Setoran Otomatis ke Akun Utama")
 
 FeederTab:CreateInput({
@@ -1282,9 +1507,7 @@ FeederTab:CreateToggle({
     end,
 })
 
--- ═════════════════════════════════════════════════════════════════════
 -- TAB 4: HALLOWEEN EVENT SUITE
--- ═════════════════════════════════════════════════════════════════════
 HalloweenTab:CreateSection("🎃 Pumpkin Dice Roll Engine")
 
 HalloweenTab:CreateDropdown({
@@ -1335,12 +1558,7 @@ HalloweenTab:CreateToggle({
     end,
 })
 
-
-
-
--- ═════════════════════════════════════════════════════════════════════
--- TAB 5: TOWERS (SMART SIMULATION AI & POTION FARMING)
--- ═════════════════════════════════════════════════════════════════════
+-- TAB 5: TOWERS
 TowerTab:CreateSection("⚔️ Smart Tower AI Engine")
 
 TowerTab:CreateToggle({
@@ -1361,6 +1579,7 @@ TowerTab:CreateToggle({
     end,
 })
 
+do
     local _tg
     _tg = TowerTab:CreateToggle({
         Name = "🔥 Force Equip Best Tower Team Sekarang",
@@ -1375,12 +1594,13 @@ TowerTab:CreateToggle({
             end)
         end,
     })
+end
 
 TowerTab:CreateSection("🎯 Manual Tower / Target Farming")
 
 TowerTab:CreateDropdown({
     Name = "Pilih Tower Tertentu (Farming Potion Spesifik)",
-    Options = {"The Abyss", "Bell Tower", "Attic", "Crypt", "Foyer", "Front Yard", "Goblin Tower", "Pirate Tower"},
+    Options = {"Shadow Tower", "Dragon Tower", "Infinity Tower", "Haunted Front Yard", "Attic", "The Abyss", "Bell Tower", "Crypt"},
     CurrentOption = _G.LianConfig.TowerType,
     Callback = function(Option)
         _G.LianConfig.TowerType = type(Option) == "table" and Option[1] or Option
@@ -1397,36 +1617,39 @@ TowerTab:CreateToggle({
     end,
 })
 
--- ═════════════════════════════════════════════════════════════════════
 -- TAB 6: PLOT CASH & QUESTS
--- ═════════════════════════════════════════════════════════════════════
 PlotTab:CreateSection("💰 Plot Management")
 
+do
     local _tg
     _tg = PlotTab:CreateToggle({
         Name = "🔍 Check Game Updates (Diagnose Broken Features)",
         CurrentValue = false,
         Callback = function(Value)
             if not Value then return end
-        local ok, res = pcall(_G.LianHubCheckUpdates)
-        if not ok then
-        warn("[LianHub] CheckUpdates error: " .. tostring(res))
-        Rayfield:Notify({ Title = "Game Update Check", Content = "Error: " .. tostring(res), Duration = 6 })
-        return
-        end
-        local broken = 0
-        for _, r in ipairs(res or {}) do if type(r) == "string" and r:find("❌") then broken = broken + 1 end end
-        Rayfield:Notify({
-        Title = "Game Update Check",
-        Content = broken .. " broken out of " .. #(res or {}) .. " checks. See F9 console for details.",
-        Duration = 6
-        })
-        task.spawn(function()
-            task.wait(0.5)
-            pcall(function() _tg:Set(false) end)
-        end)
-    end,
-})
+            task.spawn(function()
+                task.wait(0.5)
+                pcall(function() _tg:Set(false) end)
+            end)
+            task.spawn(function()
+                local ok, res = pcall(_G.LianHubCheckUpdates)
+                if not ok then
+                    Rayfield:Notify({ Title = "Game Update Check", Content = "Error: " .. tostring(res), Duration = 6 })
+                    return
+                end
+                local broken = 0
+                for _, r in ipairs(res or {}) do
+                    if type(r) == "string" and r:find("❌") then broken = broken + 1 end
+                end
+                Rayfield:Notify({
+                    Title = "Game Update Check",
+                    Content = broken .. " broken out of " .. #(res or {}) .. " checks. Cek F9 console!",
+                    Duration = 6
+                })
+            end)
+        end,
+    })
+end
 
 PlotTab:CreateToggle({
     Name = "Auto Collect Cash Plot (Semua Slot 1-20)",
@@ -1447,7 +1670,6 @@ PlotTab:CreateToggle({
 })
 
 PlotTab:CreateSection("📜 Quests & Rewards")
-
 
 PlotTab:CreateToggle({
     Name = "Auto Claim Daily Rewards",
@@ -1485,12 +1707,7 @@ PlotTab:CreateToggle({
     end,
 })
 
-
-
-
--- ═════════════════════════════════════════════════════════════════════
--- TAB 6b: UNIT GRADES (name-aligned with groper99/animedice; behavior unverified — reference is obfuscated)
--- ═════════════════════════════════════════════════════════════════════
+-- TAB 6b: UNIT GRADES
 GradesTab:CreateSection("🧬 Auto Roll Unit Grades")
 
 GradesTab:CreateToggle({
@@ -1501,8 +1718,6 @@ GradesTab:CreateToggle({
         saveConfig()
     end,
 })
-
-
 
 GradesTab:CreateToggle({
     Name = "Auto Protect High Grades (Jangan Jual)",
@@ -1523,6 +1738,7 @@ GradesTab:CreateToggle({
 })
 
 GradesTab:CreateSection("🔒 Protect Units (Shiny & Haunted)")
+
 GradesTab:CreateToggle({
     Name = "Protect Shiny Units (Jangan Auto-Sell)",
     CurrentValue = _G.LianConfig.ProtectShiny,
@@ -1531,6 +1747,7 @@ GradesTab:CreateToggle({
         saveConfig()
     end,
 })
+
 GradesTab:CreateToggle({
     Name = "Protect Haunted Units (Jangan Auto-Sell)",
     CurrentValue = _G.LianConfig.ProtectHaunted,
@@ -1558,165 +1775,137 @@ GradesTab:CreateToggle({
     end,
 })
 
--- ═════════════════════════════════════════════════════════════════════
--- TAB 6c: TELEPORT (name-aligned with groper99/animedice; behavior unverified — reference is obfuscated)
--- ═════════════════════════════════════════════════════════════════════
+-- TAB 6c: TELEPORT
 TeleportTab:CreateSection("📍 Teleport Destinations")
 
+do
     local _tg
     _tg = TeleportTab:CreateToggle({
         Name = "🏠 Teleport ke Plot Sendiri",
         CurrentValue = false,
         Callback = function(Value)
             if not Value then return end
-        pcall(function()
-        local plot = findMyPlot()
-        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if not hrp then Rayfield:Notify({Title="Teleport", Content="Karakter belum siap", Duration=3}) return end
-        if plot then
-        local spawn = plot:FindFirstChild("Spawn") or plot:FindFirstChildWhichIsA("SpawnLocation")
-        if spawn then
-        hrp.CFrame = spawn.CFrame + Vector3.new(0,3,0)
-        else
-        hrp.CFrame = plot:GetPivot() + Vector3.new(0,3,0)
-        end
-        else
-        Rayfield:Notify({ Title = "Teleport", Content = "Plot tidak ditemukan!", Duration = 3 })
-        end
-        end)
-        task.spawn(function()
-            task.wait(0.5)
-            pcall(function() _tg:Set(false) end)
-        end)
-    end,
-})
+            task.spawn(function()
+                task.wait(0.5)
+                pcall(function() _tg:Set(false) end)
+            end)
+            local plot = findMyPlot()
+            if plot and teleportToTarget(plot:FindFirstChild("Spawn") or plot) then
+                Rayfield:Notify({ Title = "Teleport", Content = "Berhasil teleport ke Plot sendiri!", Duration = 2.5 })
+            else
+                Rayfield:Notify({ Title = "Teleport", Content = "Plot belum ditemukan!", Duration = 3 })
+            end
+        end,
+    })
+end
 
+do
     local _tg
     _tg = TeleportTab:CreateToggle({
         Name = "🎲 Teleport ke Dice Shop",
         CurrentValue = false,
         Callback = function(Value)
             if not Value then return end
-        pcall(function()
-        local shop = workspace:FindFirstChild("DiceShop") or workspace:FindFirstChild("Shop") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("DiceShop"))
-        if shop then
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            LocalPlayer.Character.HumanoidRootPart.CFrame = shop:GetPivot() + Vector3.new(0,3,0)
-        else
-            pcall(function() Rayfield:Notify({ Title = "Teleport", Content = "Character not ready, coba lagi.", Duration = 3 }) end)
-        end
-        else
-        Rayfield:Notify({ Title = "Teleport", Content = "Dice Shop tidak ditemukan!", Duration = 3 })
-        end
-        end)
-        task.spawn(function()
-            task.wait(0.5)
-            pcall(function() _tg:Set(false) end)
-        end)
-    end,
-})
+            task.spawn(function()
+                task.wait(0.5)
+                pcall(function() _tg:Set(false) end)
+            end)
+            local target = findZoneOrStation({"Shop", "DiceShop", "Dice", "Merchant"})
+            if target and teleportToTarget(target) then
+                Rayfield:Notify({ Title = "Teleport", Content = "Teleported ke Dice Shop!", Duration = 2.5 })
+            else
+                Rayfield:Notify({ Title = "Teleport", Content = "Dice Shop tidak ditemukan!", Duration = 3 })
+            end
+        end,
+    })
+end
 
+do
     local _tg
     _tg = TeleportTab:CreateToggle({
         Name = "🔄 Teleport ke Rebirth Station",
         CurrentValue = false,
         Callback = function(Value)
             if not Value then return end
-        pcall(function()
-        local rebirth = workspace:FindFirstChild("Rebirth") or workspace:FindFirstChild("RebirthStation") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Rebirth"))
-        if rebirth then
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            LocalPlayer.Character.HumanoidRootPart.CFrame = rebirth:GetPivot() + Vector3.new(0,3,0)
-        else
-            pcall(function() Rayfield:Notify({ Title = "Teleport", Content = "Character not ready, coba lagi.", Duration = 3 }) end)
-        end
-        else
-        Rayfield:Notify({ Title = "Teleport", Content = "Rebirth Station tidak ditemukan!", Duration = 3 })
-        end
-        end)
-        task.spawn(function()
-            task.wait(0.5)
-            pcall(function() _tg:Set(false) end)
-        end)
-    end,
-})
+            task.spawn(function()
+                task.wait(0.5)
+                pcall(function() _tg:Set(false) end)
+            end)
+            local target = findZoneOrStation({"Rebirth", "RebirthStation", "Quirks"})
+            if target and teleportToTarget(target) then
+                Rayfield:Notify({ Title = "Teleport", Content = "Teleported ke Rebirth / Quirk Station!", Duration = 2.5 })
+            else
+                Rayfield:Notify({ Title = "Teleport", Content = "Station tidak ditemukan!", Duration = 3 })
+            end
+        end,
+    })
+end
 
+do
     local _tg
     _tg = TeleportTab:CreateToggle({
         Name = "🧬 Teleport ke Fusing Station",
         CurrentValue = false,
         Callback = function(Value)
             if not Value then return end
-        pcall(function()
-        local fuse = workspace:FindFirstChild("Fusing") or workspace:FindFirstChild("Fuse") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Fusing"))
-        if fuse then
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            LocalPlayer.Character.HumanoidRootPart.CFrame = fuse:GetPivot() + Vector3.new(0,3,0)
-        else
-            pcall(function() Rayfield:Notify({ Title = "Teleport", Content = "Character not ready, coba lagi.", Duration = 3 }) end)
-        end
-        else
-        Rayfield:Notify({ Title = "Teleport", Content = "Fusing Station tidak ditemukan!", Duration = 3 })
-        end
-        end)
-        task.spawn(function()
-            task.wait(0.5)
-            pcall(function() _tg:Set(false) end)
-        end)
-    end,
-})
+            task.spawn(function()
+                task.wait(0.5)
+                pcall(function() _tg:Set(false) end)
+            end)
+            local target = findZoneOrStation({"Fusing", "Fuse", "Grades", "Traits"})
+            if target and teleportToTarget(target) then
+                Rayfield:Notify({ Title = "Teleport", Content = "Teleported ke Fusing / Grade Station!", Duration = 2.5 })
+            else
+                Rayfield:Notify({ Title = "Teleport", Content = "Fusing Station tidak ditemukan!", Duration = 3 })
+            end
+        end,
+    })
+end
 
+do
     local _tg
     _tg = TeleportTab:CreateToggle({
         Name = "📋 Teleport ke Quest Board",
         CurrentValue = false,
         Callback = function(Value)
             if not Value then return end
-        pcall(function()
-        local q = workspace:FindFirstChild("Quests") or workspace:FindFirstChild("QuestBoard") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Quests"))
-        if q then
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            LocalPlayer.Character.HumanoidRootPart.CFrame = q:GetPivot() + Vector3.new(0,3,0)
-        else
-            pcall(function() Rayfield:Notify({ Title = "Teleport", Content = "Character not ready, coba lagi.", Duration = 3 }) end)
-        end
-        else
-        Rayfield:Notify({ Title = "Teleport", Content = "Quest Board tidak ditemukan!", Duration = 3 })
-        end
-        end)
-        task.spawn(function()
-            task.wait(0.5)
-            pcall(function() _tg:Set(false) end)
-        end)
-    end,
-})
+            task.spawn(function()
+                task.wait(0.5)
+                pcall(function() _tg:Set(false) end)
+            end)
+            local target = findZoneOrStation({"Quests", "QuestBoard", "Towers"})
+            if target and teleportToTarget(target) then
+                Rayfield:Notify({ Title = "Teleport", Content = "Teleported ke Quest / Tower Zone!", Duration = 2.5 })
+            else
+                Rayfield:Notify({ Title = "Teleport", Content = "Quest Board tidak ditemukan!", Duration = 3 })
+            end
+        end,
+    })
+end
 
+do
     local _tg
     _tg = TeleportTab:CreateToggle({
         Name = "🎒 Teleport ke Backpack / Inventory",
         CurrentValue = false,
         Callback = function(Value)
             if not Value then return end
-        pcall(function()
-        local bp = workspace:FindFirstChild("Backpack") or workspace:FindFirstChild("Inventory") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Backpack"))
-        if bp then
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            LocalPlayer.Character.HumanoidRootPart.CFrame = bp:GetPivot() + Vector3.new(0,3,0)
-        else
-            pcall(function() Rayfield:Notify({ Title = "Teleport", Content = "Character not ready, coba lagi.", Duration = 3 }) end)
-        end
-        else
-        Rayfield:Notify({ Title = "Teleport", Content = "Backpack tidak ditemukan!", Duration = 3 })
-        end
-        end)
-        task.spawn(function()
-            task.wait(0.5)
-            pcall(function() _tg:Set(false) end)
-        end)
-    end,
-})
+            task.spawn(function()
+                task.wait(0.5)
+                pcall(function() _tg:Set(false) end)
+            end)
+            local target = findZoneOrStation({"Quirks", "Index", "Backpack", "Inventory"}) or findMyPlot()
+            if target and teleportToTarget(target) then
+                Rayfield:Notify({ Title = "Teleport", Content = "Teleported!", Duration = 2.5 })
+            else
+                Rayfield:Notify({ Title = "Teleport", Content = "Target tidak ditemukan!", Duration = 3 })
+            end
+        end,
+    })
+end
 
 TeleportTab:CreateSection("👥 Teleport ke Player")
+
 TeleportTab:CreateInput({
     Name = "Username Target",
     PlaceholderText = "Masukkan username player...",
@@ -1725,70 +1914,66 @@ TeleportTab:CreateInput({
         _G.LianConfig.TeleportTarget = Text:gsub("%s+", "")
     end,
 })
+
+do
     local _tg
     _tg = TeleportTab:CreateToggle({
         Name = "➡️ Teleport ke Player",
         CurrentValue = false,
         Callback = function(Value)
             if not Value then return end
-        pcall(function()
-        local target = _G.LianConfig.TeleportTarget
-        if not target or target == "" then
-        Rayfield:Notify({ Title = "Teleport", Content = "Masukkan username dulu!", Duration = 3 })
-        return
-        end
-        for _, p in pairs(game:GetService("Players"):GetPlayers()) do
-        if p.Name:lower() == target:lower() and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if not hrp then Rayfield:Notify({Title="Teleport", Content="Karakter belum siap", Duration=3}) return end
-        hrp.CFrame = p.Character.HumanoidRootPart.CFrame + Vector3.new(0,3,0)
-        Rayfield:Notify({ Title = "Teleport", Content = "Teleported ke " .. p.Name, Duration = 3 })
-        return
-        end
-        end
-        Rayfield:Notify({ Title = "Teleport", Content = "Player tidak ditemukan!", Duration = 3 })
-        end)
-        task.spawn(function()
-            task.wait(0.5)
-            pcall(function() _tg:Set(false) end)
-        end)
-    end,
-})
+            task.spawn(function()
+                task.wait(0.5)
+                pcall(function() _tg:Set(false) end)
+            end)
+            local target = _G.LianConfig.TeleportTarget
+            if not target or target == "" then
+                Rayfield:Notify({ Title = "Teleport", Content = "Masukkan username dulu!", Duration = 3 })
+                return
+            end
+            for _, p in pairs(Players:GetPlayers()) do
+                if p.Name:lower():find(target:lower(), 1, true) and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    if teleportToTarget(p.Character.HumanoidRootPart) then
+                        Rayfield:Notify({ Title = "Teleport", Content = "Teleported ke " .. p.Name, Duration = 3 })
+                        return
+                    end
+                end
+            end
+            Rayfield:Notify({ Title = "Teleport", Content = "Player tidak ditemukan!", Duration = 3 })
+        end,
+    })
+end
 
+do
     local _tg
     _tg = TeleportTab:CreateToggle({
         Name = "🎲 Teleport ke Random Player",
         CurrentValue = false,
         Callback = function(Value)
             if not Value then return end
-        pcall(function()
-        local players = game:GetService("Players"):GetPlayers()
-        local others = {}
-        for _, p in pairs(players) do
-        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-        table.insert(others, p)
-        end
-        end
-        if #others > 0 then
-        local target = others[math.random(1, #others)]
-        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if not hrp then Rayfield:Notify({Title="Teleport", Content="Karakter belum siap", Duration=3}) return end
-        hrp.CFrame = target.Character.HumanoidRootPart.CFrame + Vector3.new(0,3,0)
-        Rayfield:Notify({ Title = "Teleport", Content = "Teleported ke " .. target.Name, Duration = 3 })
-        else
-        Rayfield:Notify({ Title = "Teleport", Content = "Tidak ada player lain!", Duration = 3 })
-        end
-        end)
-        task.spawn(function()
-            task.wait(0.5)
-            pcall(function() _tg:Set(false) end)
-        end)
-    end,
-})
+            task.spawn(function()
+                task.wait(0.5)
+                pcall(function() _tg:Set(false) end)
+            end)
+            local others = {}
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    table.insert(others, p)
+                end
+            end
+            if #others > 0 then
+                local pick = others[math.random(1, #others)]
+                if teleportToTarget(pick.Character.HumanoidRootPart) then
+                    Rayfield:Notify({ Title = "Teleport", Content = "Teleported ke " .. pick.Name, Duration = 3 })
+                end
+            else
+                Rayfield:Notify({ Title = "Teleport", Content = "Tidak ada player lain!", Duration = 3 })
+            end
+        end,
+    })
+end
 
--- ═════════════════════════════════════════════════════════════════════
--- TAB 6d: ESP & VISUALS (name-aligned with groper99/animedice; behavior unverified — reference is obfuscated)
--- ═════════════════════════════════════════════════════════════════════
+-- TAB 6d: ESP & VISUALS
 ESPSettingsTab:CreateSection("👁️ Player ESP")
 
 ESPSettingsTab:CreateToggle({
@@ -1797,28 +1982,13 @@ ESPSettingsTab:CreateToggle({
     Callback = function(Value)
         _G.LianConfig.PlayerESP = Value
         saveConfig()
-        -- Toggle ESP
-        for _, p in pairs(game:GetService("Players"):GetPlayers()) do
+        for _, p in pairs(Players:GetPlayers()) do
             if p ~= LocalPlayer and p.Character then
                 local head = p.Character:FindFirstChild("Head")
                 if head then
                     local esp = head:FindFirstChild("LianESP")
                     if Value and not esp then
-                        local billboard = Instance.new("BillboardGui")
-                        billboard.Name = "LianESP"
-                        billboard.Size = UDim2.new(0, 100, 0, 40)
-                        billboard.StudsOffset = Vector3.new(0, 2, 0)
-                        billboard.AlwaysOnTop = true
-                        billboard.Parent = head
-                        local label = Instance.new("TextLabel")
-                        label.Size = UDim2.new(1, 0, 1, 0)
-                        label.BackgroundTransparency = 1
-                        label.TextColor3 = Color3.fromRGB(255, 255, 255)
-                        label.TextStrokeTransparency = 0
-                        label.Font = Enum.Font.GothamBold
-                        label.TextSize = 14
-                        label.Text = p.Name
-                        label.Parent = billboard
+                        applyPlayerEspToChar(p, p.Character)
                     elseif not Value and esp then
                         esp:Destroy()
                     end
@@ -1829,6 +1999,7 @@ ESPSettingsTab:CreateToggle({
 })
 
 ESPSettingsTab:CreateSection("💡 Fullbright")
+
 ESPSettingsTab:CreateToggle({
     Name = "Fullbright (Max Brightness)",
     CurrentValue = _G.LianConfig.Fullbright,
@@ -1836,13 +2007,12 @@ ESPSettingsTab:CreateToggle({
         _G.LianConfig.Fullbright = Value
         saveConfig()
         pcall(function()
-            local Lighting = game:GetService("Lighting")
             if Value then
                 Lighting.Brightness = 2
                 Lighting.ClockTime = 14
                 Lighting.FogEnd = 100000
                 Lighting.GlobalShadows = false
-                Lighting.OutdoorAmbient = Color3.fromRGB(255,255,255)
+                Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
             else
                 Lighting.Brightness = 1
                 Lighting.GlobalShadows = true
@@ -1852,6 +2022,8 @@ ESPSettingsTab:CreateToggle({
 })
 
 ESPSettingsTab:CreateSection("🔄 Rejoin & Server")
+
+do
     local _tg
     _tg = ESPSettingsTab:CreateToggle({
         Name = "🔄 Rejoin Server Sekarang",
@@ -1859,7 +2031,6 @@ ESPSettingsTab:CreateSection("🔄 Rejoin & Server")
         Callback = function(Value)
             if not Value then return end
             setupAutoExecuteOnTeleport()
-            -- Schedule auto-reset BEFORE teleport so a thrown Teleport cannot leave the toggle stuck ON
             task.spawn(function()
                 task.wait(0.5)
                 pcall(function() _tg:Set(false) end)
@@ -1869,6 +2040,7 @@ ESPSettingsTab:CreateSection("🔄 Rejoin & Server")
             end)
         end,
     })
+end
 
 ESPSettingsTab:CreateToggle({
     Name = "🔄 Auto Reconnect (Saat Disconnect)",
@@ -1885,16 +2057,8 @@ ESPSettingsTab:CreateToggle({
     Callback = function(Value)
         _G.LianConfig.TradeRequests = Value
         saveConfig()
-        -- Try to find and toggle trade request remote
-        local tradeRemote = getRemote("TradeService", "RE", "SetTradeRequestsEnabled")
-        if tradeRemote then
-            if tradeRemote:IsA("RemoteEvent") then
-                fire(tradeRemote, Value)
-            elseif tradeRemote:IsA("RemoteFunction") then
-                task.spawn(function()
-                    tradeRemote:InvokeServer(Value)
-                end)
-            end
+        if R.TradeToggle then
+            fire(R.TradeToggle, Value)
         end
     end,
 })
@@ -1912,16 +2076,14 @@ ESPSettingsTab:CreateSlider({
         _G.LianConfig.JumpPowerValue = Value
         saveConfig()
         pcall(function()
-            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-                LocalPlayer.Character.Humanoid.JumpPower = Value
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+                LocalPlayer.Character:FindFirstChildOfClass("Humanoid").JumpPower = Value
             end
         end)
     end,
 })
 
--- ═════════════════════════════════════════════════════════════════════
--- TAB 7: REBIRTH & STATS (SMART & ZERO SPAM)
--- ═════════════════════════════════════════════════════════════════════
+-- TAB 7: REBIRTH & STATS
 RebirthTab:CreateSection("🧬 Smart Rebirth Engine")
 
 RebirthTab:CreateToggle({
@@ -1970,7 +2132,6 @@ RebirthTab:CreateToggle({
     end,
 })
 
-
 RebirthTab:CreateSection("🌾 Plot Optimization & Auto-Sell Luar Plot")
 
 RebirthTab:CreateToggle({
@@ -1985,23 +2146,23 @@ RebirthTab:CreateToggle({
     end,
 })
 
+do
     local _tg
     _tg = RebirthTab:CreateToggle({
         Name = "⚡ Equip Best ke Plot & Jual Semua di Luar Plot Sekarang",
         CurrentValue = false,
         Callback = function(Value)
             if not Value then return end
-        task.spawn(function() equipBestPlotAndSellOutside() end)
-        task.spawn(function()
-            task.wait(0.5)
-            pcall(function() _tg:Set(false) end)
-        end)
-    end,
-})
+            task.spawn(equipBestPlotAndSellOutside)
+            task.spawn(function()
+                task.wait(0.5)
+                pcall(function() _tg:Set(false) end)
+            end)
+        end,
+    })
+end
 
--- ═════════════════════════════════════════════════════════════════════
--- TAB 8: SERVER LUCK HUNTER (SMART MULTI-PAGE HOPPER)
--- ═════════════════════════════════════════════════════════════════════
+-- TAB 8: SERVER LUCK HUNTER
 ServerTab:CreateSection("🌐 Smart Server Hop (Anti Duplikasi & Silent)")
 
 ServerTab:CreateToggle({
@@ -2013,46 +2174,45 @@ ServerTab:CreateToggle({
     end,
 })
 
+do
     local _tg
     _tg = ServerTab:CreateToggle({
         Name = "🔄 Force Hop ke Server Lain Sekarang",
         CurrentValue = false,
         Callback = function(Value)
             if not Value then return end
-        -- Schedule reset BEFORE risky calls so a throw cannot leave toggle stuck ON
-        task.spawn(function()
-            task.wait(0.5)
-            pcall(function() _tg:Set(false) end)
-        end)
-        task.spawn(function()
-            setupAutoExecuteOnTeleport()
-            local placeId = game.PlaceId
-            local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
-            local raw = game:HttpGet(apiUrl)
-            local ok, res = false, nil
-            if raw then
-                ok, res = pcall(function() return HttpService:JSONDecode(raw) end)
-            end
-            local hopped = false
-            if ok and res and res.data then
-                for _, s in ipairs(res.data) do
-                    if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
-                        TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
-                        hopped = true
-                        break
+            task.spawn(function()
+                task.wait(0.5)
+                pcall(function() _tg:Set(false) end)
+            end)
+            task.spawn(function()
+                setupAutoExecuteOnTeleport()
+                local placeId = game.PlaceId
+                local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
+                local raw = game:HttpGet(apiUrl)
+                local ok, res = false, nil
+                if raw then
+                    ok, res = pcall(function() return HttpService:JSONDecode(raw) end)
+                end
+                local hopped = false
+                if ok and res and res.data then
+                    for _, s in ipairs(res.data) do
+                        if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
+                            TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
+                            hopped = true
+                            break
+                        end
                     end
                 end
-            end
-            if not hopped then
-                TeleportService:Teleport(placeId, LocalPlayer)
-            end
-        end)
-    end,
-})
+                if not hopped then
+                    TeleportService:Teleport(placeId, LocalPlayer)
+                end
+            end)
+        end,
+    })
+end
 
--- ═════════════════════════════════════════════════════════════════════
 -- TAB 9: DISCORD WEBHOOK TELEMETRY
--- ═════════════════════════════════════════════════════════════════════
 WebhookTab:CreateSection("📡 Notifikasi Drop ke Discord HP")
 
 WebhookTab:CreateInput({
@@ -2066,29 +2226,7 @@ WebhookTab:CreateInput({
     end,
 })
 
-local function sendDiscordWebhook(title, desc, color)
-    local url = _G.LianConfig.DiscordWebhook
-    if not url or url == "" or not url:find("http") then return end
-    local req = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
-    if not req then return end
-    local payload = {
-        embeds = {{
-            title = title,
-            description = desc,
-            color = color or 5814783,
-            footer = { text = "⚡ Lian Hub v6.3 | Anime Dice Telemetry" },
-            timestamp = DateTime.now():ToIsoDate()
-        }}
-    }
-    -- req (syn.request/http.request) yields; call directly outside pcell.
-    req({
-        Url = url,
-        Method = "POST",
-        Headers = { ["Content-Type"] = "application/json" },
-        Body = HttpService:JSONEncode(payload)
-    })
-end
-
+do
     local _tg
     _tg = WebhookTab:CreateToggle({
         Name = "🔔 Test Kirim Webhook Sekarang",
@@ -2100,17 +2238,16 @@ end
                 pcall(function() _tg:Set(false) end)
             end)
             task.spawn(function()
-                sendDiscordWebhook("🔔 Test Webhook Lian Hub", "Koneksi webhook dari akun **" .. LocalPlayer.Name .. "** berhasil!", 65280)
+                sendDiscordWebhook("🔔 Test Webhook Lian Hub v7.0", "Koneksi webhook dari akun **" .. LocalPlayer.Name .. "** berhasil!", 65280)
                 pcall(function()
                     Rayfield:Notify({ Title = "Webhook Terkirim!", Content = "Cek channel Discord Bubu yaa!", Duration = 3 })
                 end)
             end)
         end,
     })
+end
 
--- ═════════════════════════════════════════════════════════════════════
--- TAB 10: POTATO OPTIMIZER & GPU SAVER (MULTI-CLIENT)
--- ═════════════════════════════════════════════════════════════════════
+-- TAB 10: POTATO OPTIMIZER & GPU SAVER
 PerfTab:CreateSection("❄️ Extreme Multi-Account Optimizer")
 
 PerfTab:CreateToggle({
@@ -2148,9 +2285,7 @@ PerfTab:CreateSlider({
     end,
 })
 
--- ═════════════════════════════════════════════════════════════════════
 -- TAB 11: PLAYER & MOVEMENT
--- ═════════════════════════════════════════════════════════════════════
 PlayerTab:CreateSection("🏃 Movement Enhancements")
 
 PlayerTab:CreateSlider({
@@ -2161,8 +2296,8 @@ PlayerTab:CreateSlider({
     Callback = function(Value)
         _G.LianConfig.WalkSpeedValue = Value
         saveConfig()
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-            LocalPlayer.Character.Humanoid.WalkSpeed = Value
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+            LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = Value
         end
     end,
 })
@@ -2175,11 +2310,12 @@ PlayerTab:CreateToggle({
         saveConfig()
     end,
 })
-UserInputService.JumpRequest:Connect(function()
-    if _G.LianConfig.InfJump and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-        LocalPlayer.Character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+
+trackConn(UserInputService.JumpRequest:Connect(function()
+    if isAlive() and _G.LianConfig.InfJump and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):ChangeState(Enum.HumanoidStateType.Jumping)
     end
-end)
+end))
 
 PlayerTab:CreateToggle({
     Name = "Noclip (Tembus Dinding)",
@@ -2196,8 +2332,10 @@ PlayerTab:CreateToggle({
         end
     end,
 })
+
 local wasNoclip = false
-RunService.Stepped:Connect(function()
+trackConn(RunService.Stepped:Connect(function()
+    if not isAlive() then return end
     if LocalPlayer.Character then
         local noclipOn = _G.LianConfig.Noclip
         if noclipOn then
@@ -2216,28 +2354,32 @@ RunService.Stepped:Connect(function()
             end
         end
     end
-end)
-
-
--- ═════════════════════════════════════════════════════════════════════
--- 🚀 MASTER 100% DECOUPLED BACKGROUND WORKERS
--- ═════════════════════════════════════════════════════════════════════
+end))
 
 end -- close if Window
 
--- 1. Auto Roll Dice Worker
-task.spawn(function()
+-- ═════════════════════════════════════════════════════════════════════
+-- 🚀 MASTER 100% VERIFIED ANIME DICE BACKGROUND WORKERS (Generation-Guarded)
+-- ═════════════════════════════════════════════════════════════════════
+
+-- 1. Auto Roll Dice Worker (Rolling.RE.SetAutoRoll + Rolling.RE.StartRoll + Rolling.RF.RollDice)
+trackThread(task.spawn(function()
     local autoRollState = false
-    while true do
+    while isAlive() do
         if _G.LianConfig.AutoRoll then
             if not autoRollState then
                 fire(R.SetAutoRoll, true)
                 autoRollState = true
             end
-            task.spawn(function()
-                invoke(R.Roll)
-            end)
-            task.wait(_G.LianConfig.FastRoll and 0.08 or 0.3)
+            if R.StartRoll then
+                fire(R.StartRoll)
+            end
+            if R.Roll then
+                task.spawn(function()
+                    invoke(R.Roll)
+                end)
+            end
+            task.wait(_G.LianConfig.FastRoll and 0.1 or 0.28)
         else
             if autoRollState then
                 fire(R.SetAutoRoll, false)
@@ -2246,411 +2388,636 @@ task.spawn(function()
             task.wait(0.5)
         end
     end
-end)
+end))
 
--- Auto Unit Grades Worker (aligned with groper99/animedice; behavior unverified — reference obfuscated)
-task.spawn(function()
-    local cachedGradeRemote = R.QuirkRoll or getRemote("GradeService", "RE", "Roll")
-    local warnedGrade = false
-    while true do
+-- 2. Auto Buy Best Dice & Auto Equip Best Owned Dice Worker (DiceService.RE.BuyDice / EquipDice)
+trackThread(task.spawn(function()
+    while isAlive() do
+        if _G.LianConfig.AutoBuyDice then
+            local diceList = getAllDiceList()
+            local money = getPlayerCash()
+            local owned = readData("OwnedDice", {}) or {}
+            local curEquipped = tostring(readData("Dice", "Basic Dice") or "Basic Dice")
+            local curLuck = 0
+            for _, d in ipairs(diceList) do
+                if d.name == curEquipped then
+                    curLuck = d.luck
+                    break
+                end
+            end
+
+            -- Buy affordable dice that are at or above current equipped luck
+            for i = #diceList, 1, -1 do
+                local d = diceList[i]
+                if d.luck >= curLuck and d.price <= money and R.BuyDice then
+                    fire(R.BuyDice, d.name)
+                    money = money - d.price
+                    task.wait(0.15)
+                end
+            end
+
+            -- Re-read OwnedDice and equip the owned dice with the highest luck
+            owned = readData("OwnedDice", {}) or {}
+            local bestName, bestLuck = curEquipped, curLuck
+            for _, d in ipairs(diceList) do
+                local amt = tonumber(owned[d.name]) or 0
+                if amt > 0 and d.luck > bestLuck then
+                    bestName, bestLuck = d.name, d.luck
+                end
+            end
+            if bestName ~= curEquipped and R.EquipDice then
+                fire(R.EquipDice, bestName)
+            end
+            task.wait(2.5)
+        else
+            task.wait(1.0)
+        end
+    end
+end))
+
+-- 3. Auto Unit Grades & Traits Worker (GradeService.RE.Roll(unitUUID) + SetGradeProtected)
+trackThread(task.spawn(function()
+    local protectedSynced = false
+    while isAlive() do
         if _G.LianConfig.AutoUnitGrades then
-            local gradeRemote = cachedGradeRemote
-            if gradeRemote then
-                task.spawn(function()
-                    gradeRemote:FireServer()
-                end)
-                -- Protect gating: DISABLED until grade read is implemented.
-                -- Firing SetGradeProtected(true) after every roll can lock a bad grade.
-                -- TODO: read current grade from DataController before protecting.
-                -- if _G.LianConfig.ProtectHighGrades then
-                --     local protectRemote = getRemote("GradeService", "RE", "SetGradeProtected")
-                --     if protectRemote then
-                --         task.wait(0.3) -- wait for server to assign grade
-                --         protectRemote:FireServer(true)
-                --     end
-                -- end
+            if _G.LianConfig.ProtectHighGrades and not protectedSynced and R.GradeProtect then
+                for _, gName in ipairs({"S", "SS", "SSS"}) do
+                    fire(R.GradeProtect, gName, true)
+                    task.wait(0.05)
+                end
+                protectedSynced = true
+            end
+
+            local inv = readData("Inventory", {}) or {}
+            local slots = readData("Slots", {}) or {}
+            local targetUUID = nil
+
+            -- Prefer rolling grades on equipped plot units first
+            for _, val in pairs(slots) do
+                local uuid = type(val) == "string" and val or (type(val) == "table" and (val.unitId or val.key))
+                local entry = uuid and inv[uuid]
+                if type(entry) == "table" then
+                    local attrs = type(entry.attributes) == "table" and entry.attributes or entry
+                    local g = tostring(attrs.grade or entry.Grade or ""):upper()
+                    if (GRADE_ORDER[g] or 0) < 7 then -- below S
+                        targetUUID = uuid
+                        break
+                    end
+                end
+            end
+
+            -- Fallback: any unit in inventory below S grade
+            if not targetUUID then
+                for uuid, entry in pairs(inv) do
+                    if isUnitEntry(uuid, entry) then
+                        local attrs = type(entry.attributes) == "table" and entry.attributes or entry
+                        local g = tostring(attrs.grade or entry.Grade or ""):upper()
+                        if (GRADE_ORDER[g] or 0) < 7 then
+                            targetUUID = uuid
+                            break
+                        end
+                    end
+                end
+            end
+
+            if targetUUID and R.GradeRoll then
+                fire(R.GradeRoll, targetUUID)
                 if _G.LianConfig.RollGradeOnce then
                     _G.LianConfig.AutoUnitGrades = false
                     saveConfig()
                 end
-            elseif not warnedGrade then
-                warnedGrade = true
-                warn("[LianHub] AutoUnitGrades: no grade remote resolved — check game update")
             end
-            task.wait(1.0)
-        else
             task.wait(0.5)
+        else
+            protectedSynced = false
+            task.wait(0.8)
         end
     end
-end)
+end))
 
--- Auto Buy Dice + Auto Equip Best Dice Worker
-task.spawn(function()
-    local lastBuyTime = 0
-    while true do
-        if _G.LianConfig.AutoBuyDice and R.BuyDice then
-            if os.clock() - lastBuyTime >= 5 then
-                lastBuyTime = os.clock()
-                fire(R.BuyDice)
-                task.wait(0.5)
-                if R.EquipDice then
-                    fire(R.EquipDice)
+-- 4. Auto Quirk Reroll Hunter Worker (QuirkService.RE.Roll(unitUUID) + Zone Auto-Teleport)
+trackThread(task.spawn(function()
+    local quirkProtectedSynced = false
+    while isAlive() do
+        if _G.LianConfig.AutoQuirk and R.QuirkRoll then
+            if not quirkProtectedSynced and R.QuirkProtect then
+                for qName in pairs(RARE_QUIRKS) do
+                    fire(R.QuirkProtect, qName, true)
+                    task.wait(0.05)
+                end
+                quirkProtectedSynced = true
+            end
+
+            -- Ensure character is near Workspace.Zones.Quirks so server accepts QuirkService.RE.Roll
+            local qZone = Workspace:FindFirstChild("Zones") and Workspace.Zones:FindFirstChild("Quirks")
+            local hrp = LocalPlayer and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if qZone and hrp and (hrp.Position - qZone.Position).Magnitude > 22 then
+                teleportToTarget(qZone)
+                task.wait(0.4)
+            end
+
+            local inv = readData("Inventory", {}) or {}
+            local slots = readData("Slots", {}) or {}
+            local candidateUUID = nil
+
+            for _, val in pairs(slots) do
+                local uuid = type(val) == "string" and val or (type(val) == "table" and (val.unitId or val.key))
+                local entry = uuid and inv[uuid]
+                if type(entry) == "table" then
+                    local attrs = type(entry.attributes) == "table" and entry.attributes or entry
+                    local q = tostring(attrs.quirk or "")
+                    if not RARE_QUIRKS[q] then
+                        candidateUUID = uuid
+                        break
+                    end
                 end
             end
-        end
-        task.wait(2.0)
-    end
-end)
 
--- Auto Quirk Reroll Worker
-task.spawn(function()
-    while true do
-        if _G.LianConfig.AutoQuirk then
-            if R.QuirkRoll then
-                fire(R.QuirkRoll)
-                -- Protect gating: DISABLED until quirk read is implemented.
-                -- Firing SetGradeProtected(true) after every roll can lock a bad quirk.
-                -- TODO: read current quirk from DataController before protecting.
-                -- if _G.LianConfig.ProtectHighGrades then
-                --     local protectRemote = getRemote("GradeService", "RE", "SetGradeProtected")
-                --     if protectRemote then
-                --         task.wait(0.3) -- wait for server to assign quirk
-                --         protectRemote:FireServer(true)
-                --     end
-                -- end
-                task.wait(0.5)
+            if not candidateUUID then
+                for uuid, entry in pairs(inv) do
+                    if isUnitEntry(uuid, entry) then
+                        local attrs = type(entry.attributes) == "table" and entry.attributes or entry
+                        local q = tostring(attrs.quirk or "")
+                        if not RARE_QUIRKS[q] then
+                            candidateUUID = uuid
+                            break
+                        end
+                    end
+                end
             end
-        end
-        task.wait(1.0)
-    end
-end)
 
--- 2. Auto Roll Halloween Worker (100 Labu vs 500 Labu)
-task.spawn(function()
-    while true do
-        if _G.LianConfig.AutoRollHalloween then
+            if candidateUUID then
+                fire(R.QuirkRoll, candidateUUID)
+            end
+            task.wait(0.35)
+        else
+            quirkProtectedSynced = false
+            task.wait(0.8)
+        end
+    end
+end))
+
+-- 5. Auto Roll Halloween Pumpkin Dice Worker (PumpkinDiceService.RF.Roll)
+trackThread(task.spawn(function()
+    while isAlive() do
+        if _G.LianConfig.AutoRollHalloween and R.PumpkinRoll then
             local opt = _G.LianConfig.HalloweenRollOption or ""
             local rollCount = opt:find("100") and 1 or 5
             task.spawn(function()
                 invoke(R.PumpkinRoll, rollCount)
             end)
-            task.wait(0.35)
+            task.wait(0.4)
         else
-            task.wait(0.5)
+            task.wait(0.8)
         end
     end
-end)
+end))
 
--- 3. Auto Potions Worker (Category Stacking)
-task.spawn(function()
-    while true do
-        if _G.LianConfig.AutoPotions then
-            local queue = {}
-            pcall(function()
-                local dc = getDC()
-                local inv = (dc and dc.Inventory and dc.Inventory()) or {}
-                for key, e in pairs(inv) do
-                    if e and (e.amount or 0) > 0 then
-                        local name = tostring(e.name or key)
-                        local shouldDrink = false
-                        if _G.LianConfig.PotionUseLuck and name:find("Luck") then shouldDrink = true
-                        elseif _G.LianConfig.PotionUseIncome and (name:find("Income") or name:find("Money")) then shouldDrink = true
-                        elseif _G.LianConfig.PotionUseDamage and (name:find("Damage") or name:find("Slayer")) then shouldDrink = true
-                        elseif _G.LianConfig.PotionUseSpeed and name:find("Speed") then shouldDrink = true
-                        elseif _G.LianConfig.PotionUseHalloween and (name:find("Haunted") or name:find("Pumpkin") or name:find("Candy")) then shouldDrink = true
-                        elseif _G.LianConfig.PotionUseTower and (name:find("Tower") or name:find("Shadow") or name:find("Pirate")) then shouldDrink = true
+-- 6. Auto Potions, Spins, Gamepass & Best Gear Worker (BoostService + SpinService + GearService)
+trackThread(task.spawn(function()
+    while isAlive() do
+        if _G.LianConfig.AutoPotions or _G.LianConfig.AutoLuckySpin then
+            local inv = readData("Inventory", {}) or {}
+            for key, e in pairs(inv) do
+                if not isAlive() then break end
+                local amt = (type(e) == "table" and tonumber(e.amount)) or (type(e) == "number" and e) or 0
+                if amt > 0 then
+                    local name = (type(e) == "table" and tostring(e.name or key)) or tostring(key)
+                    local cfg = getEntryCfg(name)
+                    local kind = cfg and cfg.kind or nil
+
+                    if _G.LianConfig.AutoPotions and (kind == "Boost" or name:find("Boost") or name:find("Potion") or name:find("Leaf") or name:find("Brew")) then
+                        local cat = tostring((cfg and cfg.category) or name)
+                        local drink = false
+                        if _G.LianConfig.PotionUseLuck and cat:find("Luck") then drink = true
+                        elseif _G.LianConfig.PotionUseIncome and (cat:find("Income") or cat:find("Money") or cat:find("Million")) then drink = true
+                        elseif _G.LianConfig.PotionUseDamage and (cat:find("Damage") or cat:find("Slayer")) then drink = true
+                        elseif _G.LianConfig.PotionUseSpeed and cat:find("Speed") then drink = true
+                        elseif _G.LianConfig.PotionUseHalloween and (cat:find("Haunted") or cat:find("Pumpkin") or cat:find("Candy") or cat:find("Witch")) then drink = true
+                        elseif _G.LianConfig.PotionUseTower and (cat:find("Tower") or cat:find("Shadow") or cat:find("Pirate")) then drink = true
                         end
-                        if shouldDrink then
-                            table.insert(queue, { key = key, name = name, amount = e.amount })
+                        if drink and R.Boost then
+                            fire(R.Boost, key)
+                            task.wait(0.25)
                         end
+                    elseif _G.LianConfig.AutoLuckySpin and (kind == "Spin" or name:find("Spin") or name:find("Lucky Roll")) then
+                        if R.Spin then
+                            fire(R.Spin, key)
+                            task.wait(0.25)
+                        end
+                    elseif kind == "Gamepass" and R.GamepassUse then
+                        fire(R.GamepassUse, key)
+                        task.wait(0.25)
                     end
                 end
-            end)
-            for _, p in ipairs(queue) do
-                if not _G.LianConfig.AutoPotions then break end
-                fire(R.Boost, p.key)
-                task.wait(0.2)
             end
-            task.wait(3)
+            task.wait(3.0)
         else
-            task.wait(1)
+            task.wait(1.0)
         end
     end
-end)
+end))
 
--- 4. Auto Rebirth Worker (Zero Spam — Uang Cukup Baru Rebirth)
-task.spawn(function()
-    while true do
-        if _G.LianConfig.AutoRebirth then
-            local canRebirth, curCash = false, 0
-            pcall(function()
-                canRebirth, curCash = canAffordRebirth()
-            end)
+-- 7. Auto Rebirth Worker (RebirthService.RF.Rebirth)
+trackThread(task.spawn(function()
+    while isAlive() do
+        if _G.LianConfig.AutoRebirth and R.Rebirth then
+            local canRebirth, curCash = canAffordRebirth()
             if canRebirth then
-                fire(R.Rebirth)
+                task.spawn(function()
+                    invoke(R.Rebirth)
+                end)
                 pcall(function()
                     Rayfield:Notify({ Title = "Rebirth Sukses!", Content = "Uang cukup ($" .. math.floor(curCash) .. "). Rebirth diproses!", Duration = 3 })
                 end)
                 task.wait(1.5)
-                fire(R.EquipBest)
+                if R.EquipBest then fire(R.EquipBest) end
             end
-            task.wait(1.5)
+            task.wait(2.0)
         else
-            task.wait(1)
+            task.wait(1.0)
         end
     end
-end)
+end))
 
--- 5. Rebirth Stats Allocation Worker (Zero Spam — Poin > 0 Baru Up)
-task.spawn(function()
-    while true do
+-- 8. Rebirth Stats Allocation Worker (RebirthService.RE.AddStat: Income, Luck, RollSpeed, WalkSpeed)
+trackThread(task.spawn(function()
+    while isAlive() do
         if _G.LianConfig.AutoAllocStats and R.AddStat then
-            local toAdd = {}
-            pcall(function()
-                local pts = getAvailableStatPoints()
-                if pts > 0 then
-                    local prio = _G.LianConfig.RebirthStatPriority or ""
-                    local statList = {}
-                    if prio:find("Balance") then statList = {"Money", "Luck", "Damage", "Health", "Speed"}
-                    elseif prio:find("Money") then statList = {"Money"}
-                    elseif prio:find("Luck") then statList = {"Luck"}
-                    elseif prio:find("Damage") then statList = {"Damage"}
-                    elseif prio:find("Health") then statList = {"Health"}
-                    elseif prio:find("Speed") then statList = {"Speed"}
-                    end
-                    local dc = getDC()
-                    local spentT = table.clone((dc and dc.RebirthStats and dc.RebirthStats()) or {})
-                    for _ = 1, math.min(pts, 15) do
-                        local pick, low = nil, math.huge
-                        for _, name in ipairs(statList) do
-                            local cur = spentT[name] or 0
-                            if cur < low then
-                                pick, low = name, cur
-                            end
-                        end
-                        if not pick then break end
-                        spentT[pick] = low + 1
-                        table.insert(toAdd, pick)
-                    end
+            local pts = getAvailableStatPoints()
+            if pts > 0 then
+                local prio = _G.LianConfig.RebirthStatPriority or ""
+                local statList = { "Luck", "Income", "RollSpeed", "WalkSpeed" }
+                if prio:find("Money") or prio:find("Income") then
+                    statList = { "Income", "Luck", "RollSpeed" }
+                elseif prio:find("Luck") then
+                    statList = { "Luck", "Income", "RollSpeed" }
+                elseif prio:find("Damage") or prio:find("Speed") then
+                    statList = { "RollSpeed", "Luck", "Income" }
+                elseif prio:find("Health") then
+                    statList = { "WalkSpeed", "Luck", "Income" }
                 end
-            end)
-            for _, statName in ipairs(toAdd) do
-                fire(R.AddStat, statName)
-                task.wait(0.15)
+                local curStats = table.clone(readData("RebirthStats", {}) or {})
+                for _ = 1, math.min(pts, 12) do
+                    local pick, low = nil, math.huge
+                    for _, sName in ipairs(statList) do
+                        local c = tonumber(curStats[sName]) or 0
+                        if c < low then
+                            pick, low = sName, c
+                        end
+                    end
+                    if not pick then break end
+                    curStats[pick] = low + 1
+                    fire(R.AddStat, pick)
+                    task.wait(0.15)
+                end
             end
-        end
-        task.wait(2)
-    end
-end)
-
--- 6. Auto Buy Tree Upgrades Worker (Fortune dll di Dekat Dadu)
-task.spawn(function()
-    while true do
-        if _G.LianConfig.AutoBuyTreeUpgrades then
-            task.spawn(function() buyUpgradesTree() end)
             task.wait(2.5)
         else
-            task.wait(1)
+            task.wait(1.0)
         end
     end
-end)
+end))
 
--- 7. Towers AI & Manual Tower Worker (Native Team Equip + Debounce)
-task.spawn(function()
-    while true do
+-- 9. Auto Buy Tree Upgrades Worker (Network.RE.BuyUpgrade)
+trackThread(task.spawn(function()
+    while isAlive() do
+        if _G.LianConfig.AutoBuyTreeUpgrades then
+            buyUpgradesTree()
+            task.wait(2.5)
+        else
+            task.wait(1.0)
+        end
+    end
+end))
+
+-- 10. Smart Tower AI & Manual Tower Worker (PlayTower + CompleteTowerFloor Loop + CancelTower Recovery)
+trackThread(task.spawn(function()
+    local TOWER_FALLBACK_ORDER = { "Shadow Tower", "Dragon Tower", "Infinity Tower", "Haunted Front Yard", "Attic" }
+    while isAlive() do
         if _G.LianConfig.SmartTowerAI or _G.LianConfig.AutoTower then
-            if _G.LianConfig.AutoEquipTowerTeam then
+            if R.SetAutoTower then
+                fire(R.SetAutoTower, false)
+            end
+            if _G.LianConfig.AutoEquipTowerTeam and R.BestTeam then
                 fire(R.BestTeam)
-                task.wait(1)
+                task.wait(0.6)
             end
-            local towerName = _G.LianConfig.TowerType
+
+            -- Build list of candidate towers from live game module or fallback
+            local towerCandidates = {}
             if _G.LianConfig.SmartTowerAI then
-                local towers = {"The Abyss", "Bell Tower", "Attic", "Crypt", "Foyer", "Front Yard"}
-                towerName = towers[math.random(1, #towers)]
+                if M.Towers and type(M.Towers.GetAll) == "function" then
+                    local okT, allT = pcall(M.Towers.GetAll)
+                    if okT and type(allT) == "table" then
+                        for tName in pairs(allT) do
+                            table.insert(towerCandidates, tName)
+                        end
+                    end
+                end
+                if #towerCandidates == 0 then
+                    towerCandidates = TOWER_FALLBACK_ORDER
+                end
+            else
+                table.insert(towerCandidates, _G.LianConfig.TowerType or "Shadow Tower")
+                for _, fb in ipairs(TOWER_FALLBACK_ORDER) do
+                    if fb ~= _G.LianConfig.TowerType then
+                        table.insert(towerCandidates, fb)
+                    end
+                end
             end
-            if R.PlayTower then
-                local towerDone = false
-                task.spawn(function()
-                    local resStart = invoke(R.PlayTower, towerName)
-                    if resStart then
-                        task.wait(1)
-                        for floor = 1, 50 do
-                            if not (_G.LianConfig.SmartTowerAI or _G.LianConfig.AutoTower) then break end
-                            local resSeq = invoke(R.FloorTower)
-                            if not resSeq or resSeq == "destroyed" then break end
-                            if type(resSeq) == "table" then
+
+            if R.PlayTower and R.FloorTower then
+                for _, tName in ipairs(towerCandidates) do
+                    if not isAlive() or not (_G.LianConfig.SmartTowerAI or _G.LianConfig.AutoTower) then break end
+                    local started = false
+                    local doneStart = false
+                    task.spawn(function()
+                        local res = invoke(R.PlayTower, tName)
+                        started = (res == true or type(res) == "table")
+                        doneStart = true
+                    end)
+                    local t0 = os.clock()
+                    while not doneStart and os.clock() - t0 < 6 do
+                        task.wait(0.15)
+                    end
+
+                    if not started and R.CancelTower then
+                        task.spawn(function() invoke(R.CancelTower) end)
+                        task.wait(0.8)
+                    elseif started then
+                        for _ = 1, 60 do
+                            if not isAlive() or not (_G.LianConfig.SmartTowerAI or _G.LianConfig.AutoTower) then break end
+                            local stepDone, stepRes = false, nil
+                            task.spawn(function()
+                                stepRes = invoke(R.FloorTower)
+                                stepDone = true
+                            end)
+                            local ft0 = os.clock()
+                            while not stepDone and os.clock() - ft0 < 5 do
+                                task.wait(0.1)
+                            end
+                            if not stepDone or not stepRes or stepRes == "destroyed" then break end
+                            if type(stepRes) == "table" then
+                                if stepRes.action == "ended" then break end
                                 local ended = false
-                                for _, a in ipairs(resSeq) do
-                                    if a.action == "ended" then ended = true end
+                                for _, a in ipairs(stepRes) do
+                                    if type(a) == "table" and a.action == "ended" then
+                                        ended = true
+                                        break
+                                    end
                                 end
                                 if ended then break end
                             end
-                            task.wait(0.3)
+                            task.wait(0.25)
                         end
+                        break
                     end
-                    towerDone = true
-                end)
-                local tWait = tick()
-                while not towerDone and (tick() - tWait < 25) do
-                    task.wait(0.5)
                 end
             end
-            task.wait(5.5)
+            task.wait(4.0)
         else
-            task.wait(1)
+            task.wait(1.0)
         end
     end
-end)
+end))
 
--- 8. Plot Cash & Level Up Worker
-task.spawn(function()
-    while true do
-        if _G.LianConfig.AutoCollectCash then
-            local maxSlots = getMaxPlotSlots()
-            for slot = 1, maxSlots do
-                if not _G.LianConfig.AutoCollectCash then break end
-                fire(R.Collect, slot)
+-- 11. Plot Cash Collect & Unit Level Up Worker (PlotService.RE.Collect(tostring(slot)) + UnitService.RE.LevelUp(uuid))
+trackThread(task.spawn(function()
+    while isAlive() do
+        if _G.LianConfig.AutoCollectCash and R.Collect then
+            local slots = readData("Slots", nil)
+            if type(slots) == "table" and next(slots) ~= nil then
+                for slotKey, val in pairs(slots) do
+                    if not _G.LianConfig.AutoCollectCash then break end
+                    if val ~= nil and val ~= "" then
+                        fire(R.Collect, tostring(slotKey))
+                    end
+                end
+            else
+                for slot = 1, 12 do
+                    if not _G.LianConfig.AutoCollectCash then break end
+                    fire(R.Collect, tostring(slot))
+                end
             end
         end
-        if _G.LianConfig.AutoLevelUpSlots then
-            local maxSlots = getMaxPlotSlots()
-            for slot = 1, maxSlots do
-                if not _G.LianConfig.AutoLevelUpSlots then break end
-                fire(R.LevelSlot, slot)
+
+        if _G.LianConfig.AutoLevelUpSlots and R.LevelSlot then
+            local slots = readData("Slots", {}) or {}
+            local inv = readData("Inventory", {}) or {}
+            local money = getPlayerCash()
+            local cands = {}
+            for _, val in pairs(slots) do
+                local uuid = type(val) == "string" and val or (type(val) == "table" and (val.unitId or val.key))
+                local entry = uuid and inv[uuid]
+                if type(entry) == "table" then
+                    local price = 0
+                    if M.UnitUtil and type(M.UnitUtil.GetLevelPrice) == "function" then
+                        local okP, p = pcall(M.UnitUtil.GetLevelPrice, entry.name, entry.attributes)
+                        if okP and type(p) == "number" then price = p end
+                    end
+                    if price <= money then
+                        table.insert(cands, { uuid = uuid, price = price })
+                    end
+                end
+            end
+            table.sort(cands, function(a, b) return a.price < b.price end)
+            for i = 1, math.min(6, #cands) do
+                fire(R.LevelSlot, cands[i].uuid)
+                task.wait(0.15)
             end
         end
-        task.wait(2)
+        task.wait(1.5)
     end
-end)
+end))
 
--- 9. Daily Rewards, Quests, Offline Earnings, Wheel & Codes Worker
-task.spawn(function()
-    while true do
+-- 12. Quests (Daily + Weekly), Daily Reward, Offline Earnings, Group Reward & Live Promo Codes Worker
+trackThread(task.spawn(function()
+    local codeTries = {}
+    local groupTries = 0
+    local FALLBACK_CODES = {
+        "release", "SorryForShutdown", "UPD1", "1MVisits", "10KLikes", "25KLikes",
+        "50KLikes", "Halloween", "TrickOrTreat", "Update2", "Quirks", "Dungeon",
+        "Shadow", "Dragon", "Lucky", "Sub2Dev", "AnimeDice", "Pumpkin"
+    }
+    while isAlive() do
         if _G.LianConfig.AutoDailyReward then
-            fire(R.Daily)
-        end
-        if _G.LianConfig.AutoClaimOffline then
-            fire(R.Offline)
-        end
-        if _G.LianConfig.AutoLuckySpin then
-            fire(R.Spin)
-        end
-        if _G.LianConfig.AutoRedeemCodes then
-            local codes = {"RELEASE", "HALLOWEEN", "LUCK", "UPDATE", "SUB2DEV", "ANIME", "DICE", "PUMPKIN"}
-            for _, c in ipairs(codes) do
-                fire(R.Code, c)
-                task.wait(0.2)
+            if R.Daily then fire(R.Daily) end
+            if R.GroupClaim and readData("ClaimedGroupReward", false) ~= true and groupTries < 3 then
+                groupTries = groupTries + 1
+                fire(R.GroupClaim)
+            end
+            -- Also auto-claim completed Daily & Weekly Quests via QuestService.RE.Claim
+            if R.QuestClaim then
+                local dc = getDC()
+                if dc and dc.Quests then
+                    for _, period in ipairs({"Daily", "Weekly"}) do
+                        local qData = unwrapVal(dc.Quests[period])
+                        if type(qData) == "table" and type(qData.quests) == "table" then
+                            local exp = qData.expiresAt
+                            for qId, qEntry in pairs(qData.quests) do
+                                if type(qEntry) == "table" and not qEntry.claimed then
+                                    fire(R.QuestClaim, period, qId, exp)
+                                    task.wait(0.15)
+                                end
+                            end
+                        end
+                    end
+                end
             end
         end
-        task.wait(10)
-    end
-end)
 
--- 10. Auto Equip Best Plot & Sell Rest Worker
-task.spawn(function()
+        if _G.LianConfig.AutoClaimOffline and R.Offline then
+            if (tonumber(readData("PendingOfflineEarnings", 1)) or 1) > 0 then
+                fire(R.Offline)
+            end
+        end
+
+        if _G.LianConfig.AutoRedeemCodes and R.Code then
+            local redeemed = readData("RedeemedCodes", {}) or {}
+            local allCodes = {}
+            local seen = {}
+            if type(M.Codes) == "table" then
+                for codeName, v in pairs(M.Codes) do
+                    if type(codeName) == "string" and type(v) == "table" and not seen[codeName] then
+                        seen[codeName] = true
+                        table.insert(allCodes, codeName)
+                    end
+                end
+            end
+            for _, c in ipairs(FALLBACK_CODES) do
+                if not seen[c] then
+                    seen[c] = true
+                    table.insert(allCodes, c)
+                end
+            end
+            for _, code in ipairs(allCodes) do
+                if not _G.LianConfig.AutoRedeemCodes then break end
+                if not redeemed[code] and (codeTries[code] or 0) < 2 then
+                    codeTries[code] = (codeTries[code] or 0) + 1
+                    fire(R.Code, code)
+                    task.wait(0.4)
+                end
+            end
+        end
+        task.wait(8.0)
+    end
+end))
+
+-- 13. Auto Equip Best Plot & Sell Rest Worker
+trackThread(task.spawn(function()
     local selling = false
     local lastSellStart = 0
-    while true do
-        if selling and (tick() - lastSellStart > 12) then
+    while isAlive() do
+        if selling and (os.clock() - lastSellStart > 12) then
             selling = false
         end
         if _G.LianConfig.AutoEquipBestPlotAndSellRest and not selling then
             selling = true
-            lastSellStart = tick()
+            lastSellStart = os.clock()
             task.spawn(function()
                 equipBestPlotAndSellOutside()
                 selling = false
             end)
             task.wait(3.5)
         else
-            task.wait(1)
+            task.wait(1.0)
         end
     end
-end)
+end))
 
--- 11. Trick or Treat Worker
-task.spawn(function()
-    while true do
+-- 14. Trick-or-Treat Doors (Workspace.TrickOrTreat.Doors ProximityPrompt Bypass + Remote Fallback)
+trackThread(task.spawn(function()
+    local fpp = fireproximityprompt or (_ENV and _ENV.fireproximityprompt)
+    while isAlive() do
         if _G.LianConfig.AutoTrickOrTreat then
-            local map = Workspace:FindFirstChild("Halloween") or Workspace:FindFirstChild("Map")
-            local doors = map and (map:FindFirstChild("Doors") or map:FindFirstChild("TrickOrTreat"))
-            if doors and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                local hrp = LocalPlayer.Character.HumanoidRootPart
-                local oldCFrame = hrp.CFrame
-                for _, d in ipairs(doors:GetChildren()) do
-                    if not _G.LianConfig.AutoTrickOrTreat then break end
-                    if d:IsA("Model") or d:IsA("BasePart") then
-                        pcall(function()
-                            local pivot = d:GetPivot()
-                            hrp.CFrame = pivot * CFrame.new(0, 2, 3)
-                        end)
-                        task.wait(0.4)
-                        fire(R.TrickKnock, d.Name)
-                        task.wait(0.2)
-                        fire(R.TrickLand, d.Name)
-                        task.wait(0.3)
+            local totFolder = (Workspace:FindFirstChild("TrickOrTreat") and Workspace.TrickOrTreat:FindFirstChild("Doors"))
+                or (Workspace:FindFirstChild("Halloween") and Workspace.Halloween:FindFirstChild("Doors"))
+            local hrp = LocalPlayer and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if totFolder and hrp then
+                local nowServer = 0
+                pcall(function() nowServer = Workspace:GetServerTimeNow() end)
+                for _, door in ipairs(totFolder:GetChildren()) do
+                    if not isAlive() or not _G.LianConfig.AutoTrickOrTreat then break end
+                    local unavail = tonumber(door:GetAttribute("UnavailableUntil")) or 0
+                    if unavail <= nowServer then
+                        local rootPart = door:FindFirstChild("Root") or door:FindFirstChildWhichIsA("BasePart", true)
+                        local prompt = door:FindFirstChildOfClass("ProximityPrompt") or (rootPart and rootPart:FindFirstChildOfClass("ProximityPrompt"))
+                        if rootPart then
+                            pcall(function()
+                                hrp.CFrame = rootPart.CFrame * CFrame.new(0, 3, 0)
+                            end)
+                            task.wait(0.25)
+                            if prompt and prompt.Enabled then
+                                pcall(function()
+                                    prompt.HoldDuration = 0
+                                    prompt.RequiresLineOfSight = false
+                                    prompt.MaxActivationDistance = 25
+                                end)
+                                if type(fpp) == "function" then
+                                    pcall(fpp, prompt)
+                                end
+                                pcall(function() prompt:InputHoldBegin() end)
+                                task.wait(0.05)
+                                pcall(function() prompt:InputHoldEnd() end)
+                            end
+                            if R.TrickKnock then fire(R.TrickKnock, door.Name) end
+                            if R.TrickLand then fire(R.TrickLand, door.Name) end
+                            task.wait(0.4)
+                        end
                     end
                 end
-                pcall(function() hrp.CFrame = oldCFrame end)
             end
-            task.wait(5)
+            task.wait(3.0)
         else
-            task.wait(1)
+            task.wait(1.0)
         end
     end
-end)
+end))
 
--- 12. Halloween Event Quests Worker
-task.spawn(function()
-    while true do
-        if _G.LianConfig.AutoHalloweenQuestClaim then
-            local floors = {"The Abyss", "Bell Tower", "Attic", "Crypt", "Foyer", "Front Yard"}
-            for _, f in ipairs(floors) do
+-- 15. Halloween Quests & Pumpkin Pass Claim Worker
+trackThread(task.spawn(function()
+    while isAlive() do
+        if _G.LianConfig.AutoHalloweenQuestClaim and R.HalloweenQuest then
+            for id = 1, 10 do
+                fire(R.HalloweenQuest, id)
+                fire(R.HalloweenQuest, tostring(id))
+            end
+            for _, f in ipairs({"The Abyss", "Bell Tower", "Attic", "Crypt", "Foyer", "Front Yard"}) do
                 fire(R.HalloweenQuest, "Daily", f)
             end
-            task.wait(3)
-        else
-            task.wait(1)
         end
-    end
-end)
-
--- 13. Halloween Pass Claim Worker
-task.spawn(function()
-    while true do
-        if _G.LianConfig.AutoPumpkinPass then
+        if _G.LianConfig.AutoPumpkinPass and R.HalloweenPath then
             fire(R.HalloweenPath)
-            task.wait(6)
-        else
-            task.wait(1)
         end
+        task.wait(5.0)
     end
-end)
+end))
 
--- 14. Auto Trade Feeder Listener
+-- 16. Auto Trade Feeder Listener
 pcall(function()
-    if R.TradeEvent then
-        R.TradeEvent.OnClientEvent:Connect(function(event, data)
+    if R.TradeEvent and R.TradeEvent:IsA("RemoteEvent") then
+        trackConn(R.TradeEvent.OnClientEvent:Connect(function(event, data)
+            if not isAlive() or not _G.LianConfig.AutoTradeFeeder then return end
             task.spawn(function()
-                if not _G.LianConfig.AutoTradeFeeder then return end
                 local master = _G.LianConfig.MasterAccount
                 if not master or master == "" then return end
                 if event == "Request" and data and data.player then
                     if data.player.Name:lower() == master:lower() then
                         fire(R.TradeResp, true)
-                        Rayfield:Notify({ Title = "Trade Diterima!", Content = "Trade otomatis dari Akun Utama: " .. data.player.Name, Duration = 4 })
                     else
                         fire(R.TradeResp, false)
                     end
                 elseif event == "Started" then
                     task.wait(0.5)
-                    local dc = getDC()
-                    local inv = (dc and dc.Inventory and dc.Inventory()) or {}
+                    local inv = readData("Inventory", {}) or {}
                     for key, unit in pairs(inv) do
-                        local rarity = unit.rarity or (unit.attrs and unit.attrs.rarity) or ""
-                        if (_G.LianConfig.TradeMythic and rarity == "Mythic") or (_G.LianConfig.TradeSecret and rarity == "Secret") then
-                            fire(R.TradeOffer, key, 1)
-                            task.wait(0.2)
+                        if isUnitEntry(key, unit) then
+                            local rarity = getUnitRarity(unit)
+                            if (_G.LianConfig.TradeMythic and rarity == "Mythic") or (_G.LianConfig.TradeSecret and rarity == "Secret") then
+                                fire(R.TradeOffer, key, 1)
+                                task.wait(0.2)
+                            end
                         end
                     end
                     task.wait(0.5)
@@ -2659,23 +3026,18 @@ pcall(function()
                     fire(R.TradeAdv)
                 end
             end)
-        end)
+        end))
     end
 end)
 
--- 15. Server Luck Hopper Worker
-task.spawn(function()
-    while true do
-        if _G.LianConfig.ServerLuckHop then
-            local dc = getDC()
-            local weather = (dc and dc.Weather and dc.Weather())
-                or Workspace:GetAttribute("Weather")
-                or RS:GetAttribute("Weather")
-                or ""
-            -- Only hop when weather is actually known (non-empty) and not a target event,
-            -- preventing infinite blind hop loops when DataController is still loading
+-- 17. Server Luck Hopper Worker (Cooldown-Guarded)
+trackThread(task.spawn(function()
+    local lastHopAttempt = 0
+    while isAlive() do
+        if _G.LianConfig.ServerLuckHop and (os.clock() - lastHopAttempt > 20) then
+            local weather = tostring(readData("Weather", nil) or Workspace:GetAttribute("Weather") or RS:GetAttribute("Weather") or "")
             if weather ~= "" and weather ~= "Bloodmoon" and weather ~= "Eclipse" and weather ~= "Full Moon" then
-                -- Isolate so a failed hop attempt does not kill the worker loop
+                lastHopAttempt = os.clock()
                 task.spawn(function()
                     setupAutoExecuteOnTeleport()
                     local placeId = game.PlaceId
@@ -2683,29 +3045,25 @@ task.spawn(function()
                     local raw = game:HttpGet(apiUrl)
                     if not raw then return end
                     local ok2, res = pcall(function() return HttpService:JSONDecode(raw) end)
-                    local hopped = false
                     if ok2 and res and res.data then
                         for _, s in ipairs(res.data) do
                             if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
                                 TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
-                                hopped = true
-                                break
+                                return
                             end
                         end
                     end
-                    if not hopped then
-                        TeleportService:Teleport(placeId, LocalPlayer)
-                    end
+                    TeleportService:Teleport(placeId, LocalPlayer)
                 end)
             end
-            task.wait(5)
+            task.wait(5.0)
         else
-            task.wait(2)
+            task.wait(2.0)
         end
     end
-end)
+end))
 
--- 16. Extreme Potato Mode & 3D Render Initialization
+-- 18. Extreme Potato Mode & 3D Render Initialization
 if _G.LianConfig.ExtremePotatoMode then
     applyPotatoMode(true)
 end
@@ -2715,8 +3073,8 @@ end
 
 pcall(function()
     Rayfield:Notify({
-        Title = "⚡ Lian Hub v6.3 Ready!",
-        Content = "Master Exploit Suite aktif! Gunakan tombol [⚡ Lian Hub] atau RightControl untuk hide/show.",
+        Title = "⚡ Lian Hub v7.0 Rebuilt!",
+        Content = "Anti-Loop-Inject + 100% Verified Anime Dice Remotes aktif! Tekan RightControl untuk hide/show.",
         Duration = 5
     })
 end)

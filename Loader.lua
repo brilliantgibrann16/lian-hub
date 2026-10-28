@@ -331,7 +331,7 @@ _G.NyxConfig = {
     PlayerESP = false,
     Fullbright = false,
     JumpPowerValue = 50,
-    DiscordWebhook = ""
+    JumpPowerValue = 50
 }
 
 local function saveConfig()
@@ -1515,55 +1515,78 @@ end))
 
 -- 3. Auto Potions Stacker Worker (7 Tiers Multiplicative Stacking with Anti-Waste Buff Check)
 trackThread(task.spawn(function()
+    local totalPotionsDrank = 0
     while isAlive() do
         if _G.NyxConfig.AutoPotions and R.UseBoost then
-            local inv = readData("Inventory", {}) or {}
-            local activeBuffs = readData("Buffs", {}) or {}
             local targetLimit = _G.NyxConfig.PotionTargetLimit or 100
-            local drinkQueue = {}
-            local nowTime = Workspace:GetServerTimeNow()
-            
-            for key, item in pairs(inv) do
-                if #drinkQueue >= targetLimit then break end
-                if type(item) == "table" and (tonumber(item.amount) or 1) > 0 then
-                    local name = tostring(item.name or key):lower()
-                    local shouldDrink = false
-                    if _G.NyxConfig.PotionUseIncome and (name:find("income") or name:find("money")) then shouldDrink = true
-                    elseif _G.NyxConfig.PotionUseLuck and (name:find("luck") or name:find("clover")) then shouldDrink = true
-                    elseif _G.NyxConfig.PotionUseDamage and (name:find("damage") or name:find("slayer")) then shouldDrink = true
-                    elseif _G.NyxConfig.PotionUseSpeed and name:find("speed") then shouldDrink = true
-                    elseif _G.NyxConfig.PotionUseTower and (name:find("shadow") or name:find("pirate") or name:find("abyss")) then shouldDrink = true
-                    elseif _G.NyxConfig.PotionUseHalloween and (name:find("pumpkin") or name:find("candy") or name:find("haunted")) then shouldDrink = true
-                    end
-                    
-                    if shouldDrink then
-                        -- Check Anti-Waste Buff Duration: if buff still active > 10s, don't waste another potion!
-                        local isAlreadyActive = false
-                        if _G.NyxConfig.AntiWastePotionDuration and type(activeBuffs) == "table" then
-                            for bName, bData in pairs(activeBuffs) do
-                                if name:find(tostring(bName):lower()) then
-                                    local exp = (type(bData) == "table" and (bData.expiresAt or bData.endTime)) or 0
-                                    if exp > (nowTime + 10) then
-                                        isAlreadyActive = true
-                                        break
+            if totalPotionsDrank >= targetLimit then
+                _G.NyxConfig.AutoPotions = false
+                saveConfig()
+                totalPotionsDrank = 0
+                if Rayfield then
+                    Rayfield:Notify({
+                        Title = "Potion Limit Tercapai!",
+                        Content = "Target limit (" .. targetLimit .. " pcs) tercapai. Auto Potion dimatikan.",
+                        Duration = 5
+                    })
+                end
+                task.wait(1.5)
+            else
+                local inv = readData("Inventory", {}) or {}
+                local activeBuffs = readData("Buffs", {}) or {}
+                local drinkQueue = {}
+                local nowTime = Workspace:GetServerTimeNow()
+                local seenCategories = {}
+                
+                for key, item in pairs(inv) do
+                    if (totalPotionsDrank + #drinkQueue) >= targetLimit then break end
+                    if type(item) == "table" and (tonumber(item.amount) or 1) > 0 then
+                        local name = tostring(item.name or key):lower()
+                        local category = nil
+                        if _G.NyxConfig.PotionUseIncome and (name:find("income") or name:find("money")) then category = "income"
+                        elseif _G.NyxConfig.PotionUseLuck and (name:find("luck") or name:find("clover")) then category = "luck"
+                        elseif _G.NyxConfig.PotionUseDamage and (name:find("damage") or name:find("slayer")) then category = "damage"
+                        elseif _G.NyxConfig.PotionUseSpeed and name:find("speed") then category = "speed"
+                        elseif _G.NyxConfig.PotionUseTower and (name:find("shadow") or name:find("pirate") or name:find("abyss")) then category = "tower"
+                        elseif _G.NyxConfig.PotionUseHalloween and (name:find("pumpkin") or name:find("candy") or name:find("haunted")) then category = "halloween"
+                        end
+                        
+                        if category then
+                            -- If PotionStackAll7Tiers is disabled, only drink one tier per category
+                            local canQueueTier = _G.NyxConfig.PotionStackAll7Tiers or (not seenCategories[category])
+                            if canQueueTier then
+                                -- Check Anti-Waste Buff Duration: if buff still active > 10s, don't waste another potion!
+                                local isAlreadyActive = false
+                                if _G.NyxConfig.AntiWastePotionDuration and type(activeBuffs) == "table" then
+                                    for bName, bData in pairs(activeBuffs) do
+                                        if name:find(tostring(bName):lower()) then
+                                            local exp = (type(bData) == "table" and (bData.expiresAt or bData.endTime)) or 0
+                                            if exp > (nowTime + 10) then
+                                                isAlreadyActive = true
+                                                break
+                                            end
+                                        end
                                     end
+                                end
+                                if not isAlreadyActive then
+                                    table.insert(drinkQueue, key)
+                                    seenCategories[category] = true
                                 end
                             end
                         end
-                        if not isAlreadyActive then
-                            table.insert(drinkQueue, key)
-                        end
                     end
                 end
+                
+                for _, pKey in ipairs(drinkQueue) do
+                    if not _G.NyxConfig.AutoPotions or not isAlive() then break end
+                    fire(R.UseBoost, pKey)
+                    totalPotionsDrank = totalPotionsDrank + 1
+                    task.wait(0.18)
+                end
+                task.wait(4.0)
             end
-            
-            for _, pKey in ipairs(drinkQueue) do
-                if not _G.NyxConfig.AutoPotions or not isAlive() then break end
-                fire(R.UseBoost, pKey)
-                task.wait(0.18)
-            end
-            task.wait(4.0)
         else
+            totalPotionsDrank = 0
             task.wait(1.5)
         end
     end
@@ -1703,6 +1726,9 @@ trackThread(task.spawn(function()
         end
         if _G.NyxConfig.AutoDailyReward and R.DailyClaim then
             fire(R.DailyClaim)
+        end
+        if _G.NyxConfig.AutoClaimOffline and R.ClaimOffline then
+            fire(R.ClaimOffline)
         end
         if _G.NyxConfig.AutoPumpkinPass and R.HalloweenPass then
             fire(R.HalloweenPass)
@@ -2122,13 +2148,19 @@ trackThread(task.spawn(function()
                 pcall(TowerController.startTower, towerName)
             else
                 task.spawn(function()
-                    local okStart, resStart = pcall(R.PlayTower.InvokeServer, R.PlayTower, towerName)
-                    if okStart and (resStart == true or type(resStart) == "table") and R.CompTowerFloor then
+                    local resStart = nil
+                    pcall(function()
+                        resStart = R.PlayTower:InvokeServer(towerName)
+                    end)
+                    if (resStart == true or type(resStart) == "table") and R.CompTowerFloor then
                         task.wait(0.6)
                         for floor = 1, 60 do
                             if not isAlive() then break end
-                            local okFloor, resSeq = pcall(R.CompTowerFloor.InvokeServer, R.CompTowerFloor)
-                            if not okFloor or resSeq == "destroyed" then break end
+                            local resSeq = nil
+                            pcall(function()
+                                resSeq = R.CompTowerFloor:InvokeServer()
+                            end)
+                            if not resSeq or resSeq == "destroyed" then break end
                             if type(resSeq) == "table" then
                                 local ended = false
                                 for _, a in ipairs(resSeq) do

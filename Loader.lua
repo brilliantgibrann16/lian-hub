@@ -282,11 +282,11 @@ local function asGame(fn, ...)
     return table.unpack(packed, 2, packed.n)
 end
 
--- 4. Verified Remote Registry
-local NET = RS:FindFirstChild("Network") or RS:WaitForChild("Network", 1)
+-- 4. Verified Remote Registry (Lazy-Resolving for Fast/Autoexec Injection)
+local NET = RS:FindFirstChild("Network") or RS:WaitForChild("Network", 5)
 
-local R = {}
 local function getRemote(svc, kind, name)
+    NET = NET or RS:FindFirstChild("Network")
     if not NET then return nil end
     local folder = svc and NET:FindFirstChild(svc) or NET
     if not folder then return nil end
@@ -295,45 +295,62 @@ local function getRemote(svc, kind, name)
     return sub:FindFirstChild(name)
 end
 
-R.Roll = getRemote("RollService", "RF", "RollDice")
-R.SetAutoRoll = getRemote("RollService", "RE", "SetAutoRoll")
-R.PumpkinRoll = getRemote("PumpkinDiceService", "RF", "Roll")
-R.Collect = getRemote("PlotService", "RE", "CollectBalance")
-R.EquipBest = getRemote("PlotService", "RE", "EquipBest")
-R.LevelSlot = getRemote("PlotService", "RE", "LevelUpSlot")
-R.Sell = getRemote("SellService", "RF", "SellInventory")
-R.BuyUpgrade = getRemote(nil, "RE", "BuyUpgrade") or getRemote("UpgradeService", "RE", "BuyUpgrade")
-R.BuyDice = getRemote("DiceShopService", "RE", "BuyDice")
-R.EquipDice = getRemote("DiceShopService", "RE", "EquipDice")
-R.Rebirth = getRemote("RebirthService", "RE", "Rebirth")
-R.AddStat = getRemote("RebirthService", "RE", "AddStat")
-R.PlayTower = getRemote("Towers", "RF", "PlayTower")
-R.FloorTower = getRemote("Towers", "RF", "CompleteTowerFloor")
-R.BestTeam = getRemote("Towers", "RE", "EquipBestTowerTeam")
-R.Boost = getRemote("BoostService", "RE", "Use")
-R.Spin = getRemote("SpinService", "RE", "Use")
-R.Daily = getRemote("DailyRewardService", "RE", "Claim")
-R.Offline = getRemote("OfflineEarningsService", "RE", "Claim")
-R.Code = getRemote("CodesService", "RE", "RedeemCode")
-R.HalloweenPath = getRemote("HalloweenService", "RE", "ClaimAllPath")
-R.HalloweenQuest = getRemote("HalloweenQuestService", "RE", "Claim")
-R.TrickKnock = getRemote("TrickOrTreatService", "RE", "Knocked")
-R.TrickLand = getRemote("TrickOrTreatService", "RE", "Landed")
-R.QuirkRoll = getRemote("QuirkService", "RE", "Roll") or getRemote("GradeService", "RE", "Roll")
+local R_SPECS = {
+    Roll           = { "RollService", "RF", "RollDice" },
+    SetAutoRoll    = { "RollService", "RE", "SetAutoRoll" },
+    PumpkinRoll    = { "PumpkinDiceService", "RF", "Roll" },
+    Collect        = { "PlotService", "RE", "CollectBalance" },
+    EquipBest      = { "PlotService", "RE", "EquipBest" },
+    LevelSlot      = { "PlotService", "RE", "LevelUpSlot" },
+    Sell           = { "SellService", "RF", "SellInventory" },
+    BuyDice        = { "DiceShopService", "RE", "BuyDice" },
+    EquipDice      = { "DiceShopService", "RE", "EquipDice" },
+    Rebirth        = { "RebirthService", "RE", "Rebirth" },
+    AddStat        = { "RebirthService", "RE", "AddStat" },
+    PlayTower      = { "Towers", "RF", "PlayTower" },
+    FloorTower     = { "Towers", "RF", "CompleteTowerFloor" },
+    BestTeam       = { "Towers", "RE", "EquipBestTowerTeam" },
+    Boost          = { "BoostService", "RE", "Use" },
+    Spin           = { "SpinService", "RE", "Use" },
+    Daily          = { "DailyRewardService", "RE", "Claim" },
+    Offline        = { "OfflineEarningsService", "RE", "Claim" },
+    Code           = { "CodesService", "RE", "RedeemCode" },
+    HalloweenPath  = { "HalloweenService", "RE", "ClaimAllPath" },
+    HalloweenQuest = { "HalloweenQuestService", "RE", "Claim" },
+    TrickKnock     = { "TrickOrTreatService", "RE", "Knocked" },
+    TrickLand      = { "TrickOrTreatService", "RE", "Landed" },
+    TradeResp      = { "TradeService", "RE", "RespondToRequest" },
+    TradeOffer     = { "TradeService", "RE", "ChangeOffer" },
+    TradeAdv       = { "TradeService", "RE", "AdvanceTrade" },
+    TradeEvent     = { "TradeService", "RE", "TradeEvent" },
+}
 
-R.TradeResp = getRemote("TradeService", "RE", "RespondToRequest")
-R.TradeOffer = getRemote("TradeService", "RE", "ChangeOffer")
-R.TradeAdv = getRemote("TradeService", "RE", "AdvanceTrade")
-R.TradeEvent = getRemote("TradeService", "RE", "TradeEvent")
+local R = setmetatable({}, {
+    __index = function(t, k)
+        local rem = nil
+        if k == "BuyUpgrade" then
+            rem = getRemote(nil, "RE", "BuyUpgrade") or getRemote("UpgradeService", "RE", "BuyUpgrade")
+        elseif k == "QuirkRoll" then
+            rem = getRemote("QuirkService", "RE", "Roll") or getRemote("GradeService", "RE", "Roll")
+        elseif R_SPECS[k] then
+            local s = R_SPECS[k]
+            rem = getRemote(s[1], s[2], s[3])
+        end
+        if rem then
+            rawset(t, k, rem)
+        end
+        return rem
+    end
+})
 
 local function fire(remote, ...)
-    if remote then
-        remote:FireServer(...)
+    if remote and remote.FireServer then
+        pcall(remote.FireServer, remote, ...)
     end
 end
 
 local function invoke(remote, ...)
-    if remote then
+    if remote and remote.InvokeServer then
         return remote:InvokeServer(...)
     end
     return nil
@@ -746,7 +763,9 @@ local function canAffordRebirth()
             end
         end
     end
-    return false, curCash, nil
+    -- Fallback when Level-3 executor cannot require RebirthConfig and Rebirth UI is closed:
+    -- allow server-validated Rebirth attempt if player has cash
+    return curCash > 0, curCash, nil
 end
 
 local function getAvailableStatPoints()
@@ -770,12 +789,24 @@ local function getAvailableStatPoints()
             end
         end
     end
-    return 0
+    -- Fallback when M.RStats is nil on Level-3 executor: return 1 so AddStat still fires and server validates points
+    return 1
 end
+
+local FALLBACK_TREE_UPGRADES = {
+    "Luck1", "Luck2", "Luck3", "RollSpeed1", "RollSpeed2", "Cash1", "Cash2",
+    "SecretLuck1", "MutationChance1", "InventoryCapacity1", "PlotSlots1"
+}
 
 local function buyUpgradesTree()
     local money = getPlayerCash()
-    if not M.Upgrades or not M.Tree then return end
+    if not M.Upgrades or not M.Tree then
+        for _, upgName in ipairs(FALLBACK_TREE_UPGRADES) do
+            fire(R.BuyUpgrade, upgName)
+            task.wait(0.15)
+        end
+        return
+    end
     local dc = getDC()
     local owned = (dc and dc.Upgrades and dc.Upgrades()) or {}
     local cands = {}
@@ -969,14 +1000,14 @@ end)
 
 print("[Lian Hub] Script starting... executor: " .. (identifyexecutor and identifyexecutor() or "unknown"))
 
--- 9. Load Rayfield UI
+-- 9. Load Rayfield UI (Execute chunk & CreateWindow outside pcall — both yield internally!)
 local Rayfield
 local rawRay = game:HttpGet('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua')
-local okRay, rayLib = pcall(function()
-    return loadstring(rawRay)()
-end)
-if okRay and rayLib then
-    Rayfield = rayLib
+if rawRay and #rawRay > 100 then
+    local okCompile, rayChunk = pcall(loadstring, rawRay)
+    if okCompile and type(rayChunk) == "function" then
+        Rayfield = rayChunk()
+    end
 end
 
 if not Rayfield then
@@ -986,27 +1017,18 @@ if not Rayfield then
 end
 
 local Window
-if Rayfield then
-    local okWin, win = pcall(function()
-        return Rayfield:CreateWindow({
-
-    Name = "⚡ Lian Hub v6.3 | Anime Dice Master Suite",
-    Icon = 0,
-    LoadingTitle = "Lian Hub Injecting...",
-    LoadingSubtitle = "by iannn (@brilliantgibrann16)",
-    Theme = "Ocean",
-    DisableRayfieldPrompts = true,
-    DisableBuildWarnings = true,
-    ConfigurationSaving = { Enabled = false },
-    KeySystem = false
-        })
-    end)
-    if okWin and win then
-        Window = win
-    else
-        warn("[Lian Hub] CreateWindow failed: " .. tostring(win))
-        Window = nil
-    end
+if Rayfield and Rayfield.CreateWindow then
+    Window = Rayfield:CreateWindow({
+        Name = "⚡ Lian Hub v6.3 | Anime Dice Master Suite",
+        Icon = 0,
+        LoadingTitle = "Lian Hub Injecting...",
+        LoadingSubtitle = "by iannn (@brilliantgibrann16)",
+        Theme = "Ocean",
+        DisableRayfieldPrompts = true,
+        DisableBuildWarnings = true,
+        ConfigurationSaving = { Enabled = false },
+        KeySystem = false
+    })
 else
     warn("[Lian Hub] Rayfield not available, skipping UI creation")
     Window = nil
@@ -1836,15 +1858,17 @@ ESPSettingsTab:CreateSection("🔄 Rejoin & Server")
         CurrentValue = false,
         Callback = function(Value)
             if not Value then return end
-        setupAutoExecuteOnTeleport()
-        -- Schedule auto-reset BEFORE teleport so a thrown Teleport cannot leave the toggle stuck ON
-        task.spawn(function()
-            task.wait(0.5)
-            _tg:Set(false)
-        end)
-        TeleportService:Teleport(game.PlaceId, LocalPlayer)
-    end,
-})
+            setupAutoExecuteOnTeleport()
+            -- Schedule auto-reset BEFORE teleport so a thrown Teleport cannot leave the toggle stuck ON
+            task.spawn(function()
+                task.wait(0.5)
+                pcall(function() _tg:Set(false) end)
+            end)
+            task.spawn(function()
+                TeleportService:Teleport(game.PlaceId, LocalPlayer)
+            end)
+        end,
+    })
 
 ESPSettingsTab:CreateToggle({
     Name = "🔄 Auto Reconnect (Saat Disconnect)",
@@ -1865,9 +1889,11 @@ ESPSettingsTab:CreateToggle({
         local tradeRemote = getRemote("TradeService", "RE", "SetTradeRequestsEnabled")
         if tradeRemote then
             if tradeRemote:IsA("RemoteEvent") then
-                tradeRemote:FireServer(Value)
+                fire(tradeRemote, Value)
             elseif tradeRemote:IsA("RemoteFunction") then
-                tradeRemote:InvokeServer(Value)
+                task.spawn(function()
+                    tradeRemote:InvokeServer(Value)
+                end)
             end
         end
     end,
@@ -2069,14 +2095,18 @@ end
         CurrentValue = false,
         Callback = function(Value)
             if not Value then return end
-        sendDiscordWebhook("🔔 Test Webhook Lian Hub", "Koneksi webhook dari akun **" .. LocalPlayer.Name .. "** berhasil!", 65280)
-        Rayfield:Notify({ Title = "Webhook Terkirim!", Content = "Cek channel Discord Bubu yaa!", Duration = 3 })
-        task.spawn(function()
-            task.wait(0.5)
-            pcall(function() _tg:Set(false) end)
-        end)
-    end,
-})
+            task.spawn(function()
+                task.wait(0.5)
+                pcall(function() _tg:Set(false) end)
+            end)
+            task.spawn(function()
+                sendDiscordWebhook("🔔 Test Webhook Lian Hub", "Koneksi webhook dari akun **" .. LocalPlayer.Name .. "** berhasil!", 65280)
+                pcall(function()
+                    Rayfield:Notify({ Title = "Webhook Terkirim!", Content = "Cek channel Discord Bubu yaa!", Duration = 3 })
+                end)
+            end)
+        end,
+    })
 
 -- ═════════════════════════════════════════════════════════════════════
 -- TAB 10: POTATO OPTIMIZER & GPU SAVER (MULTI-CLIENT)
@@ -2301,7 +2331,9 @@ task.spawn(function()
         if _G.LianConfig.AutoRollHalloween then
             local opt = _G.LianConfig.HalloweenRollOption or ""
             local rollCount = opt:find("100") and 1 or 5
-            invoke(R.PumpkinRoll, rollCount)
+            task.spawn(function()
+                invoke(R.PumpkinRoll, rollCount)
+            end)
             task.wait(0.35)
         else
             task.wait(0.5)
@@ -2437,22 +2469,30 @@ task.spawn(function()
                 towerName = towers[math.random(1, #towers)]
             end
             if R.PlayTower then
-                local resStart = invoke(R.PlayTower, towerName)
-                if resStart then
-                    task.wait(1)
-                    for floor = 1, 50 do
-                        if not (_G.LianConfig.SmartTowerAI or _G.LianConfig.AutoTower) then break end
-                        local resSeq = invoke(R.FloorTower)
-                        if not resSeq or resSeq == "destroyed" then break end
-                        if type(resSeq) == "table" then
-                            local ended = false
-                            for _, a in ipairs(resSeq) do
-                                if a.action == "ended" then ended = true end
+                local towerDone = false
+                task.spawn(function()
+                    local resStart = invoke(R.PlayTower, towerName)
+                    if resStart then
+                        task.wait(1)
+                        for floor = 1, 50 do
+                            if not (_G.LianConfig.SmartTowerAI or _G.LianConfig.AutoTower) then break end
+                            local resSeq = invoke(R.FloorTower)
+                            if not resSeq or resSeq == "destroyed" then break end
+                            if type(resSeq) == "table" then
+                                local ended = false
+                                for _, a in ipairs(resSeq) do
+                                    if a.action == "ended" then ended = true end
+                                end
+                                if ended then break end
                             end
-                            if ended then break end
+                            task.wait(0.3)
                         end
-                        task.wait(0.3)
                     end
+                    towerDone = true
+                end)
+                local tWait = tick()
+                while not towerDone and (tick() - tWait < 25) do
+                    task.wait(0.5)
                 end
             end
             task.wait(5.5)
@@ -2509,9 +2549,14 @@ end)
 -- 10. Auto Equip Best Plot & Sell Rest Worker
 task.spawn(function()
     local selling = false
+    local lastSellStart = 0
     while true do
+        if selling and (tick() - lastSellStart > 12) then
+            selling = false
+        end
         if _G.LianConfig.AutoEquipBestPlotAndSellRest and not selling then
             selling = true
+            lastSellStart = tick()
             task.spawn(function()
                 equipBestPlotAndSellOutside()
                 selling = false
@@ -2623,8 +2668,13 @@ task.spawn(function()
     while true do
         if _G.LianConfig.ServerLuckHop then
             local dc = getDC()
-            local weather = (dc and dc.Weather and dc.Weather()) or ""
-            if weather ~= "Bloodmoon" and weather ~= "Eclipse" and weather ~= "Full Moon" then
+            local weather = (dc and dc.Weather and dc.Weather())
+                or Workspace:GetAttribute("Weather")
+                or RS:GetAttribute("Weather")
+                or ""
+            -- Only hop when weather is actually known (non-empty) and not a target event,
+            -- preventing infinite blind hop loops when DataController is still loading
+            if weather ~= "" and weather ~= "Bloodmoon" and weather ~= "Eclipse" and weather ~= "Full Moon" then
                 -- Isolate so a failed hop attempt does not kill the worker loop
                 task.spawn(function()
                     setupAutoExecuteOnTeleport()

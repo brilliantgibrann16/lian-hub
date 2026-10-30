@@ -1,4 +1,4 @@
-# ⚡ Lian Hub — Universal Roblox & Anime Dice Suite
+# ⚡ Nyx Hub — Universal Roblox & Anime Dice Suite
 
 100% Keyless, zero-ad, fast Roblox script suite created by **Lian** ([@brilliantgibrann16](https://github.com/brilliantgibrann16)).
 

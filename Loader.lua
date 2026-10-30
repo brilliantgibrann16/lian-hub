@@ -1,6 +1,6 @@
 --[[
     ═════════════════════════════════════════════════════════════════════════
-    🌙 NYX HUB — ULTIMATE LIQUID GLASS ANIME DICE EXPLOIT SUITE v8.0 🌙
+    🌙 NYX HUB — ULTIMATE LIQUID GLASS ANIME DICE EXPLOIT SUITE v8.2 (Full Rebuilt) 🌙
     Author : Lian (@brilliantgibrann16) • Brand: Nyx Hub
     Target : Anime Dice (PlaceId: 113290951185459 / Universe: 10708913337)
     ═════════════════════════════════════════════════════════════════════════
@@ -219,28 +219,58 @@ local function fire(remote, ...)
     return false
 end
 
--- 5. Game Framework Modules Loader
+-- 5. Game Framework Modules & Multi-Tier Data Loader (Resilient Resolution)
 local M = {}
-local function initFramework()
-    local fw = RS:FindFirstChild("Framework") or RS:WaitForChild("Framework", 8)
-    if fw then
-        local Feat = fw:FindFirstChild("Features")
-        if Feat then
-            if Feat:FindFirstChild("Data") then M.Data = safeRequire(Feat.Data:FindFirstChild("DataController")) end
-            if Feat:FindFirstChild("Buffs") then M.Buff = safeRequire(Feat.Buffs:FindFirstChild("BuffController")) end
-            if Feat:FindFirstChild("Inventory") then M.Entry = safeRequire(Feat.Inventory:FindFirstChild("EntryRegistry")) end
-            if Feat:FindFirstChild("Upgrades") then
-                M.Upgrades = safeRequire(Feat.Upgrades:FindFirstChild("Upgrades"))
-                M.Tree = safeRequire(Feat.Upgrades:FindFirstChild("TreeStructure"))
-            end
-            if Feat:FindFirstChild("Rebirth") then
-                M.Rebirths = safeRequire(Feat.Rebirth:FindFirstChild("Rebirths"))
-                M.RStats = safeRequire(Feat.Rebirth:FindFirstChild("RebirthStats")) or safeRequire(Feat.Rebirth:FindFirstChild("RebirthStatsConfig"))
-            end
-            if Feat:FindFirstChild("Quests") then M.Quests = safeRequire(Feat.Quests:FindFirstChild("QuestConfig")) end
-            if Feat:FindFirstChild("Towers") then M.Towers = safeRequire(Feat.Towers:FindFirstChild("Towers")) end
-            if Feat:FindFirstChild("Quirks") then M.Quirks = safeRequire(Feat.Quirks:FindFirstChild("Quirks")) end
+
+local function getDC()
+    if M.Data then return M.Data end
+    pcall(function()
+        local fw = RS:FindFirstChild("Framework") or RS:WaitForChild("Framework", 5)
+        local feat = fw and (fw:FindFirstChild("Features") or fw:WaitForChild("Features", 5))
+        if feat and feat:FindFirstChild("Data") then
+            M.Data = safeRequire(feat.Data:FindFirstChild("DataController"))
         end
+    end)
+    return M.Data
+end
+
+local function getDataClient()
+    if M.DataClient then return M.DataClient end
+    pcall(function()
+        local pkgs = RS:FindFirstChild("Packages") or RS:WaitForChild("Packages", 5)
+        if pkgs and pkgs:FindFirstChild("Data") and pkgs.Data:FindFirstChild("Client") then
+            M.DataClient = safeRequire(pkgs.Data.Client)
+        end
+    end)
+    return M.DataClient
+end
+
+local function initFramework()
+    local t0 = os.clock()
+    while os.clock() - t0 < 15 do
+        getDC()
+        getDataClient()
+        pcall(function()
+            local fw = RS:FindFirstChild("Framework")
+            local feat = fw and fw:FindFirstChild("Features")
+            if feat then
+                if not M.Buff and feat:FindFirstChild("Buffs") then M.Buff = safeRequire(feat.Buffs:FindFirstChild("BuffController")) end
+                if not M.Entry and feat:FindFirstChild("Inventory") then M.Entry = safeRequire(feat.Inventory:FindFirstChild("EntryRegistry")) end
+                if not M.Upgrades and feat:FindFirstChild("Upgrades") then
+                    M.Upgrades = safeRequire(feat.Upgrades:FindFirstChild("Upgrades"))
+                    M.Tree = safeRequire(feat.Upgrades:FindFirstChild("TreeStructure"))
+                end
+                if not M.Rebirths and feat:FindFirstChild("Rebirth") then
+                    M.Rebirths = safeRequire(feat.Rebirth:FindFirstChild("Rebirths"))
+                    M.RStats = safeRequire(feat.Rebirth:FindFirstChild("RebirthStats")) or safeRequire(feat.Rebirth:FindFirstChild("RebirthStatsConfig"))
+                end
+                if not M.Quests and feat:FindFirstChild("Quests") then M.Quests = safeRequire(feat.Quests:FindFirstChild("QuestConfig")) end
+                if not M.Towers and feat:FindFirstChild("Towers") then M.Towers = safeRequire(feat.Towers:FindFirstChild("Towers")) end
+                if not M.Quirks and feat:FindFirstChild("Quirks") then M.Quirks = safeRequire(feat.Quirks:FindFirstChild("Quirks")) end
+            end
+        end)
+        if M.Data or M.DataClient then break end
+        task.wait(0.5)
     end
 end
 trackThread(task.spawn(initFramework))
@@ -257,11 +287,23 @@ local function unwrapVal(v)
 end
 
 local function readData(key, default)
-    if M.Data then
-        local ok, raw = pcall(function() return M.Data[key] end)
+    -- Tier 1: DataController functions
+    local dc = getDC()
+    if dc then
+        local ok, raw = pcall(function() return dc[key] end)
         if ok and raw ~= nil then
             local val = unwrapVal(raw)
             if val ~= nil then return val end
+        end
+    end
+    -- Tier 2: Packages.Data.Client raw state
+    local client = getDataClient()
+    if client and client.data then
+        local root = client.data
+        if type(root.___X) == "table" and root.___X[key] ~= nil then
+            return root.___X[key]
+        elseif root[key] ~= nil then
+            return unwrapVal(root[key])
         end
     end
     return default
@@ -304,6 +346,9 @@ _G.NyxConfig = {
     -- Towers
     SmartTowerAI = false,
     AutoTower = false,
+    TowerPotionRotation = false,
+    TowerPotionTarget = "Money / Income",
+    TowerPotionQuota = 100,
     AutoEquipTowerTeam = true,
     TowerType = "The Abyss",
     
@@ -369,7 +414,7 @@ local function loadConfig()
             end
         end
     end)
-    _G.NyxConfig.ServerLuckHop = false
+    -- Keep saved ServerLuckHop
 end
 loadConfig()
 
@@ -428,18 +473,40 @@ local function getPlayerCash()
     return 0
 end
 
+-- Exact Ground-Truth Rebirth Costs (12 Tiers from Game Dump)
+local REAL_REBIRTH_COSTS = {
+    [0] = 50000,           -- Rebirth 1: 50K
+    [1] = 5000000,         -- Rebirth 2: 5M
+    [2] = 500000000,       -- Rebirth 3: 500M
+    [3] = 50000000000,     -- Rebirth 4: 50B
+    [4] = 5000000000000,   -- Rebirth 5: 5T
+    [5] = 500000000000000, -- Rebirth 6: 500T
+    [6] = 1e16,            -- Rebirth 7: 10qa
+    [7] = 1e18,            -- Rebirth 8: 1qi
+    [8] = 1e20,            -- Rebirth 9: 100qi
+    [9] = 1e22,            -- Rebirth 10: 10sx
+    [10] = 1e24,           -- Rebirth 11: 1sp
+    [11] = 1e26            -- Rebirth 12: 100sp (Max Tier)
+}
+
 local function getNextRebirthCost()
     local rb = tonumber(readData("Rebirth", 0)) or 0
+    if rb >= 12 then return math.huge end -- Already at max rebirth!
+    if REAL_REBIRTH_COSTS[rb] then
+        return REAL_REBIRTH_COSTS[rb]
+    end
     if M.Rebirths and type(M.Rebirths.GetNext) == "function" then
         local ok, nxt = pcall(M.Rebirths.GetNext, rb)
         if ok and type(nxt) == "table" and (nxt.price or nxt.cost) then
             return tonumber(nxt.price or nxt.cost) or 0
         end
     end
-    return math.floor(1000 * math.pow(rb + 1, 2.5))
+    return 1e26
 end
 
 local function canAffordRebirth()
+    local rb = tonumber(readData("Rebirth", 0)) or 0
+    if rb >= 12 then return false, 0, math.huge end -- Max Rebirth reached
     local curCash = getPlayerCash()
     local cost = getNextRebirthCost()
     return curCash >= cost, curCash, cost
@@ -556,9 +623,10 @@ local DICE_LADDER = {
 local function canAffordSpend(price)
     price = price or 0
     local curMoney = getPlayerCash()
-    if _G.NyxConfig.AutoRebirth then
+    local rb = tonumber(readData("Rebirth", 0)) or 0
+    if _G.NyxConfig.AutoRebirth and rb < 12 then
         local rbCost = getNextRebirthCost()
-        return (curMoney - price) >= rbCost
+        return (curMoney - price) >= rbCost and curMoney >= price
     end
     return curMoney >= price
 end
@@ -566,12 +634,19 @@ end
 local function buyUpgradesTree()
     if not R.BuyUpgrade then return end
     local owned = readData("Upgrades", {}) or {}
+    local money = getPlayerCash()
     for _, node in ipairs(ALL_TREE_UPGRADES) do
         local name = node.name
         local price = node.price
-        if not owned[name] and canAffordSpend(price) then
-            fire(R.BuyUpgrade, name)
-            task.wait(0.12)
+        if not owned[name] then
+            if money < price then
+                break -- Break loop immediately: cannot afford higher upgrades!
+            end
+            if canAffordSpend(price) then
+                fire(R.BuyUpgrade, name)
+                money = money - price
+                task.wait(0.15)
+            end
         end
     end
 end
@@ -714,7 +789,7 @@ if Rayfield and Rayfield.CreateWindow then
         return Rayfield:CreateWindow({
             Name = "🌙 Nyx Hub | Anime Dice Master Suite",
             Icon = 0,
-            LoadingTitle = "Nyx Hub v8.0 Loading...",
+            LoadingTitle = "Nyx Hub v8.2 Loading...",
             LoadingSubtitle = "by iannn (@brilliantgibrann16) • Liquid Glass",
             Theme = LiquidGlassTheme,
             ToggleUIKeybind = Enum.KeyCode.RightControl,
@@ -732,7 +807,7 @@ if Rayfield and Rayfield.CreateWindow then
             Window = Rayfield:CreateWindow({
                 Name = "🌙 Nyx Hub | Anime Dice Master Suite",
                 Icon = 0,
-                LoadingTitle = "Nyx Hub v8.0 Loading...",
+                LoadingTitle = "Nyx Hub v8.2 Loading...",
                 LoadingSubtitle = "by iannn (@brilliantgibrann16)",
                 Theme = "Ocean",
                 ToggleUIKeybind = Enum.KeyCode.RightControl,
@@ -1100,6 +1175,39 @@ HalloweenTab:CreateToggle({
 })
 
 -- TAB 4: TOWERS
+TowerTab:CreateSection("🧪 Tower Potion Farm Rotation (Auto Rotasi)")
+TowerTab:CreateToggle({
+    Name = "Auto Farm Potion Rotation (Rotasi Tower Sesuai Drop Potion)",
+    CurrentValue = _G.NyxConfig.TowerPotionRotation,
+    Callback = function(Value)
+        _G.NyxConfig.TowerPotionRotation = Value
+        saveConfig()
+    end,
+})
+
+TowerTab:CreateDropdown({
+    Name = "Target Kategori Potion Tower",
+    Options = {"Money / Income (Rekomendasi Nuyul)", "Luck Potion", "Damage Potion"},
+    CurrentOption = "Money / Income (Rekomendasi Nuyul)",
+    Callback = function(Option)
+        local opt = type(Option) == "table" and Option[1] or Option
+        _G.NyxConfig.TowerPotionTarget = opt
+        saveConfig()
+    end,
+})
+
+TowerTab:CreateSlider({
+    Name = "Target Jumlah Potion per Tower",
+    Range = {10, 500},
+    Increment = 10,
+    Suffix = " pcs",
+    CurrentValue = _G.NyxConfig.TowerPotionQuota or 100,
+    Callback = function(Value)
+        _G.NyxConfig.TowerPotionQuota = Value
+        saveConfig()
+    end,
+})
+
 TowerTab:CreateSection("⚔️ Smart Tower AI Engine")
 TowerTab:CreateToggle({
     Name = "Smart Tower AI (Auto Clear Tower Terkuat)",
@@ -1631,9 +1739,55 @@ trackThread(task.spawn(function()
     end
 end))
 
--- 3. Auto Potions Stacker Worker (7 Tiers Multiplicative Stacking with Anti-Waste Buff Check)
+-- 3. Auto Potions Stacker Worker (Multiplicative Category Stacking with Real Game Names)
 trackThread(task.spawn(function()
     local totalPotionsDrank = 0
+    local lastPotionUseTime = {}
+    
+    -- Ground-Truth Potion Families in Anime Dice (Ordered by tier: IV -> III -> II -> I)
+    local POTION_FAMILIES = {
+        income = {
+            base = { "Income IV", "Income III", "Income II", "Income I" },
+            dragon = { "Dragon Income III", "Dragon Income II", "Dragon Income I" },
+            cursed = { "Cursed Income III", "Cursed Income II", "Cursed Income I" },
+            pirate = { "Pirate Income III", "Pirate Income II", "Pirate Income I" },
+            leaf = { "Leaf Income III", "Leaf Income II", "Leaf Income I" },
+            event = { "Candy Potion", "Pumpkin Potion" }
+        },
+        luck = {
+            base = { "Luck IV", "Luck III", "Luck II", "Luck I" },
+            dragon = { "Dragon Luck III", "Dragon Luck II", "Dragon Luck I" },
+            cursed = { "Cursed Luck III", "Cursed Luck II", "Cursed Luck I" },
+            pirate = { "Pirate Luck III", "Pirate Luck II", "Pirate Luck I" },
+            leaf = { "Leaf Luck III", "Leaf Luck II", "Leaf Luck I" }
+        },
+        damage = {
+            base = { "Damage IV", "Damage III", "Damage II", "Damage I" },
+            dragon = { "Dragon Damage III", "Dragon Damage II", "Dragon Damage I" },
+            cursed = { "Cursed Damage III", "Cursed Damage II", "Cursed Damage I" },
+            pirate = { "Pirate Damage III", "Pirate Damage II", "Pirate Damage I" },
+            leaf = { "Leaf Damage III", "Leaf Damage II", "Leaf Damage I" }
+        },
+        speed = {
+            base = { "Speed IV", "Speed III", "Speed II", "Speed I" }
+        }
+    }
+
+    local function getOwnedCount(pName)
+        local inv = readData("Inventory", {}) or {}
+        local boosts = readData("Boost", {}) or {}
+        local count = tonumber(boosts[pName]) or 0
+        if count > 0 then return count end
+        for k, v in pairs(inv) do
+            if type(v) == "table" and tostring(v.name or k):lower() == pName:lower() then
+                count = count + (tonumber(v.amount) or 1)
+            elseif tostring(k):lower() == pName:lower() and tonumber(v) then
+                count = count + tonumber(v)
+            end
+        end
+        return count
+    end
+
     while isAlive() do
         if _G.NyxConfig.AutoPotions and R.UseBoost then
             local targetLimit = _G.NyxConfig.PotionTargetLimit or 100
@@ -1643,65 +1797,48 @@ trackThread(task.spawn(function()
                 totalPotionsDrank = 0
                 if Rayfield then
                     Rayfield:Notify({
-                        Title = "Potion Limit Tercapai!",
+                        Title = "Potion Limit Selesai!",
                         Content = "Target limit (" .. targetLimit .. " pcs) tercapai. Auto Potion dimatikan.",
                         Duration = 5
                     })
                 end
-                task.wait(1.5)
+                task.wait(2.0)
             else
-                local inv = readData("Inventory", {}) or {}
-                local activeBuffs = readData("Buffs", {}) or {}
-                local drinkQueue = {}
-                local nowTime = Workspace:GetServerTimeNow()
-                local seenCategories = {}
+                local now = os.clock()
+                local categoriesToRun = {}
+                if _G.NyxConfig.PotionUseIncome then table.insert(categoriesToRun, "income") end
+                if _G.NyxConfig.PotionUseLuck then table.insert(categoriesToRun, "luck") end
+                if _G.NyxConfig.PotionUseDamage then table.insert(categoriesToRun, "damage") end
+                if _G.NyxConfig.PotionUseSpeed then table.insert(categoriesToRun, "speed") end
                 
-                for key, item in pairs(inv) do
-                    if (totalPotionsDrank + #drinkQueue) >= targetLimit then break end
-                    if type(item) == "table" and (tonumber(item.amount) or 1) > 0 then
-                        local name = tostring(item.name or key):lower()
-                        local category = nil
-                        if _G.NyxConfig.PotionUseIncome and (name:find("income") or name:find("money")) then category = "income"
-                        elseif _G.NyxConfig.PotionUseLuck and (name:find("luck") or name:find("clover")) then category = "luck"
-                        elseif _G.NyxConfig.PotionUseDamage and (name:find("damage") or name:find("slayer")) then category = "damage"
-                        elseif _G.NyxConfig.PotionUseSpeed and name:find("speed") then category = "speed"
-                        elseif _G.NyxConfig.PotionUseTower and (name:find("shadow") or name:find("pirate") or name:find("abyss")) then category = "tower"
-                        elseif _G.NyxConfig.PotionUseHalloween and (name:find("pumpkin") or name:find("candy") or name:find("haunted")) then category = "halloween"
-                        end
-                        
-                        if category then
-                            -- If PotionStackAll7Tiers is disabled, only drink one tier per category
-                            local canQueueTier = _G.NyxConfig.PotionStackAll7Tiers or (not seenCategories[category])
-                            if canQueueTier then
-                                -- Check Anti-Waste Buff Duration: if buff still active > 10s, don't waste another potion!
-                                local isAlreadyActive = false
-                                if _G.NyxConfig.AntiWastePotionDuration and type(activeBuffs) == "table" then
-                                    for bName, bData in pairs(activeBuffs) do
-                                        if name:find(tostring(bName):lower()) then
-                                            local exp = (type(bData) == "table" and (bData.expiresAt or bData.endTime)) or 0
-                                            if exp > (nowTime + 10) then
-                                                isAlreadyActive = true
-                                                break
-                                            end
-                                        end
+                for _, catName in ipairs(categoriesToRun) do
+                    local fams = POTION_FAMILIES[catName]
+                    if fams then
+                        for famKey, pList in pairs(fams) do
+                            local cooldownKey = catName .. "_" .. famKey
+                            -- Anti-waste duration check: Base lasts 300s, Leaf 210s, Pirate 240s, Cursed 180s, Dragon 120s
+                            local lastDrank = lastPotionUseTime[cooldownKey] or 0
+                            local waitDuration = (famKey == "dragon" and 110) or (famKey == "cursed" and 170) or (famKey == "leaf" and 200) or (famKey == "pirate" and 230) or 290
+                            if not _G.NyxConfig.AntiWastePotionDuration or (now - lastDrank) >= waitDuration then
+                                -- Find highest tier currently owned in this family
+                                local bestToDrink = nil
+                                for _, candidatePotion in ipairs(pList) do
+                                    if getOwnedCount(candidatePotion) > 0 then
+                                        bestToDrink = candidatePotion
+                                        break
                                     end
                                 end
-                                if not isAlreadyActive then
-                                    table.insert(drinkQueue, key)
-                                    seenCategories[category] = true
+                                if bestToDrink then
+                                    fire(R.UseBoost, bestToDrink)
+                                    lastPotionUseTime[cooldownKey] = os.clock()
+                                    totalPotionsDrank = totalPotionsDrank + 1
+                                    task.wait(0.2)
                                 end
                             end
                         end
                     end
                 end
-                
-                for _, pKey in ipairs(drinkQueue) do
-                    if not _G.NyxConfig.AutoPotions or not isAlive() then break end
-                    fire(R.UseBoost, pKey)
-                    totalPotionsDrank = totalPotionsDrank + 1
-                    task.wait(0.18)
-                end
-                task.wait(4.0)
+                task.wait(3.0)
             end
         else
             totalPotionsDrank = 0
@@ -1868,12 +2005,13 @@ trackThread(task.spawn(function()
     end
 end))
 
--- 9. Auto Trick-or-Treat Worker (Tour All Doors & Server Re-Arm)
+-- 9. Auto Trick-or-Treat Worker (Anti-Pause Gentle Tour & 2.0s Server Rate-Limit Compliance)
 trackThread(task.spawn(function()
     local fpp = fireproximityprompt or (_ENV and _ENV.fireproximityprompt)
     local doorCooldowns = {}
     local savedOriginCFrame = nil
     local wasRunning = false
+    local lastKnockedTime = 0
     
     local function getDoors()
         local list = {}
@@ -1894,7 +2032,8 @@ trackThread(task.spawn(function()
 
     while isAlive() do
         if _G.NyxConfig.AutoTrickOrTreat then
-            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
             if hrp then
                 if not wasRunning then
                     savedOriginCFrame = hrp.CFrame
@@ -1903,18 +2042,26 @@ trackThread(task.spawn(function()
                 local doors = getDoors()
                 if #doors == 0 then
                     goToHalloweenIsland()
-                    task.wait(2.0)
+                    task.wait(2.5)
                     doors = getDoors()
                 end
                 if #doors > 0 then
                     for _, door in ipairs(doors) do
                         if not _G.NyxConfig.AutoTrickOrTreat or not isAlive() then break end
-                        local last = doorCooldowns[door] or 0
-                        if (os.clock() - last) >= 29 then
+                        local lastDoorKnock = doorCooldowns[door] or 0
+                        local now = os.clock()
+                        -- Enforce 30s per-door cooldown AND >= 2.0s global gap between knocks (Server Requirement)
+                        if (now - lastDoorKnock) >= 30 and (now - lastKnockedTime) >= 2.0 then
                             local pivot = door:IsA("BasePart") and door.CFrame or door:GetPivot()
                             if pivot then
-                                hrp.CFrame = pivot * CFrame.new(0, 1.5, 3.5)
-                                task.wait(0.35)
+                                -- Gentle move: zero out velocities to prevent "Gameplay Paused"
+                                pcall(function()
+                                    hrp.AssemblyLinearVelocity = Vector3.zero
+                                    hrp.AssemblyAngularVelocity = Vector3.zero
+                                    hrp.CFrame = pivot * CFrame.new(0, 1.2, 3.8)
+                                end)
+                                task.wait(0.45) -- Wait for physical replication without pausing
+                                
                                 local prompt = door:FindFirstChildOfClass("ProximityPrompt") or door:FindFirstChildWhichIsA("ProximityPrompt", true)
                                 if prompt and prompt.Enabled then
                                     pcall(function()
@@ -1924,21 +2071,27 @@ trackThread(task.spawn(function()
                                     end)
                                     if type(fpp) == "function" then pcall(fpp, prompt) end
                                     pcall(function() prompt:InputHoldBegin() end)
-                                    task.wait(0.05)
+                                    task.wait(0.08)
                                     pcall(function() prompt:InputHoldEnd() end)
                                 end
                                 if R.TrickKnock then fire(R.TrickKnock, door.Name) end
+                                
                                 doorCooldowns[door] = os.clock()
-                                task.wait(0.3)
-                                -- Step back 18 studs for server re-arm (> 17 studs)
-                                hrp.CFrame = pivot * CFrame.new(0, 1.5, 18)
-                                task.wait(0.2)
+                                lastKnockedTime = os.clock()
+                                task.wait(0.4)
+                                
+                                -- Step back 19 studs: satisfies server re-arm distance rule (> 17 studs)
+                                pcall(function()
+                                    hrp.AssemblyLinearVelocity = Vector3.zero
+                                    hrp.CFrame = pivot * CFrame.new(0, 1.2, 19)
+                                end)
+                                task.wait(1.5) -- Rest at staging position before next door
                             end
                         end
                     end
                 end
             end
-            task.wait(4.0)
+            task.wait(3.0)
         else
             if wasRunning and savedOriginCFrame then
                 local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -2012,48 +2165,61 @@ trackThread(task.spawn(function()
     end
 end))
 
--- 11. WiFi Disconnect & Cash Freeze Watchdog
-local lastKnownCashBalance = getPlayerCash()
+-- 11. WiFi Disconnect & Cash Freeze Watchdog (Fresh Server Rejoin & GuiService Hook)
+pcall(function()
+    local isReconnectingNow = false
+    local function triggerReconnect(reason)
+        if isReconnectingNow then return end
+        isReconnectingNow = true
+        setupAutoExecuteOnTeleport()
+        task.spawn(function()
+            task.wait(1.5)
+            -- Rejoin fresh public server via Teleport (Not dead JobId!)
+            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        end)
+    end
+
+    GuiService.ErrorMessageChanged:Connect(function(msg)
+        if not _G.NyxConfig.AutoReconnectWiFi then return end
+        local raw = tostring(msg or ""):lower()
+        if raw:find("disconnect") or raw:find("lost") or raw:find("error") or raw:find("277") or raw:find("268") or raw:find("279") or raw:find("529") or raw:find("kick") or raw:find("check your internet") then
+            triggerReconnect("ErrorMessageChanged: " .. raw)
+        end
+    end)
+end)
+
 trackThread(task.spawn(function()
     while isAlive() do
-        -- 1. Error prompt overlay detection
         if _G.NyxConfig.AutoReconnectWiFi then
             pcall(function()
+                local raw = tostring(GuiService:GetErrorMessage() or ""):lower()
+                if raw ~= "" and (raw:find("disconnect") or raw:find("lost") or raw:find("error") or raw:find("277") or raw:find("268") or raw:find("279") or raw:find("529")) then
+                    setupAutoExecuteOnTeleport()
+                    TeleportService:Teleport(game.PlaceId, LocalPlayer)
+                end
                 local coreGui = game:GetService("CoreGui")
                 local promptGui = coreGui:FindFirstChild("RobloxPromptGui")
                 local prompt = promptGui and promptGui:FindFirstChild("promptOverlay") and promptGui.promptOverlay:FindFirstChild("ErrorPrompt")
                 if prompt then
                     local recBtn = prompt:FindFirstChild("ReconnectButton", true) or prompt:FindFirstChild("Button", true)
-                    if recBtn then
-                        pcall(function()
-                            if firesignal then firesignal(recBtn.MouseButton1Click) end
-                        end)
-                    end
-                    task.spawn(function()
-                        task.wait(2)
-                        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
-                    end)
+                    if recBtn and firesignal then firesignal(recBtn.MouseButton1Click) end
+                    setupAutoExecuteOnTeleport()
+                    task.wait(1.5)
+                    TeleportService:Teleport(game.PlaceId, LocalPlayer)
                 end
             end)
         end
-        -- 2. Cash collection freeze watchdog (>120s with AutoCollectCash ON)
+        -- Cash Stall Watchdog: only when AutoCollectCash is active and player has not collected for > 180s
         if _G.NyxConfig.CashWatchdogRejoin and _G.NyxConfig.AutoCollectCash then
-            local curMoney = getPlayerCash()
-            if curMoney ~= lastKnownCashBalance then
-                -- Any balance change (collecting or deliberate spending) confirms an active, responsive connection
-                lastCashCollectTime = os.clock()
-                lastKnownCashBalance = curMoney
-            end
-            if (os.clock() - lastCashCollectTime) > 120 then
+            if (os.clock() - lastCashCollectTime) > 180 then
                 lastCashCollectTime = os.clock()
                 setupAutoExecuteOnTeleport()
-                TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+                TeleportService:Teleport(game.PlaceId, LocalPlayer)
             end
         end
         task.wait(3.0)
     end
 end))
-
 
 -- 12. Auto Buy Best Dice Worker (Verified Ground-Truth Dice Ladder)
 trackThread(task.spawn(function()
@@ -2077,132 +2243,173 @@ trackThread(task.spawn(function()
     end
 end))
 
--- 13. Auto Quirk Reroll Worker (Cheap No-Quirk Unit Prioritizer + Max Rolls Stop Limit)
+-- 13. Auto Quirk Reroll Worker (Anywhere Support: Auto TP to Machine & Return to Origin)
 trackThread(task.spawn(function()
     local quirkRollCounter = 0
+    local savedQuirkOrigin = nil
+    local wasRunning = false
+    
     while isAlive() do
         if _G.NyxConfig.AutoQuirk and R.RerollQuirk then
-            local targetRaw = _G.NyxConfig.QuirkTarget or "Prodigy"
-            local target = targetRaw:match("^([%w%s%']+)") or targetRaw
-            target = target:gsub("%s+$", "")
-            local maxRolls = _G.NyxConfig.QuirkMaxRolls or 100
-            
-            -- Stop Limit Guard: stop when roll limit is reached!
-            if quirkRollCounter >= maxRolls then
-                _G.NyxConfig.AutoQuirk = false
-                saveConfig()
-                quirkRollCounter = 0
-                if Rayfield then
-                    Rayfield:Notify({
-                        Title = "Quirk Stop Limit!",
-                        Content = "Batas maksimal (" .. maxRolls .. " roll) telah tercapai. Auto Quirk dinonaktifkan.",
-                        Duration = 6
-                    })
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                if not wasRunning then
+                    savedQuirkOrigin = hrp.CFrame
+                    wasRunning = true
                 end
-                task.wait(1.0)
-            else
-                -- Ensure player is standing near Quirks station (AntiCheatService.IsNearZone check)
-                local qStation = findZoneOrStation({"Quirks", "QuirkStation", "Quirk"})
-                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if qStation and hrp then
-                    local dist = (hrp.Position - (qStation:IsA("BasePart") and qStation.Position or qStation:GetPivot().Position)).Magnitude
-                    if dist > 35 then
-                        teleportToTarget(qStation)
-                        task.wait(1.0)
+                
+                local targetRaw = _G.NyxConfig.QuirkTarget or "Prodigy"
+                local target = targetRaw:match("^([%w%s%']+)") or targetRaw
+                target = target:gsub("%s+$", "")
+                local maxRolls = _G.NyxConfig.QuirkMaxRolls or 100
+                
+                -- Stop Limit Guard: stop when roll limit is reached!
+                if quirkRollCounter >= maxRolls then
+                    _G.NyxConfig.AutoQuirk = false
+                    saveConfig()
+                    quirkRollCounter = 0
+                    if Rayfield then
+                        Rayfield:Notify({
+                            Title = "Quirk Stop Limit!",
+                            Content = "Batas maksimal (" .. maxRolls .. " roll) tercapai. Auto Quirk selesai.",
+                            Duration = 6
+                        })
                     end
-                end
-                
-                local RARE_QUIRKS_BLACKLIST = {
-                    ["sovereign"] = true, ["fortune's favor"] = true,
-                    ["midas touch"] = true, ["prodigy"] = true, ["tycoon"] = true
-                }
-                local RARITY_TIERS = {
-                    ["common"] = 1, ["uncommon"] = 2, ["rare"] = 3, ["epic"] = 4
-                }
-                
-                local inv = readData("Inventory", {}) or {}
-                local candidates = {}
-                
-                for key, item in pairs(inv) do
-                    if type(item) == "table" and not item.locked then
-                        local attrs = item.attributes or item
-                        local curQ = tostring(attrs.quirk or item.quirk or ""):lower()
-                        
-                        -- Target hit check on ANY unit in inventory
-                        if curQ:find(target:lower()) then
-                            _G.NyxConfig.AutoQuirk = false
-                            saveConfig()
-                            quirkRollCounter = 0
-                            if R.ProtectQuirk then fire(R.ProtectQuirk, target, true) end
-                            if Rayfield then
-                                Rayfield:Notify({
-                                    Title = "🎉 Quirk Berhasil Didapat!",
-                                    Content = "Unit berhasil mendapatkan " .. target .. "! Auto Quirk dihentikan.",
-                                    Duration = 6
+                    if savedQuirkOrigin and hrp then
+                        hrp.CFrame = savedQuirkOrigin
+                        savedQuirkOrigin = nil
+                        wasRunning = false
+                    end
+                    task.wait(1.5)
+                else
+                    -- Ensure player stands near Quirks station for AntiCheat distance check
+                    local qStation = findZoneOrStation({"Quirks", "QuirkStation", "Quirk"})
+                    if qStation and hrp then
+                        local dist = (hrp.Position - (qStation:IsA("BasePart") and qStation.Position or qStation:GetPivot().Position)).Magnitude
+                        if dist > 25 then
+                            pcall(function()
+                                hrp.AssemblyLinearVelocity = Vector3.zero
+                                hrp.CFrame = (qStation:IsA("BasePart") and qStation.CFrame or qStation:GetPivot()) + Vector3.new(0, 3, 0)
+                            end)
+                            task.wait(0.6)
+                        end
+                    end
+                    
+                    local RARE_QUIRKS_BLACKLIST = {
+                        ["sovereign"] = true, ["fortune's favor"] = true,
+                        ["midas touch"] = true, ["prodigy"] = true, ["tycoon"] = true
+                    }
+                    local RARITY_TIERS = {
+                        ["common"] = 1, ["uncommon"] = 2, ["rare"] = 3, ["epic"] = 4
+                    }
+                    
+                    local inv = readData("Inventory", {}) or {}
+                    local candidates = {}
+                    
+                    for key, item in pairs(inv) do
+                        if type(item) == "table" and not item.locked then
+                            local attrs = item.attributes or item
+                            local curQ = tostring(attrs.quirk or item.quirk or ""):lower()
+                            
+                            -- Target hit check on ANY unit in inventory
+                            if curQ:find(target:lower()) then
+                                _G.NyxConfig.AutoQuirk = false
+                                saveConfig()
+                                quirkRollCounter = 0
+                                if R.ProtectQuirk then fire(R.ProtectQuirk, target, true) end
+                                if Rayfield then
+                                    Rayfield:Notify({
+                                        Title = "🎉 Quirk Berhasil Didapat!",
+                                        Content = "Unit berhasil mendapatkan " .. target .. "! Auto Quirk selesai.",
+                                        Duration = 6
+                                    })
+                                end
+                                if savedQuirkOrigin and hrp then
+                                    hrp.CFrame = savedQuirkOrigin
+                                    savedQuirkOrigin = nil
+                                    wasRunning = false
+                                end
+                                candidates = {}
+                                break
+                            end
+                            
+                            -- Never touch units holding rare quirks
+                            local isRare = false
+                            for rk in pairs(RARE_QUIRKS_BLACKLIST) do
+                                if curQ:find(rk) then isRare = true break end
+                            end
+                            
+                            local isShiny = (attrs.shiny == true) or (item.shiny == true)
+                            local isHaunted = (attrs.haunted == true) or (item.haunted == true)
+                            local rarity = tostring(item.rarity or attrs.rarity or ""):lower()
+                            local rTier = RARITY_TIERS[rarity] or 99
+                            
+                            -- Select cheap blank units (Common/Uncommon/Rare), unlocked, not shiny/haunted, no rare quirk
+                            if not isRare and not isShiny and not isHaunted and rTier <= 3 then
+                                local hasNoQuirk = (curQ == "" or curQ == "none" or curQ == "nil")
+                                local mult = parseFormattedNumber(item.multiplier or attrs.multiplier or "1")
+                                table.insert(candidates, {
+                                    key = key,
+                                    hasNoQuirk = hasNoQuirk,
+                                    rTier = rTier,
+                                    mult = mult
                                 })
                             end
-                            candidates = {}
-                            break
-                        end
-                        
-                        -- Never touch units holding rare quirks
-                        local isRare = false
-                        for rk in pairs(RARE_QUIRKS_BLACKLIST) do
-                            if curQ:find(rk) then isRare = true break end
-                        end
-                        
-                        local isShiny = (attrs.shiny == true) or (item.shiny == true)
-                        local isHaunted = (attrs.haunted == true) or (item.haunted == true)
-                        local rarity = tostring(item.rarity or attrs.rarity or ""):lower()
-                        local rTier = RARITY_TIERS[rarity] or 99
-                        
-                        -- Select cheap units (Common/Uncommon/Rare), unlocked, not shiny/haunted, no rare quirk
-                        if not isRare and not isShiny and not isHaunted and rTier <= 3 then
-                            local hasNoQuirk = (curQ == "" or curQ == "none" or curQ == "nil")
-                            local mult = parseFormattedNumber(item.multiplier or attrs.multiplier or "1")
-                            table.insert(candidates, {
-                                key = key,
-                                hasNoQuirk = hasNoQuirk,
-                                rTier = rTier,
-                                mult = mult
-                            })
                         end
                     end
-                end
-                
-                if not _G.NyxConfig.AutoQuirk then
-                    task.wait(1.0)
-                elseif #candidates > 0 then
-                    -- Priority sorting: Units with NO quirk first, then lowest rarity (Common first), then lowest multiplier!
-                    table.sort(candidates, function(a, b)
-                        if a.hasNoQuirk ~= b.hasNoQuirk then
-                            return a.hasNoQuirk == true
-                        end
-                        if a.rTier ~= b.rTier then
-                            return a.rTier < b.rTier
-                        end
-                        return a.mult < b.mult
-                    end)
                     
-                    local chosenKey = candidates[1].key
-                    fire(R.RerollQuirk, chosenKey)
-                    quirkRollCounter = quirkRollCounter + 1
-                    task.wait(0.35)
-                else
-                    task.wait(1.5)
+                    if not _G.NyxConfig.AutoQuirk then
+                        task.wait(1.0)
+                    elseif #candidates > 0 then
+                        -- Priority sorting: Units with NO quirk first, then lowest rarity (Common first), then lowest multiplier!
+                        table.sort(candidates, function(a, b)
+                            if a.hasNoQuirk ~= b.hasNoQuirk then return a.hasNoQuirk == true end
+                            if a.rTier ~= b.rTier then return a.rTier < b.rTier end
+                            return a.mult < b.mult
+                        end)
+                        
+                        local chosenKey = candidates[1].key
+                        fire(R.RerollQuirk, chosenKey)
+                        quirkRollCounter = quirkRollCounter + 1
+                        task.wait(0.35)
+                    else
+                        task.wait(1.5)
+                    end
                 end
             end
         else
+            if wasRunning and savedQuirkOrigin then
+                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then hrp.CFrame = savedQuirkOrigin end
+                savedQuirkOrigin = nil
+                wasRunning = false
+            end
             quirkRollCounter = 0
             task.wait(1.0)
         end
     end
 end))
 
--- 14. Auto Fuse Units Worker (Safe: Common, Rare, Epic only)
+-- 14. Auto Fuse Units Worker (Safe: Common, Rare, Epic with Station Distance Verification)
 trackThread(task.spawn(function()
     while isAlive() do
         if _G.NyxConfig.AutoFuseUnits and R.FuseUnits then
+            local fStation = findZoneOrStation({"Fusing", "Fuse", "FusingStation"})
+            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local oldFuseCF = nil
+            if fStation and hrp then
+                local dist = (hrp.Position - (fStation:IsA("BasePart") and fStation.Position or fStation:GetPivot().Position)).Magnitude
+                if dist > 30 then
+                    oldFuseCF = hrp.CFrame
+                    pcall(function()
+                        hrp.AssemblyLinearVelocity = Vector3.zero
+                        hrp.CFrame = (fStation:IsA("BasePart") and fStation.CFrame or fStation:GetPivot()) + Vector3.new(0, 3, 0)
+                    end)
+                    task.wait(0.8)
+                end
+            end
+            
             local inv = readData("Inventory", {}) or {}
             local nameGroups = {}
             for key, item in pairs(inv) do
@@ -2223,11 +2430,19 @@ trackThread(task.spawn(function()
                     end
                 end
             end
+            
+            local fusedAny = false
             for name, keys in pairs(nameGroups) do
                 if #keys >= 5 then
                     fire(R.FuseUnits, { keys[1], keys[2], keys[3], keys[4], keys[5] })
-                    task.wait(0.3)
+                    pcall(function() fire(R.FuseUnits) end)
+                    fusedAny = true
+                    task.wait(0.35)
                 end
+            end
+            
+            if fusedAny and oldFuseCF and hrp then
+                hrp.CFrame = oldFuseCF
             end
             task.wait(4.0)
         else
@@ -2236,28 +2451,103 @@ trackThread(task.spawn(function()
     end
 end))
 
--- 15. Smart Towers, Manual Towers & Halloween Event Towers Worker
+-- 15. Smart Towers, Manual Towers, Halloween Towers & Potion Farm Rotation Worker
 trackThread(task.spawn(function()
+    local currentRotationIndex = 1
+    
+    -- Ground-Truth Tower Rotation by Potion Category
+    local TOWER_POTION_ROTATION = {
+        ["money / income"] = {
+            { tower = "Dragon Tower", potion = "Dragon Income" },
+            { tower = "Cursed Tower", potion = "Cursed Income" },
+            { tower = "Pirate Tower", potion = "Pirate Income" },
+            { tower = "Hidden Leaf Tower", potion = "Leaf Income" },
+            { tower = "Infinity Tower", potion = "Income" }
+        },
+        ["luck"] = {
+            { tower = "Dragon Tower", potion = "Dragon Luck" },
+            { tower = "Cursed Tower", potion = "Cursed Luck" },
+            { tower = "Pirate Tower", potion = "Pirate Luck" },
+            { tower = "Hidden Leaf Tower", potion = "Leaf Luck" },
+            { tower = "Infinity Tower", potion = "Luck" }
+        },
+        ["damage"] = {
+            { tower = "Dragon Tower", potion = "Dragon Damage" },
+            { tower = "Cursed Tower", potion = "Cursed Damage" },
+            { tower = "Pirate Tower", potion = "Pirate Damage" },
+            { tower = "Hidden Leaf Tower", potion = "Leaf Damage" },
+            { tower = "Infinity Tower", potion = "Damage" }
+        }
+    }
+    
+    local function countPotionFamily(pattern)
+        local inv = readData("Inventory", {}) or {}
+        local boosts = readData("Boost", {}) or {}
+        local total = 0
+        local pat = pattern:lower()
+        for k, v in pairs(boosts) do
+            if tostring(k):lower():find(pat) then
+                total = total + (tonumber(v) or 0)
+            end
+        end
+        for k, v in pairs(inv) do
+            if type(v) == "table" and tostring(v.name or k):lower():find(pat) then
+                total = total + (tonumber(v.amount) or 1)
+            elseif tostring(k):lower():find(pat) and tonumber(v) then
+                total = total + tonumber(v)
+            end
+        end
+        return total
+    end
+
     while isAlive() do
-        local shouldRun = _G.NyxConfig.SmartTowerAI or _G.NyxConfig.AutoTower or _G.NyxConfig.AutoHalloweenTowers
+        local shouldRun = _G.NyxConfig.SmartTowerAI or _G.NyxConfig.AutoTower or _G.NyxConfig.AutoHalloweenTowers or _G.NyxConfig.TowerPotionRotation
         if shouldRun and R.PlayTower then
             if _G.NyxConfig.AutoEquipTowerTeam and R.BestTeam then
                 fire(R.BestTeam)
                 task.wait(0.5)
             end
-            local towerName = _G.NyxConfig.TowerType or "The Abyss"
-            if _G.NyxConfig.AutoHalloweenTowers then
+            
+            local towerName = _G.NyxConfig.TowerType or "Infinity Tower"
+            
+            -- Mode A: Potion Farm Rotation
+            if _G.NyxConfig.TowerPotionRotation then
+                local catKey = tostring(_G.NyxConfig.TowerPotionTarget or "money"):lower()
+                local rotList = TOWER_POTION_ROTATION["money / income"]
+                if catKey:find("luck") then rotList = TOWER_POTION_ROTATION["luck"]
+                elseif catKey:find("damage") then rotList = TOWER_POTION_ROTATION["damage"] end
+                
+                if currentRotationIndex > #rotList then currentRotationIndex = 1 end
+                local currentStep = rotList[currentRotationIndex]
+                local currentPotionCount = countPotionFamily(currentStep.potion)
+                local quota = _G.NyxConfig.TowerPotionQuota or 100
+                
+                if currentPotionCount >= quota then
+                    currentRotationIndex = currentRotationIndex + 1
+                    if currentRotationIndex > #rotList then currentRotationIndex = 1 end
+                    currentStep = rotList[currentRotationIndex]
+                    if Rayfield then
+                        Rayfield:Notify({
+                            Title = "Tower Potion Target Tercapai!",
+                            Content = "Lanjut rotasi farm ke: " .. currentStep.tower .. " (" .. currentStep.potion .. ")",
+                            Duration = 5
+                        })
+                    end
+                end
+                towerName = currentStep.tower
+            -- Mode B: Halloween Event Towers
+            elseif _G.NyxConfig.AutoHalloweenTowers then
                 local hwTowers = {"The Abyss", "Bell Tower", "Attic", "Crypt", "Foyer", "Front Yard"}
                 towerName = hwTowers[math.random(1, #hwTowers)]
+            -- Mode C: Smart Tower AI
             elseif _G.NyxConfig.SmartTowerAI then
                 local allTowers = {
-                    "The Abyss", "Bell Tower", "Attic", "Crypt",
                     "Infinity Tower", "Hidden Leaf Tower", "Pirate Tower", "Cursed Tower", "Dragon Tower"
                 }
                 towerName = allTowers[math.random(1, #allTowers)]
             end
             
-            -- Try native TowerController first, otherwise invoke PlayTower in dedicated coroutine
+            -- Execute Tower cleanly
             local okCtrl, TowerController = pcall(function()
                 return require(RS.Framework.Features.Towers.TowerController)
             end)
@@ -2281,21 +2571,24 @@ trackThread(task.spawn(function()
                             end
                             task.wait(0.25)
                         end
+                        if R.CancelTower then pcall(function() R.CancelTower:InvokeServer() end) end
                     end
                 end)
             end
-            task.wait(5.5)
+            task.wait(5.0)
         else
             task.wait(1.5)
         end
     end
 end))
 
--- 16. Server Luck Hopper Worker (Cooldown-Guarded)
+-- 16. Server Luck Hopper Worker (Anti-Duplicate Pool & Random Candidate Selection)
 trackThread(task.spawn(function()
+    _ENV.__NyxVisitedServers = _ENV.__NyxVisitedServers or {}
     local lastHopAttempt = 0
+    
     while isAlive() do
-        if _G.NyxConfig.ServerLuckHop and (os.clock() - lastHopAttempt > 90) then
+        if _G.NyxConfig.ServerLuckHop and (os.clock() - lastHopAttempt > 60) then
             local hasServerLuck = false
             local sb = RS:FindFirstChild("ServerBoosts") or RS:FindFirstChild("Boosts")
             if sb then
@@ -2308,8 +2601,10 @@ trackThread(task.spawn(function()
             end
             local attrLuck = tonumber(RS:GetAttribute("ServerLuck") or Workspace:GetAttribute("ServerLuck") or RS:GetAttribute("EventLuck"))
             if attrLuck and attrLuck >= 1.5 then hasServerLuck = true end
+            
             if not hasServerLuck then
                 lastHopAttempt = os.clock()
+                _ENV.__NyxVisitedServers[game.JobId] = os.time()
                 task.spawn(function()
                     setupAutoExecuteOnTeleport()
                     local placeId = game.PlaceId
@@ -2318,14 +2613,21 @@ trackThread(task.spawn(function()
                     if not raw then return end
                     local ok2, res = pcall(function() return HttpService:JSONDecode(raw) end)
                     if ok2 and res and res.data then
+                        local candidates = {}
+                        local nowTime = os.time()
                         for _, s in ipairs(res.data) do
-                            if s.id ~= game.JobId and s.playing < s.maxPlayers - 1 then
-                                TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
-                                return
+                            local visitedAt = _ENV.__NyxVisitedServers[s.id] or 0
+                            if s.id ~= game.JobId and (nowTime - visitedAt > 1800) and s.playing < s.maxPlayers - 2 and s.playing >= 1 then
+                                table.insert(candidates, s.id)
                             end
                         end
+                        if #candidates > 0 then
+                            local chosenId = candidates[math.random(1, #candidates)]
+                            _ENV.__NyxVisitedServers[chosenId] = os.time()
+                            TeleportService:TeleportToPlaceInstance(placeId, chosenId, LocalPlayer)
+                            return
+                        end
                     end
-                    TeleportService:Teleport(placeId, LocalPlayer)
                 end)
             end
             task.wait(10.0)

@@ -189,6 +189,7 @@ local R_SPECS = {
     HalloweenClaim = { { "HalloweenQuestService", "RE", "Claim" } },
     HalloweenPass  = { { "HalloweenService", "RE", "ClaimAllPath" } },
     BuyCandyUpg    = { { "HalloweenService", "RE", "BuyUpgrade" }, { "CandyShopService", "RE", "Buy" } },
+    SetSetting     = { { "SettingsService", "RE", "SetSetting" } },
     TrickKnock     = { { "TrickOrTreatService", "RE", "Knocked" }, { "HalloweenService", "RE", "TrickOrTreat" } }
 }
 
@@ -386,6 +387,7 @@ _G.NyxConfig = {
     
     -- Optimization & Visuals
     DarkGpuSaver = false,
+    ExtremePotatoMode = false,
     TargetFPS = 30,
     PlayerESP = false,
     Fullbright = false,
@@ -1534,6 +1536,57 @@ for _, d in ipairs(destinations) do
 end
 
 -- TAB 9: NO GPU & LAG OPTIMIZER
+PerfTab:CreateSection("❄️ Extreme Anti-Lag & Potato Mode")
+
+local function applyPotatoMode(enable)
+    if enable then
+        pcall(function()
+            settings().Rendering.QualityLevel = 1
+            Lighting.GlobalShadows = false
+            Lighting.EnvironmentDiffuseScale = 0
+            Lighting.EnvironmentSpecularScale = 0
+            Lighting.Brightness = 1
+            for _, fx in ipairs(Lighting:GetChildren()) do
+                if fx:IsA("PostEffect") then fx.Enabled = false end
+            end
+        end)
+        if R.SetSetting then
+            fire(R.SetSetting, "Performance", true)
+            fire(R.SetSetting, "Music", 0)
+            fire(R.SetSetting, "HideGears", true)
+        end
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            pcall(function()
+                if obj:IsA("BasePart") then
+                    obj.Material = Enum.Material.SmoothPlastic
+                    obj.CastShadow = false
+                elseif obj:IsA("Decal") or obj:IsA("Texture") then
+                    obj.Transparency = 1
+                elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") or obj:IsA("Sparkles") or obj:IsA("Fire") or obj:IsA("Smoke") then
+                    obj.Enabled = false
+                elseif obj:IsA("Light") then
+                    obj.Enabled = false
+                end
+            end)
+        end
+    else
+        pcall(function()
+            settings().Rendering.QualityLevel = 5
+            Lighting.GlobalShadows = true
+        end)
+    end
+end
+
+PerfTab:CreateToggle({
+    Name = "Extreme Potato Mode (SmoothPlastic, No Partikel/Light, Game Boost)",
+    CurrentValue = _G.NyxConfig.ExtremePotatoMode,
+    Callback = function(Value)
+        _G.NyxConfig.ExtremePotatoMode = Value
+        saveConfig()
+        applyPotatoMode(Value)
+    end,
+})
+
 PerfTab:CreateSection("❄️ Dark 0% GPU Saver (Mata Nyaman & Hemat Daya)")
 local darkOverlayGui = nil
 
@@ -1946,6 +1999,7 @@ trackThread(task.spawn(function()
                 fire(R.CollectBalance, slot)
                 task.wait(0.08)
             end
+            lastCashCollectTime = os.clock() -- Heartbeat update: prevents false 180s rejoin loop!
         end
         if _G.NyxConfig.AutoLevelUpSlots and R.LevelUpSlot then
             for slot = 1, 12 do
@@ -2694,6 +2748,14 @@ trackThread(task.spawn(function()
         end
     end
 end))
+
+-- Apply loaded performance modes
+if _G.NyxConfig.ExtremePotatoMode then
+    task.spawn(applyPotatoMode, true)
+end
+if _G.NyxConfig.DarkGpuSaver then
+    task.spawn(toggleDarkGpuMode, true)
+end
 
 -- Notification Startup
 if Rayfield and Window then

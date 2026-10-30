@@ -683,6 +683,17 @@ local function findZoneOrStation(names)
     return nil
 end
 
+local function getStationPos(inst)
+    if not inst then return nil end
+    if inst:IsA("BasePart") then return inst.Position end
+    if inst:IsA("Model") then return inst:GetPivot().Position end
+    if inst:IsA("Folder") then
+        local bp = inst:FindFirstChildWhichIsA("BasePart", true)
+        if bp then return bp.Position end
+    end
+    return nil
+end
+
 local function findMyPlot()
     local plots = Workspace:FindFirstChild("Plots")
     if not plots then return nil end
@@ -2018,7 +2029,11 @@ trackThread(task.spawn(function()
                 fire(R.CollectBalance, slot)
                 task.wait(0.08)
             end
-            lastCashCollectTime = os.clock() -- Heartbeat update: prevents false 180s rejoin loop!
+            local curMoney = getPlayerCash()
+            if curMoney ~= lastKnownCashBalance then
+                lastCashCollectTime = os.clock()
+                lastKnownCashBalance = curMoney
+            end
         end
         if _G.NyxConfig.AutoLevelUpSlots and R.LevelUpSlot then
             for slot = 1, 12 do
@@ -2187,9 +2202,13 @@ trackThread(task.spawn(function()
             local threshold = _G.NyxConfig.BagSellThresholdPercent or 90
             local maxBag = tonumber(readData("MaxInventory", 100)) or 100
             local slots = readData("Slots", {}) or {}
+            local towerTeam = readData("TowerTeam", {}) or {}
             local protectedUuids = {}
             for _, s in pairs(slots) do
                 if type(s) == "table" and s.unitId then protectedUuids[s.unitId] = true end
+            end
+            for _, uuid in pairs(towerTeam) do
+                if type(uuid) == "string" and uuid ~= "" then protectedUuids[uuid] = true end
             end
             
             local thresholdMultiplier = parseFormattedNumber(_G.NyxConfig.AutoSellMinMultiplier or "1sp")
@@ -2239,19 +2258,21 @@ trackThread(task.spawn(function()
 end))
 
 -- 11. WiFi Disconnect & Cash Freeze Watchdog (Fresh Server Rejoin & GuiService Hook)
-pcall(function()
-    local isReconnectingNow = false
-    local function triggerReconnect(reason)
-        if isReconnectingNow then return end
-        isReconnectingNow = true
+local isReconnectingNow = false
+local function triggerReconnect(reason)
+    if isReconnectingNow then return end
+    isReconnectingNow = true
+    task.spawn(function()
         setupAutoExecuteOnTeleport()
-        task.spawn(function()
-            task.wait(1.5)
-            -- Rejoin fresh public server via Teleport (Not dead JobId!)
-            TeleportService:Teleport(game.PlaceId, LocalPlayer)
-        end)
-    end
+        task.wait(1.5)
+        -- Rejoin fresh public server via Teleport (Not dead JobId!)
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        task.wait(15)
+        isReconnectingNow = false -- Recovery reset if teleport failed
+    end)
+end
 
+pcall(function()
     GuiService.ErrorMessageChanged:Connect(function(msg)
         if not _G.NyxConfig.AutoReconnectWiFi then return end
         local raw = tostring(msg or ""):lower()
@@ -2267,8 +2288,7 @@ trackThread(task.spawn(function()
             pcall(function()
                 local raw = tostring(GuiService:GetErrorMessage() or ""):lower()
                 if raw ~= "" and (raw:find("disconnect") or raw:find("lost") or raw:find("error") or raw:find("277") or raw:find("268") or raw:find("279") or raw:find("529")) then
-                    setupAutoExecuteOnTeleport()
-                    TeleportService:Teleport(game.PlaceId, LocalPlayer)
+                    triggerReconnect("GuiService Poll: " .. raw)
                 end
                 local coreGui = game:GetService("CoreGui")
                 local promptGui = coreGui:FindFirstChild("RobloxPromptGui")
@@ -2276,11 +2296,7 @@ trackThread(task.spawn(function()
                 if prompt then
                     local recBtn = prompt:FindFirstChild("ReconnectButton", true) or prompt:FindFirstChild("Button", true)
                     if recBtn and firesignal then firesignal(recBtn.MouseButton1Click) end
-                    task.spawn(function()
-                        setupAutoExecuteOnTeleport()
-                        task.wait(1.5)
-                        TeleportService:Teleport(game.PlaceId, LocalPlayer)
-                    end)
+                    triggerReconnect("ErrorPrompt detected")
                 end
             end)
         end
@@ -2368,12 +2384,13 @@ trackThread(task.spawn(function()
                 else
                     -- Ensure player stands near Quirks station for AntiCheat distance check
                     local qStation = findZoneOrStation({"Quirks", "QuirkStation", "Quirk"})
-                    if qStation and hrp then
-                        local dist = (hrp.Position - (qStation:IsA("BasePart") and qStation.Position or qStation:GetPivot().Position)).Magnitude
+                    local sPos = getStationPos(qStation)
+                    if sPos and hrp then
+                        local dist = (hrp.Position - sPos).Magnitude
                         if dist > 25 then
                             pcall(function()
                                 hrp.AssemblyLinearVelocity = Vector3.zero
-                                hrp.CFrame = (qStation:IsA("BasePart") and qStation.CFrame or qStation:GetPivot()) + Vector3.new(0, 3, 0)
+                                hrp.CFrame = CFrame.new(sPos) + Vector3.new(0, 3, 0)
                             end)
                             task.wait(0.6)
                         end
@@ -2509,13 +2526,14 @@ trackThread(task.spawn(function()
                 local fStation = findZoneOrStation({"Fusing", "Fuse", "FusingStation"})
                 local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                 local oldFuseCF = nil
-                if fStation and hrp then
-                    local dist = (hrp.Position - (fStation:IsA("BasePart") and fStation.Position or fStation:GetPivot().Position)).Magnitude
+                local sPos = getStationPos(fStation)
+                if sPos and hrp then
+                    local dist = (hrp.Position - sPos).Magnitude
                     if dist > 30 then
                         oldFuseCF = hrp.CFrame
                         pcall(function()
                             hrp.AssemblyLinearVelocity = Vector3.zero
-                            hrp.CFrame = (fStation:IsA("BasePart") and fStation.CFrame or fStation:GetPivot()) + Vector3.new(0, 3, 0)
+                            hrp.CFrame = CFrame.new(sPos) + Vector3.new(0, 3, 0)
                         end)
                         task.wait(0.8)
                     end
@@ -2637,33 +2655,39 @@ trackThread(task.spawn(function()
             end
             
             -- Execute Tower cleanly
-            local okCtrl, TowerController = pcall(function()
-                return require(RS.Framework.Features.Towers.TowerController)
-            end)
-            if okCtrl and TowerController and type(TowerController.startTower) == "function" then
-                pcall(TowerController.startTower, towerName)
-            else
-                task.spawn(function()
-                    local resStart = R.PlayTower:InvokeServer(towerName)
-                    if (resStart == true or type(resStart) == "table") and R.CompTowerFloor then
-                        task.wait(0.6)
-                        for floor = 1, 60 do
-                            if not isAlive() then break end
-                            local resSeq = R.CompTowerFloor:InvokeServer()
-                            if not resSeq or resSeq == "destroyed" then break end
-                            if type(resSeq) == "table" then
-                                local ended = false
-                                for _, a in ipairs(resSeq) do
-                                    if type(a) == "table" and a.action == "ended" then ended = true break end
-                                end
-                                if ended then break end
-                            end
-                            task.wait(0.25)
-                        end
-                        if R.CancelTower and R.CancelTower:IsA("RemoteFunction") then task.spawn(function() R.CancelTower:InvokeServer() end) end
-                    end
+            task.spawn(function()
+                local started = false
+                local okCtrl, TowerController = pcall(function()
+                    return require(RS.Framework.Features.Towers.TowerController)
                 end)
-            end
+                if okCtrl and TowerController and type(TowerController.startTower) == "function" then
+                    pcall(function() TowerController:startTower(towerName) end)
+                    started = true
+                elseif R.PlayTower and R.PlayTower:IsA("RemoteFunction") then
+                    local resStart = R.PlayTower:InvokeServer(towerName)
+                    started = (resStart == true or type(resStart) == "table")
+                end
+                
+                if started and R.CompTowerFloor then
+                    task.wait(0.6)
+                    for floor = 1, 60 do
+                        if not isAlive() then break end
+                        local resSeq = R.CompTowerFloor:InvokeServer()
+                        if not resSeq or resSeq == "destroyed" then break end
+                        if type(resSeq) == "table" then
+                            local ended = false
+                            for _, a in ipairs(resSeq) do
+                                if type(a) == "table" and a.action == "ended" then ended = true break end
+                            end
+                            if ended then break end
+                        end
+                        task.wait(0.25)
+                    end
+                    if R.CancelTower and R.CancelTower:IsA("RemoteFunction") then
+                        task.spawn(function() R.CancelTower:InvokeServer() end)
+                    end
+                end
+            end)
             task.wait(5.0)
         else
             task.wait(1.5)
@@ -2806,6 +2830,9 @@ trackThread(task.spawn(function()
 end))
 
 -- Apply loaded performance modes
+if setfpscap and _G.NyxConfig.TargetFPS then
+    pcall(setfpscap, _G.NyxConfig.TargetFPS)
+end
 if _G.NyxConfig.ExtremePotatoMode then
     task.spawn(applyPotatoMode, true)
 end

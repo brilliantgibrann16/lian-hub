@@ -123,7 +123,7 @@ local function setupAutoExecuteOnTeleport(force)
         local scriptCode = [[
             repeat task.wait(0.2) until game:IsLoaded()
             task.wait(1.0)
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/brilliantgibrann16/lian-hub/main/Loader.lua"))()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/brilliantgibrann16/nyx-hub/main/Loader.lua"))()
         ]]
         pcall(qot, scriptCode)
         _ENV._NyxQOTQueued = true
@@ -739,6 +739,7 @@ local Rayfield = nil
 local rawRay = nil
 local rayUrls = {
     "https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua",
+    "https://raw.githubusercontent.com/UI-Libraries/Rayfield/main/source.lua",
     "https://sirius.menu/rayfield"
 }
 
@@ -2320,8 +2321,7 @@ trackThread(task.spawn(function()
         if _G.NyxConfig.CashWatchdogRejoin and _G.NyxConfig.AutoCollectCash then
             if (os.clock() - lastCashCollectTime) > 180 then
                 lastCashCollectTime = os.clock()
-                setupAutoExecuteOnTeleport(true)
-                TeleportService:Teleport(game.PlaceId, LocalPlayer)
+                triggerReconnect("CashWatchdogRejoin")
             end
         end
         task.wait(3.0)
@@ -2342,7 +2342,7 @@ trackThread(task.spawn(function()
                 end
             end
             if bestAffordable then
-                local isOwned = owned[bestAffordable] == true
+                local isOwned = (owned[bestAffordable] == true) or ((tonumber(owned[bestAffordable]) or 0) > 0)
                 if not isOwned then
                     fire(R.BuyDice, bestAffordable)
                     task.wait(0.3)

@@ -7,7 +7,7 @@
 Copy and paste this one-liner into your executor (Solara, Wave, Delta, Fluxus, etc.):
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/brilliantgibrann16/lian-hub/main/Loader.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/brilliantgibrann16/nyx-hub/main/Loader.lua"))()
 ```
 
 ## ✨ Features

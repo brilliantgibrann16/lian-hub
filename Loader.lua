@@ -212,9 +212,10 @@ local function fire(remote, ...)
         local ok, err = pcall(remote.FireServer, remote, ...)
         return ok, err
     elseif remote:IsA("RemoteFunction") then
-        task.spawn(function(...)
-            pcall(remote.InvokeServer, remote, ...)
-        end, ...)
+        local args = { ... }
+        task.spawn(function()
+            remote:InvokeServer(table.unpack(args))
+        end)
         return true, nil
     end
     return false
@@ -713,24 +714,26 @@ local rayUrls = {
     "https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua",
     "https://sirius.menu/rayfield"
 }
+
 for _, url in ipairs(rayUrls) do
-    local ok, res = pcall(function() return game:HttpGet(url) end)
-    if ok and type(res) == "string" and #res > 100 then
-        rawRay = res
-        break
+    local raw = nil
+    if type(game.HttpGet) == "function" then
+        raw = game:HttpGet(url)
     end
-    -- Fallback via executor request if game:HttpGet is restricted
-    if not rawRay then
+    if (not raw or type(raw) ~= "string" or #raw < 100) then
         local req = (syn and syn.request) or (http and http.request) or http_request or request
         if type(req) == "function" then
             pcall(function()
                 local r = req({ Url = url, Method = "GET" })
                 if r and type(r.Body) == "string" and #r.Body > 100 then
-                    rawRay = r.Body
+                    raw = r.Body
                 end
             end)
-            if rawRay then break end
         end
+    end
+    if type(raw) == "string" and #raw > 100 then
+        rawRay = raw
+        break
     end
     task.wait(0.3)
 end
@@ -1868,24 +1871,40 @@ trackThread(task.spawn(function()
                     local fams = POTION_FAMILIES[catName]
                     if fams then
                         for famKey, pList in pairs(fams) do
-                            local cooldownKey = catName .. "_" .. famKey
-                            -- Anti-waste duration check: Base lasts 300s, Leaf 210s, Pirate 240s, Cursed 180s, Dragon 120s
-                            local lastDrank = lastPotionUseTime[cooldownKey] or 0
-                            local waitDuration = (famKey == "dragon" and 110) or (famKey == "cursed" and 170) or (famKey == "leaf" and 200) or (famKey == "pirate" and 230) or 290
-                            if not _G.NyxConfig.AntiWastePotionDuration or (now - lastDrank) >= waitDuration then
-                                -- Find highest tier currently owned in this family
-                                local bestToDrink = nil
-                                for _, candidatePotion in ipairs(pList) do
-                                    if getOwnedCount(candidatePotion) > 0 then
-                                        bestToDrink = candidatePotion
-                                        break
+                            local isTowerFamily = (famKey == "dragon" or famKey == "cursed" or famKey == "pirate" or famKey == "leaf")
+                            local isHalloweenFamily = (famKey == "event")
+                            local canDrinkFamily = true
+                            
+                            if isTowerFamily and not _G.NyxConfig.PotionUseTower then
+                                canDrinkFamily = false
+                            end
+                            if isHalloweenFamily and not _G.NyxConfig.PotionUseHalloween then
+                                canDrinkFamily = false
+                            end
+                            if not _G.NyxConfig.PotionStackAll7Tiers and famKey ~= "base" then
+                                canDrinkFamily = false
+                            end
+                            
+                            if canDrinkFamily then
+                                local cooldownKey = catName .. "_" .. famKey
+                                -- Anti-waste duration check: Base lasts 300s, Leaf 210s, Pirate 240s, Cursed 180s, Dragon 120s
+                                local lastDrank = lastPotionUseTime[cooldownKey] or 0
+                                local waitDuration = (famKey == "dragon" and 110) or (famKey == "cursed" and 170) or (famKey == "leaf" and 200) or (famKey == "pirate" and 230) or 290
+                                if not _G.NyxConfig.AntiWastePotionDuration or (now - lastDrank) >= waitDuration then
+                                    -- Find highest tier currently owned in this family
+                                    local bestToDrink = nil
+                                    for _, candidatePotion in ipairs(pList) do
+                                        if getOwnedCount(candidatePotion) > 0 then
+                                            bestToDrink = candidatePotion
+                                            break
+                                        end
                                     end
-                                end
-                                if bestToDrink then
-                                    fire(R.UseBoost, bestToDrink)
-                                    lastPotionUseTime[cooldownKey] = os.clock()
-                                    totalPotionsDrank = totalPotionsDrank + 1
-                                    task.wait(0.2)
+                                    if bestToDrink then
+                                        fire(R.UseBoost, bestToDrink)
+                                        lastPotionUseTime[cooldownKey] = os.clock()
+                                        totalPotionsDrank = totalPotionsDrank + 1
+                                        task.wait(0.2)
+                                    end
                                 end
                             end
                         end
@@ -2257,9 +2276,11 @@ trackThread(task.spawn(function()
                 if prompt then
                     local recBtn = prompt:FindFirstChild("ReconnectButton", true) or prompt:FindFirstChild("Button", true)
                     if recBtn and firesignal then firesignal(recBtn.MouseButton1Click) end
-                    setupAutoExecuteOnTeleport()
-                    task.wait(1.5)
-                    TeleportService:Teleport(game.PlaceId, LocalPlayer)
+                    task.spawn(function()
+                        setupAutoExecuteOnTeleport()
+                        task.wait(1.5)
+                        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+                    end)
                 end
             end)
         end
@@ -2275,11 +2296,13 @@ trackThread(task.spawn(function()
     end
 end))
 
--- 12. Auto Buy Best Dice Worker (Verified Ground-Truth Dice Ladder)
+-- 12. Auto Buy Best Dice Worker (Ownership & Equip Diff Guard)
 trackThread(task.spawn(function()
     while isAlive() do
         if _G.NyxConfig.AutoBuyDice and R.BuyDice then
             local money = getPlayerCash()
+            local owned = readData("OwnedDice", {}) or {}
+            local curEquipped = tostring(readData("Dice", "") or "")
             local bestAffordable = nil
             for _, d in ipairs(DICE_LADDER) do
                 if d.price <= money and canAffordSpend(d.price) then
@@ -2287,8 +2310,14 @@ trackThread(task.spawn(function()
                 end
             end
             if bestAffordable then
-                fire(R.BuyDice, bestAffordable)
-                if R.EquipDice then fire(R.EquipDice, bestAffordable) end
+                local isOwned = owned[bestAffordable] == true
+                if not isOwned then
+                    fire(R.BuyDice, bestAffordable)
+                    task.wait(0.3)
+                end
+                if curEquipped:lower() ~= bestAffordable:lower() and R.EquipDice then
+                    fire(R.EquipDice, bestAffordable)
+                end
             end
             task.wait(4.0)
         else
@@ -2445,25 +2474,10 @@ trackThread(task.spawn(function()
     end
 end))
 
--- 14. Auto Fuse Units Worker (Safe: Common, Rare, Epic with Station Distance Verification)
+-- 14. Auto Fuse Units Worker (Pre-Check 5 Units & Safe Origin Return)
 trackThread(task.spawn(function()
     while isAlive() do
         if _G.NyxConfig.AutoFuseUnits and R.FuseUnits then
-            local fStation = findZoneOrStation({"Fusing", "Fuse", "FusingStation"})
-            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            local oldFuseCF = nil
-            if fStation and hrp then
-                local dist = (hrp.Position - (fStation:IsA("BasePart") and fStation.Position or fStation:GetPivot().Position)).Magnitude
-                if dist > 30 then
-                    oldFuseCF = hrp.CFrame
-                    pcall(function()
-                        hrp.AssemblyLinearVelocity = Vector3.zero
-                        hrp.CFrame = (fStation:IsA("BasePart") and fStation.CFrame or fStation:GetPivot()) + Vector3.new(0, 3, 0)
-                    end)
-                    task.wait(0.8)
-                end
-            end
-            
             local inv = readData("Inventory", {}) or {}
             local nameGroups = {}
             for key, item in pairs(inv) do
@@ -2485,18 +2499,39 @@ trackThread(task.spawn(function()
                 end
             end
             
-            local fusedAny = false
+            local hasFusible = false
             for name, keys in pairs(nameGroups) do
-                if #keys >= 5 then
-                    fire(R.FuseUnits, { keys[1], keys[2], keys[3], keys[4], keys[5] })
-                    pcall(function() fire(R.FuseUnits) end)
-                    fusedAny = true
-                    task.wait(0.35)
-                end
+                if #keys >= 5 then hasFusible = true break end
             end
             
-            if fusedAny and oldFuseCF and hrp then
-                hrp.CFrame = oldFuseCF
+            -- ONLY teleport if player genuinely owns 5 identical fusible units!
+            if hasFusible then
+                local fStation = findZoneOrStation({"Fusing", "Fuse", "FusingStation"})
+                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                local oldFuseCF = nil
+                if fStation and hrp then
+                    local dist = (hrp.Position - (fStation:IsA("BasePart") and fStation.Position or fStation:GetPivot().Position)).Magnitude
+                    if dist > 30 then
+                        oldFuseCF = hrp.CFrame
+                        pcall(function()
+                            hrp.AssemblyLinearVelocity = Vector3.zero
+                            hrp.CFrame = (fStation:IsA("BasePart") and fStation.CFrame or fStation:GetPivot()) + Vector3.new(0, 3, 0)
+                        end)
+                        task.wait(0.8)
+                    end
+                end
+                
+                for name, keys in pairs(nameGroups) do
+                    if #keys >= 5 then
+                        fire(R.FuseUnits, { keys[1], keys[2], keys[3], keys[4], keys[5] })
+                        task.wait(0.35)
+                    end
+                end
+                
+                if oldFuseCF and hrp then
+                    task.wait(0.5)
+                    hrp.CFrame = oldFuseCF
+                end
             end
             task.wait(4.0)
         else
@@ -2625,7 +2660,7 @@ trackThread(task.spawn(function()
                             end
                             task.wait(0.25)
                         end
-                        if R.CancelTower then pcall(function() R.CancelTower:InvokeServer() end) end
+                        if R.CancelTower and R.CancelTower:IsA("RemoteFunction") then task.spawn(function() R.CancelTower:InvokeServer() end) end
                     end
                 end)
             end
@@ -2636,11 +2671,31 @@ trackThread(task.spawn(function()
     end
 end))
 
--- 16. Server Luck Hopper Worker (Anti-Duplicate Pool & Random Candidate Selection)
+-- 16. Server Luck Hopper Worker (Persistent Visited File & Random Candidate Selection)
 trackThread(task.spawn(function()
-    _ENV.__NyxVisitedServers = _ENV.__NyxVisitedServers or {}
+    local VISITED_SERVERS_FILE = "NyxVisitedServers.json"
+    local function getVisitedTable()
+        local v = {}
+        pcall(function()
+            if isfile and isfile(VISITED_SERVERS_FILE) and readfile then
+                v = HttpService:JSONDecode(readfile(VISITED_SERVERS_FILE)) or {}
+            end
+        end)
+        return v
+    end
+    local function markServerVisitedOnDisk(id)
+        pcall(function()
+            local v = getVisitedTable()
+            v[tostring(id)] = os.time()
+            local now = os.time()
+            for sId, t in pairs(v) do
+                if now - t > 1800 then v[sId] = nil end
+            end
+            if writefile then writefile(VISITED_SERVERS_FILE, HttpService:JSONEncode(v)) end
+        end)
+    end
+
     local lastHopAttempt = 0
-    
     while isAlive() do
         if _G.NyxConfig.ServerLuckHop and (os.clock() - lastHopAttempt > 60) then
             local hasServerLuck = false
@@ -2658,7 +2713,7 @@ trackThread(task.spawn(function()
             
             if not hasServerLuck then
                 lastHopAttempt = os.clock()
-                _ENV.__NyxVisitedServers[game.JobId] = os.time()
+                markServerVisitedOnDisk(game.JobId)
                 task.spawn(function()
                     setupAutoExecuteOnTeleport()
                     local placeId = game.PlaceId
@@ -2667,17 +2722,18 @@ trackThread(task.spawn(function()
                     if not raw then return end
                     local ok2, res = pcall(function() return HttpService:JSONDecode(raw) end)
                     if ok2 and res and res.data then
+                        local visited = getVisitedTable()
                         local candidates = {}
                         local nowTime = os.time()
                         for _, s in ipairs(res.data) do
-                            local visitedAt = _ENV.__NyxVisitedServers[s.id] or 0
+                            local visitedAt = visited[s.id] or 0
                             if s.id ~= game.JobId and (nowTime - visitedAt > 1800) and s.playing < s.maxPlayers - 2 and s.playing >= 1 then
                                 table.insert(candidates, s.id)
                             end
                         end
                         if #candidates > 0 then
                             local chosenId = candidates[math.random(1, #candidates)]
-                            _ENV.__NyxVisitedServers[chosenId] = os.time()
+                            markServerVisitedOnDisk(chosenId)
                             TeleportService:TeleportToPlaceInstance(placeId, chosenId, LocalPlayer)
                             return
                         end

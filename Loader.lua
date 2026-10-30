@@ -112,27 +112,43 @@ trackThread(task.spawn(function()
     end))
 end))
 
--- 2. Teleport & Auto-Execute Setup
-local function setupAutoExecuteOnTeleport()
-    if _ENV._NyxQOTQueued then return end
-    local qot = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
+-- 2. Teleport & Auto-Execute Setup (Guaranteed Reconnect Re-Execution Across All Executors)
+local function setupAutoExecuteOnTeleport(force)
+    if _ENV._NyxQOTQueued and not force then return end
+    local qot = queue_on_teleport or queueonteleport
+        or (syn and syn.queue_on_teleport)
+        or (fluxus and fluxus.queue_on_teleport)
+        or (_ENV and (_ENV.queue_on_teleport or _ENV.queueonteleport))
     if type(qot) == "function" then
-        local rawJob = tostring(game.JobId or ""):gsub("%s+", "")
-        local currentJob = (rawJob ~= "") and rawJob or "server_init"
-        local scriptCode = string.format([[
+        local scriptCode = [[
             repeat task.wait(0.2) until game:IsLoaded()
-            local rawNewJob = tostring(game.JobId or ""):gsub("%%s+", "")
-            local newJob = (rawNewJob ~= "") and rawNewJob or "server_init"
-            if newJob ~= %q then
-                task.wait(1.5)
-                loadstring(game:HttpGet("https://raw.githubusercontent.com/brilliantgibrann16/lian-hub/main/Loader.lua"))()
-            end
-        ]], currentJob)
+            task.wait(1.0)
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/brilliantgibrann16/lian-hub/main/Loader.lua"))()
+        ]]
         pcall(qot, scriptCode)
         _ENV._NyxQOTQueued = true
     end
 end
 setupAutoExecuteOnTeleport()
+
+-- Hook both game-initiated teleports and reconnect failures
+pcall(function()
+    trackConn(LocalPlayer.OnTeleport:Connect(function(state)
+        setupAutoExecuteOnTeleport(true)
+    end))
+end)
+
+pcall(function()
+    trackConn(TeleportService.TeleportInitFailed:Connect(function(player, result, err)
+        if player == LocalPlayer then
+            setupAutoExecuteOnTeleport(true)
+            task.spawn(function()
+                task.wait(2.0)
+                TeleportService:Teleport(game.PlaceId, LocalPlayer)
+            end)
+        end
+    end))
+end)
 
 -- 3. Pure Native Safe Require (Zero getrenv / zero identity poisoning)
 local function safeRequire(mod)
@@ -2304,7 +2320,7 @@ trackThread(task.spawn(function()
         if _G.NyxConfig.CashWatchdogRejoin and _G.NyxConfig.AutoCollectCash then
             if (os.clock() - lastCashCollectTime) > 180 then
                 lastCashCollectTime = os.clock()
-                setupAutoExecuteOnTeleport()
+                setupAutoExecuteOnTeleport(true)
                 TeleportService:Teleport(game.PlaceId, LocalPlayer)
             end
         end
@@ -2739,7 +2755,7 @@ trackThread(task.spawn(function()
                 lastHopAttempt = os.clock()
                 markServerVisitedOnDisk(game.JobId)
                 task.spawn(function()
-                    setupAutoExecuteOnTeleport()
+                    setupAutoExecuteOnTeleport(true)
                     local placeId = game.PlaceId
                     local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
                     local raw = game:HttpGet(apiUrl)

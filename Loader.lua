@@ -2279,7 +2279,7 @@ local function triggerReconnect(reason)
     if isReconnectingNow then return end
     isReconnectingNow = true
     task.spawn(function()
-        setupAutoExecuteOnTeleport()
+        setupAutoExecuteOnTeleport(true)
         task.wait(1.5)
         -- Rejoin fresh public server via Teleport (Not dead JobId!)
         TeleportService:Teleport(game.PlaceId, LocalPlayer)

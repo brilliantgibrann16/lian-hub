@@ -202,8 +202,8 @@ local R_SPECS = {
     SetAutoRoll    = { { "RollService", "RE", "SetAutoRoll" }, { "Rolling", "RE", "SetAutoRoll" } },
     UpdAutoSell    = { { "SellService", "RE", "UpdateAutoSell" }, { nil, "RE", "UpdateAutoSell" } },
     SellInventory  = { { "SellService", "RF", "SellInventory" } },
-    SellUnits      = { { "UnitService", "RE", "SellUnits" }, { "SellService", "RF", "SellInventory" } },
-    BuyUpgrade     = { { nil, "RE", "BuyUpgrade" }, { "UpgradeService", "RE", "BuyUpgrade" } },
+    SellUnits      = { { "SellService", "RF", "SellInventory" } },
+    BuyUpgrade     = { { nil, "RE", "BuyUpgrade" } },
     BuyDice        = { { "DiceShopService", "RE", "BuyDice" }, { "DiceService", "RE", "BuyDice" } },
     EquipDice      = { { "DiceShopService", "RE", "EquipDice" }, { "DiceService", "RE", "EquipDice" } },
     EquipBestUnit  = { { "PlotService", "RE", "EquipBest" }, { "UnitService", "RF", "Equip" } },
@@ -225,12 +225,12 @@ local R_SPECS = {
     DailyClaim     = { { "DailyRewardService", "RE", "Claim" } },
     SpinUse        = { { "SpinService", "RE", "Use" } },
     Spin           = { { "SpinService", "RE", "Use" } },
-    RedeemCode     = { { "CodesService", "RE", "Redeem" } },
+    RedeemCode     = { { "CodesService", "RE", "RedeemCode" } },
     ClaimOffline   = { { "OfflineEarningsService", "RE", "Claim" } },
     HalloweenRoll  = { { "PumpkinDiceService", "RF", "Roll" } },
     HalloweenClaim = { { "HalloweenQuestService", "RE", "Claim" } },
     HalloweenPass  = { { "HalloweenService", "RE", "ClaimAllPath" } },
-    BuyCandyUpg    = { { "HalloweenService", "RE", "BuyUpgrade" }, { "CandyShopService", "RE", "Buy" } },
+    BuyCandyUpg    = { { "HalloweenService", "RE", "BuyUpgrade" } },
     SetSetting     = { { "SettingsService", "RE", "SetSetting" } },
     TrickKnock     = { { "TrickOrTreatService", "RE", "Knocked" }, { "HalloweenService", "RE", "TrickOrTreat" } }
 }
@@ -757,11 +757,22 @@ local function findMyPlot()
     local plots = Workspace:FindFirstChild("Plots")
     if not plots then return nil end
     local myName = LocalPlayer.Name:lower()
+    -- Search both top-level and inside Claimed/Unclaimed subfolders
+    local searchList = {}
     for _, p in ipairs(plots:GetChildren()) do
+        table.insert(searchList, p)
+        if p:IsA("Folder") then
+            for _, c in ipairs(p:GetChildren()) do table.insert(searchList, c) end
+        end
+    end
+    for _, p in ipairs(searchList) do
         local owner = p:GetAttribute("Owner") or p:GetAttribute("OwnerName") or p.Name
         if tostring(owner):lower() == myName then return p end
     end
-    return plots:FindFirstChild("Plot1") or plots:GetChildren()[1]
+    return plots:FindFirstChild("Plot1", true) or (function()
+        for _, p in ipairs(searchList) do if p:IsA("Model") or p:IsA("BasePart") then return p end end
+        return nil
+    end)()
 end
 
 local function goToHalloweenIsland()

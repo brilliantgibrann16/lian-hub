@@ -272,7 +272,11 @@ if type(hookmetamethod) == "function" then
         -- Abaikan noise
         if name ~= "SetPlayerBlockList" and name ~= "UpdateMouseData" then
             local isCharDesc = false
-            pcall(function() isCharDesc = self:IsDescendantOf(LocalPlayer.Character) end)
+            if LocalPlayer.Character then
+                pcall(function() isCharDesc = self:IsDescendantOf(LocalPlayer.Character) end)
+            else
+                isCharDesc = true  -- Character nil (respawn): passthrough, don't log
+            end
             if isCharDesc then return oldNamecall(self, ...) end
             local strArgs = {}
             for i, a in ipairs(args) do

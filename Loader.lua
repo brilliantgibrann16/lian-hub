@@ -133,7 +133,15 @@ local function setupAutoExecuteOnTeleport(clearFailed)
             }
             for attempt = 1, 5 do
                 for _, u in ipairs(urls) do
-                    local raw = game:HttpGet(u)
+                    local raw = nil
+                    local done = false
+                    task.spawn(function()
+                        raw = game:HttpGet(u)
+                        done = true
+                    end)
+                    -- Wait for the spawned fetch (max 10s) without pcall-yield issues
+                    local t0 = os.clock()
+                    while not done and os.clock() - t0 < 10 do task.wait(0.1) end
                     if type(raw) == "string" and #raw > 100 then
                         local ok, fn = pcall(loadstring, raw)
                         if ok and type(fn) == "function" then
@@ -330,6 +338,10 @@ local function initFramework()
         end)
         if M.Data and M.Upgrades and M.Tree and M.Rebirths then break end
         task.wait(0.5)
+    end
+    if not (M.Data and M.Upgrades and M.Tree and M.Rebirths) then
+        pcall(function() if Rayfield then Rayfield:Notify({ Title = "Framework", Content = "Some game modules failed to load. Some features may not work.", Duration = 6 }) end end)
+        warn("[NyxHub] initFramework: missing modules - " .. (M.Data and "Data OK" or "Data MISSING") .. ", " .. (M.Upgrades and "Upgrades OK" or "Upgrades MISSING") .. ", " .. (M.Tree and "Tree OK" or "Tree MISSING") .. ", " .. (M.Rebirths and "Rebirths OK" or "Rebirths MISSING"))
     end
 end
 trackThread(task.spawn(initFramework))

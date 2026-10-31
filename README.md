@@ -1,13 +1,13 @@
-# ⚡ Nyx Hub — Universal Roblox & Anime Dice Suite
+# 🌙 Nyx Hub — Universal Roblox & Anime Dice Suite
 
-100% Keyless, zero-ad, fast Roblox script suite created by **Lian** ([@brilliantgibrann16](https://github.com/brilliantgibrann16)).
+100% Keyless, zero-ad, fast Roblox script suite created by **iannn** ([@brilliantgibrann16](https://github.com/brilliantgibrann16)).
 
 ## 🚀 Execution Loadstring
 
-Copy and paste this one-liner into your executor (Solara, Wave, Delta, Fluxus, etc.):
+Copy and paste this one-liner into your executor (Xeno, Solara, Wave, Volcano, Delta, Fluxus, etc.):
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/brilliantgibrann16/nyx-hub/main/Loader.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/brilliantgibrann16/nyxhub/main/Loader.lua"))()
 ```
 
 ## ✨ Features

@@ -1,7 +1,7 @@
 --[[
     ═════════════════════════════════════════════════════════════════════════
     🌙 NYX HUB — ULTIMATE LIQUID GLASS ANIME DICE EXPLOIT SUITE v8.2 (Full Rebuilt) 🌙
-    Author : Lian (@brilliantgibrann16) • Brand: Nyx Hub
+    Author : iannn (@brilliantgibrann16) • Brand: Nyx Hub
     Target : Anime Dice (PlaceId: 113290951185459 / Universe: 10708913337)
     ═════════════════════════════════════════════════════════════════════════
     [FEATURE MATRIX v8.0 LIQUID GLASS EDITION]:
@@ -113,8 +113,11 @@ trackThread(task.spawn(function()
 end))
 
 -- 2. Teleport & Auto-Execute Setup (Guaranteed Reconnect Re-Execution Across All Executors)
-local function setupAutoExecuteOnTeleport(force)
-    if _ENV._NyxQOTQueued and not force then return end
+local function setupAutoExecuteOnTeleport(clearFailed)
+    if clearFailed then
+        _ENV._NyxQOTQueued = false
+    end
+    if _ENV._NyxQOTQueued then return end
     local qot = queue_on_teleport or queueonteleport
         or (syn and syn.queue_on_teleport)
         or (fluxus and fluxus.queue_on_teleport)
@@ -122,28 +125,51 @@ local function setupAutoExecuteOnTeleport(force)
     if type(qot) == "function" then
         local scriptCode = [[
             repeat task.wait(0.2) until game:IsLoaded()
-            task.wait(1.0)
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/brilliantgibrann16/nyx-hub/main/Loader.lua"))()
+            local Players = game:GetService("Players")
+            while not Players.LocalPlayer do task.wait(0.2) end
+            task.wait(1.5)
+            local urls = {
+                "https://raw.githubusercontent.com/brilliantgibrann16/nyxhub/main/Loader.lua",
+                "https://raw.githubusercontent.com/brilliantgibrann16/lian-hub/main/Loader.lua"
+            }
+            for attempt = 1, 5 do
+                for _, u in ipairs(urls) do
+                    local raw = game:HttpGet(u)
+                    if type(raw) == "string" and #raw > 100 then
+                        local ok, fn = pcall(loadstring, raw)
+                        if ok and type(fn) == "function" then
+                            task.spawn(fn)
+                            return
+                        end
+                    end
+                end
+                task.wait(2.0)
+            end
         ]]
-        pcall(qot, scriptCode)
-        _ENV._NyxQOTQueued = true
+        local ok = pcall(qot, scriptCode)
+        if ok then
+            _ENV._NyxQOTQueued = true
+        end
     end
 end
-setupAutoExecuteOnTeleport()
+setupAutoExecuteOnTeleport(false)
 
 -- Hook both game-initiated teleports and reconnect failures
 pcall(function()
-    trackConn(LocalPlayer.OnTeleport:Connect(function(state)
-        setupAutoExecuteOnTeleport(true)
+    trackConn(LocalPlayer.OnTeleport:Connect(function()
+        setupAutoExecuteOnTeleport(false)
     end))
 end)
 
+local lastTeleportFailRetry = 0
 pcall(function()
-    trackConn(TeleportService.TeleportInitFailed:Connect(function(player, result, err)
+    trackConn(TeleportService.TeleportInitFailed:Connect(function(player)
         if player == LocalPlayer then
+            if os.clock() - lastTeleportFailRetry < 3.0 then return end
+            lastTeleportFailRetry = os.clock()
             setupAutoExecuteOnTeleport(true)
             task.spawn(function()
-                task.wait(2.0)
+                task.wait(2.5)
                 TeleportService:Teleport(game.PlaceId, LocalPlayer)
             end)
         end
@@ -209,15 +235,31 @@ local R_SPECS = {
     TrickKnock     = { { "TrickOrTreatService", "RE", "Knocked" }, { "HalloweenService", "RE", "TrickOrTreat" } }
 }
 
-local R = {}
+local R = setmetatable({}, {
+    __index = function(t, key)
+        local spec = R_SPECS[key]
+        if not spec then return nil end
+        for _, path in ipairs(spec) do
+            local inst = getRemote(path[1], path[2], path[3])
+            if inst then
+                rawset(t, key, inst)
+                return inst
+            end
+        end
+        return nil
+    end
+})
 local function resolveRemotes()
     for key, spec in pairs(R_SPECS) do
-        local inst = nil
-        for _, path in ipairs(spec) do
-            inst = getRemote(path[1], path[2], path[3])
-            if inst then break end
+        if not rawget(R, key) then
+            for _, path in ipairs(spec) do
+                local inst = getRemote(path[1], path[2], path[3])
+                if inst then
+                    rawset(R, key, inst)
+                    break
+                end
+            end
         end
-        R[key] = inst
     end
 end
 resolveRemotes()
@@ -243,8 +285,8 @@ local M = {}
 local function getDC()
     if M.Data then return M.Data end
     pcall(function()
-        local fw = RS:FindFirstChild("Framework") or RS:WaitForChild("Framework", 5)
-        local feat = fw and (fw:FindFirstChild("Features") or fw:WaitForChild("Features", 5))
+        local fw = RS:FindFirstChild("Framework")
+        local feat = fw and fw:FindFirstChild("Features")
         if feat and feat:FindFirstChild("Data") then
             M.Data = safeRequire(feat.Data:FindFirstChild("DataController"))
         end
@@ -255,7 +297,7 @@ end
 local function getDataClient()
     if M.DataClient then return M.DataClient end
     pcall(function()
-        local pkgs = RS:FindFirstChild("Packages") or RS:WaitForChild("Packages", 5)
+        local pkgs = RS:FindFirstChild("Packages")
         if pkgs and pkgs:FindFirstChild("Data") and pkgs.Data:FindFirstChild("Client") then
             M.DataClient = safeRequire(pkgs.Data.Client)
         end
@@ -265,7 +307,8 @@ end
 
 local function initFramework()
     local t0 = os.clock()
-    while os.clock() - t0 < 15 do
+    while isAlive() and (os.clock() - t0 < 60) do
+        resolveRemotes()
         getDC()
         getDataClient()
         pcall(function()
@@ -287,7 +330,7 @@ local function initFramework()
                 if not M.Quirks and feat:FindFirstChild("Quirks") then M.Quirks = safeRequire(feat.Quirks:FindFirstChild("Quirks")) end
             end
         end)
-        if M.Data or M.DataClient then break end
+        if M.Data and M.Upgrades and M.Tree and M.Rebirths and M.Towers and M.Quirks then break end
         task.wait(0.5)
     end
 end
@@ -1770,6 +1813,8 @@ ESPSettingsTab:CreateSlider({
     end,
 })
 
+end
+
 local function applyJumpPowerOnSpawn(char)
     if not char then return end
     task.spawn(function()
@@ -1782,7 +1827,6 @@ local function applyJumpPowerOnSpawn(char)
 end
 if LocalPlayer.Character then task.spawn(applyJumpPowerOnSpawn, LocalPlayer.Character) end
 trackConn(LocalPlayer.CharacterAdded:Connect(applyJumpPowerOnSpawn))
-end
 
 -- ═════════════════════════════════════════════════════════════════════
 -- 🚀 100% DECOUPLED BACKGROUND WORKERS
@@ -1795,9 +1839,9 @@ local lastCashCollectTime = os.clock()
 local lastAutoRollState = nil
 trackThread(task.spawn(function()
     while isAlive() do
-        if _G.NyxConfig.AutoRoll ~= lastAutoRollState then
+        if _G.NyxConfig.AutoRoll ~= lastAutoRollState and R.SetAutoRoll then
             lastAutoRollState = _G.NyxConfig.AutoRoll
-            if R.SetAutoRoll then fire(R.SetAutoRoll, _G.NyxConfig.AutoRoll) end
+            fire(R.SetAutoRoll, _G.NyxConfig.AutoRoll)
         end
         if _G.NyxConfig.AutoRoll then
             if R.RollDice then
@@ -2280,7 +2324,7 @@ local function triggerReconnect(reason)
     if isReconnectingNow then return end
     isReconnectingNow = true
     task.spawn(function()
-        setupAutoExecuteOnTeleport(true)
+        setupAutoExecuteOnTeleport(false)
         task.wait(1.5)
         -- Rejoin fresh public server via Teleport (Not dead JobId!)
         TeleportService:Teleport(game.PlaceId, LocalPlayer)
@@ -2755,7 +2799,7 @@ trackThread(task.spawn(function()
                 lastHopAttempt = os.clock()
                 markServerVisitedOnDisk(game.JobId)
                 task.spawn(function()
-                    setupAutoExecuteOnTeleport(true)
+                    setupAutoExecuteOnTeleport(false)
                     local placeId = game.PlaceId
                     local apiUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
                     local raw = game:HttpGet(apiUrl)

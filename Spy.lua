@@ -1,8 +1,8 @@
-print('[LianSpy] Starting... executor: ' .. (identifyexecutor and identifyexecutor() or 'unknown'))
+print('[NyxSpy] Starting... executor: ' .. (identifyexecutor and identifyexecutor() or 'unknown'))
 --[[
     ═════════════════════════════════════════════════════════════════════════
-    🔍 LIAN SPY v3 — LIVE ACTION SNIFFER & FRAMEWORK DECODER 🔍
-    Author : Lian (@brilliantgibrann16)
+    🔍 NYX SPY v3 — LIVE ACTION SNIFFER & FRAMEWORK DECODER 🔍
+    Author : iannn (@brilliantgibrann16)
     Tujuan : Menangkap persis argumen Roll, Potion, Tower, Event, & Shop!
     ═════════════════════════════════════════════════════════════════════════
 --]]
@@ -10,7 +10,7 @@ print('[LianSpy] Starting... executor: ' .. (identifyexecutor and identifyexecut
 -- Solara-compatible: timeout-based load check
 local _loadT = os.clock()
 while not game:IsLoaded() and os.clock() - _loadT < 15 do task.wait(0.2) end
-if not game:IsLoaded() then warn("[LianSpy] game not fully loaded after 15s, proceeding anyway") end
+if not game:IsLoaded() then warn("[NyxSpy] game not fully loaded after 15s, proceeding anyway") end
 
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
@@ -31,7 +31,7 @@ end
 
 -- 1. DUMP DAFTAR CONFIG FRAMEWORK (DICE, POTIONS, TOWERS, WEATHER, HALLOWEEN)
 addLog("═══════════════════════════════════════════════════════")
-addLog("📦 LIAN SPY: DECODING GAME CONFIGS (FRAMEWORK)")
+addLog("📦 NYX SPY: DECODING GAME CONFIGS (FRAMEWORK)")
 addLog("═══════════════════════════════════════════════════════")
 
 pcall(function()
@@ -79,7 +79,7 @@ end)
 
 -- 3. IN-GAME FLOATING HUD UNTUK REAL-TIME ACTION SNIFFING
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LianSpyV3"
+ScreenGui.Name = "NyxSpyV3"
 ScreenGui.ResetOnSpawn = false
 local _guiParent = nil
 if type(gethui) == "function" then pcall(function() _guiParent = gethui() end) end
@@ -93,7 +93,7 @@ end
 if _guiParent then
     ScreenGui.Parent = _guiParent
 else
-    warn("[LianSpy] No GUI parent available!")
+    warn("[NyxSpy] No GUI parent available!")
 end
 
 local Frame = Instance.new("Frame")
@@ -112,7 +112,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -20, 0, 35)
 Title.Position = UDim2.new(0, 10, 0, 5)
 Title.BackgroundTransparency = 1
-Title.Text = "⚡ LIAN SPY v3 — LIVE ACTION SNIFFER (Klik Apapun di Game!)"
+Title.Text = "⚡ NYX SPY v3 — LIVE ACTION SNIFFER (Klik Apapun di Game!)"
 Title.TextColor3 = Color3.fromRGB(0, 230, 255)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 13
@@ -183,7 +183,7 @@ BtnCorner2.CornerRadius = UDim.new(0, 6)
 local function getFullLog()
     local res = {}
     table.insert(res, "═══════════════════════════════════════════════════════")
-    table.insert(res, "🎯 LIVE REMOTE CLICKS CAPTURED BY LIAN SPY:")
+    table.insert(res, "🎯 LIVE REMOTE CLICKS CAPTURED BY NYX SPY:")
     table.insert(res, "═══════════════════════════════════════════════════════")
     for i = #liveLogs, 1, -1 do table.insert(res, liveLogs[i]) end
     table.insert(res, "\n")
@@ -222,7 +222,7 @@ CopyBtn.MouseButton1Click:Connect(function()
             if setclipboard then setclipboard(getFullLog()) end
         end)
         pcall(function()
-            if writefile then writefile("LianSpy_LiveDump.txt", getFullLog()) end
+            if writefile then writefile("NyxSpy_LiveDump.txt", getFullLog()) end
         end)
         CopyBtn.Text = "✅ Tersalin Lengkap!"
         task.wait(1.5)
@@ -297,7 +297,7 @@ if type(hookmetamethod) == "function" then
     return oldNamecall(self, ...)
 end)
 else
-    warn("[LianSpy] hookmetamethod not available — remote capture disabled. UI still works for manual inspection.")
+    warn("[NyxSpy] hookmetamethod not available — remote capture disabled. UI still works for manual inspection.")
 end
 
-print("[LianSpy v3] Live Action Sniffer is ready! Click actions in-game now.")
+print("[NyxSpy v3] Live Action Sniffer is ready! Click actions in-game now.")

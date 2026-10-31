@@ -2,7 +2,7 @@
 -- No hookmetamethod needed — works on all executors including Solara
 -- Usage: inject → click buttons → check UI log or F9 console
 
-print("[LianSpy] Starting... executor: " .. (identifyexecutor and identifyexecutor() or "unknown"))
+print("[NyxSpy] Starting... executor: " .. (identifyexecutor and identifyexecutor() or "unknown"))
 
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
@@ -12,7 +12,7 @@ local LocalPlayer = Players.LocalPlayer
 -- Timeout-based load check
 local _loadT = os.clock()
 while not game:IsLoaded() and os.clock() - _loadT < 15 do task.wait(0.2) end
-if not game:IsLoaded() then warn("[LianSpy] game not fully loaded after 15s, proceeding anyway") end
+if not game:IsLoaded() then warn("[NyxSpy] game not fully loaded after 15s, proceeding anyway") end
 
 local logs = {}
 local function log(msg)
@@ -33,7 +33,7 @@ end
 
 -- Create UI
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LianSpyManual"
+ScreenGui.Name = "NyxSpyManual"
 ScreenGui.ResetOnSpawn = false
 if _guiParent then ScreenGui.Parent = _guiParent end
 
@@ -53,7 +53,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -20, 0, 30)
 Title.Position = UDim2.new(0, 10, 0, 5)
 Title.BackgroundTransparency = 1
-Title.Text = "Lian Spy - Manual Scanner (Solara Compatible)"
+Title.Text = "Nyx Spy - Manual Scanner (Solara Compatible)"
 Title.TextColor3 = Color3.fromRGB(0, 230, 255)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 13
@@ -322,13 +322,13 @@ end)
 -- Copy button (non-blocking)
 createBtn("Copy Log", UDim2.new(0, 10, 0, 440), UDim2.new(0, 140, 0, 28), Color3.fromRGB(0, 200, 100), function()
     local fullLog = table.concat(logs, "\n")
-    addLine("Copying... (check clipboard or LianSpy_ManualDump.txt)")
+    addLine("Copying... (check clipboard or NyxSpy_ManualDump.txt)")
     task.spawn(function()
         local ok1 = pcall(function()
             if setclipboard then setclipboard(fullLog) end
         end)
         local ok2 = pcall(function()
-            if writefile then writefile("LianSpy_ManualDump.txt", fullLog) end
+            if writefile then writefile("NyxSpy_ManualDump.txt", fullLog) end
         end)
         addLine("Copy done. clipboard=" .. tostring(ok1) .. " file=" .. tostring(ok2))
     end)
@@ -339,4 +339,4 @@ createBtn("Close", UDim2.new(0, 160, 0, 440), UDim2.new(0, 140, 0, 28), Color3.f
     ScreenGui:Destroy()
 end)
 
-log("[LianSpy] Manual Scanner ready! Click buttons to scan.")
+log("[NyxSpy] Manual Scanner ready! Click buttons to scan.")

@@ -168,23 +168,55 @@ end)
 createBtn("DataCtrl", UDim2.new(0, 310, 0, 370), UDim2.new(0, 140, 0, 28), Color3.fromRGB(0, 160, 240), function()
     clearLog()
     addLine("=== DATA CONTROLLER ===")
-    pcall(function()
-        local DC = require(RS.Framework.Features.Data.DataController)
-        for k, v in pairs(DC) do
-            if type(v) == "function" then
-                local ok, res = pcall(v)
-                if ok then
-                    if type(res) == "string" or type(res) == "number" or type(res) == "boolean" then
-                        addLine(string.format("   %s = %s", tostring(k), tostring(res)))
-                    elseif type(res) == "table" then
-                        local count = 0
-                        for _ in pairs(res) do count = count + 1 end
-                        addLine(string.format("   %s = table (%d items)", tostring(k), count))
-                    end
+    local dcMod = RS:FindFirstChild("Framework") and RS.Framework:FindFirstChild("Features") and RS.Framework.Features:FindFirstChild("Data") and RS.Framework.Features.Data:FindFirstChild("DataController")
+    if not dcMod then
+        addLine("DataController module not found (replication lag?). Retry in a few seconds.")
+        return
+    end
+    local DC = nil
+    local reqDone = false
+    task.spawn(function()
+        DC = require(dcMod)
+        reqDone = true
+    end)
+    local t0 = os.clock()
+    while not reqDone and os.clock() - t0 < 5 do task.wait(0.1) end
+    if not DC then
+        addLine("Failed to require DataController (timeout or error).")
+        return
+    end
+    -- Skip functions known to yield or hang (Money, Inventory, Slots, etc.)
+    local skip = { Money = true, Cash = true, Inventory = true, Slots = true, OwnedDice = true, Data = true }
+    local count = 0
+    for k, v in pairs(DC) do
+        if type(v) == "function" and not skip[k] then
+            local res = nil
+            local callDone = false
+            task.spawn(function()
+                res = v()
+                callDone = true
+            end)
+            local t1 = os.clock()
+            while not callDone and os.clock() - t1 < 2 do task.wait(0.1) end
+            if callDone then
+                if type(res) == "string" or type(res) == "number" or type(res) == "boolean" then
+                    addLine(string.format("   %s = %s", tostring(k), tostring(res)))
+                elseif type(res) == "table" then
+                    local c = 0
+                    for _ in pairs(res) do c = c + 1 end
+                    addLine(string.format("   %s = table (%d items)", tostring(k), c))
                 end
+            else
+                addLine(string.format("   %s = <timeout/yield>", tostring(k)))
+            end
+            count = count + 1
+            if count >= 40 then
+                addLine("   ... (truncated after 40 entries)")
+                break
             end
         end
-    end)
+    end
+    addLine("Scan complete. " .. count .. " functions probed.")
 end)
 
 -- Scan 4: Workspace teleport destinations

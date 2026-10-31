@@ -129,8 +129,7 @@ local function setupAutoExecuteOnTeleport(clearFailed)
             while not Players.LocalPlayer do task.wait(0.2) end
             task.wait(1.5)
             local urls = {
-                "https://raw.githubusercontent.com/brilliantgibrann16/nyxhub/main/Loader.lua",
-                "https://raw.githubusercontent.com/brilliantgibrann16/lian-hub/main/Loader.lua"
+                "https://raw.githubusercontent.com/brilliantgibrann16/nyxhub/main/Loader.lua"
             }
             for attempt = 1, 5 do
                 for _, u in ipairs(urls) do
@@ -185,7 +184,7 @@ local function safeRequire(mod)
 end
 
 -- 4. Verified Knit Network Remote Registry
-local NET = RS:FindFirstChild("Network") or RS:WaitForChild("Network", 8)
+local NET = RS:FindFirstChild("Network") or RS:WaitForChild("Network", 1)
 
 local function getRemote(svc, kind, name)
     NET = NET or RS:FindFirstChild("Network")
@@ -202,7 +201,6 @@ local R_SPECS = {
     SetAutoRoll    = { { "RollService", "RE", "SetAutoRoll" }, { "Rolling", "RE", "SetAutoRoll" } },
     UpdAutoSell    = { { "SellService", "RE", "UpdateAutoSell" }, { nil, "RE", "UpdateAutoSell" } },
     SellInventory  = { { "SellService", "RF", "SellInventory" } },
-    SellUnits      = { { "SellService", "RF", "SellInventory" } },
     BuyUpgrade     = { { nil, "RE", "BuyUpgrade" } },
     BuyDice        = { { "DiceShopService", "RE", "BuyDice" }, { "DiceService", "RE", "BuyDice" } },
     EquipDice      = { { "DiceShopService", "RE", "EquipDice" }, { "DiceService", "RE", "EquipDice" } },
@@ -307,7 +305,7 @@ end
 
 local function initFramework()
     local t0 = os.clock()
-    while isAlive() and (os.clock() - t0 < 60) do
+    while isAlive() and (os.clock() - t0 < 30) do
         resolveRemotes()
         getDC()
         getDataClient()
@@ -330,7 +328,7 @@ local function initFramework()
                 if not M.Quirks and feat:FindFirstChild("Quirks") then M.Quirks = safeRequire(feat.Quirks:FindFirstChild("Quirks")) end
             end
         end)
-        if M.Data and M.Upgrades and M.Tree and M.Rebirths and M.Towers and M.Quirks then break end
+        if M.Data and M.Upgrades and M.Tree and M.Rebirths then break end
         task.wait(0.5)
     end
 end
@@ -755,8 +753,12 @@ end
 
 local function findMyPlot()
     local plots = Workspace:FindFirstChild("Plots")
-    if not plots then return nil end
+    if not plots then
+        pcall(function() if Rayfield then Rayfield:Notify({ Title = "Plot", Content = "Plots folder not found in workspace.", Duration = 4 }) end end)
+        return nil
+    end
     local myName = LocalPlayer.Name:lower()
+    local myId = tostring(LocalPlayer.UserId)
     -- Search both top-level and inside Claimed/Unclaimed subfolders
     local searchList = {}
     for _, p in ipairs(plots:GetChildren()) do
@@ -766,13 +768,35 @@ local function findMyPlot()
         end
     end
     for _, p in ipairs(searchList) do
-        local owner = p:GetAttribute("Owner") or p:GetAttribute("OwnerName") or p.Name
-        if tostring(owner):lower() == myName then return p end
+        local owner = p:GetAttribute("Owner") or p:GetAttribute("OwnerName") or p:GetAttribute("OwnerId")
+        if owner ~= nil and (tostring(owner):lower() == myName or tostring(owner) == myId) then return p end
+        -- Sign BillboardGui text check
+        local signMatch = nil
+        pcall(function()
+            for _, desc in ipairs(p:GetDescendants()) do
+                if desc:IsA("TextLabel") or desc:IsA("TextButton") then
+                    local txt = tostring(desc.Text or ""):lower()
+                    if txt:find(myName) or txt:find(myId) then
+                        local cur = desc
+                        while cur and cur ~= plots and not (cur:IsA("Model") or cur:IsA("BasePart")) do cur = cur.Parent end
+                        if cur and (cur:IsA("Model") or cur:IsA("BasePart")) then
+                            signMatch = cur
+                            return
+                        end
+                    end
+                end
+            end
+        end)
+        if signMatch then return signMatch end
     end
-    return plots:FindFirstChild("Plot1", true) or (function()
-        for _, p in ipairs(searchList) do if p:IsA("Model") or p:IsA("BasePart") then return p end end
-        return nil
-    end)()
+    local fallback = plots:FindFirstChild("Plot1", true)
+    if not fallback then
+        for _, p in ipairs(searchList) do if p:IsA("Model") or p:IsA("BasePart") then fallback = p break end end
+    end
+    if not fallback then
+        pcall(function() if Rayfield then Rayfield:Notify({ Title = "Plot", Content = "Could not resolve your plot. Teleport skipped.", Duration = 4 }) end end)
+    end
+    return fallback
 end
 
 local function goToHalloweenIsland()
